@@ -37,7 +37,7 @@ This boundary exists because eval logic is inherently opinionated — different 
 | Output | SDK session + warren events sidecar | SDK records conversation for free; warren only writes oracle decisions |
 | Dependencies | Pragmatic | commander, zod, yaml, etc. as appropriate |
 | User persona | Scenario-defined context | Each session config defines user context/persona |
-| Project location | ~/code/warren | Standalone repo with its own pyproject.toml |
+| Project location | ~/code/warren | Standalone repo with its own package.json |
 
 ---
 
@@ -53,7 +53,7 @@ This boundary exists because eval logic is inherently opinionated — different 
 ┌─────────────────────────────────────────────────────────┐
 │                   Session Runner                         │
 │                                                          │
-│  Loads session.yml → SessionConfig (pydantic model)     │
+│  Loads session.yml → SessionConfig (zod schema)         │
 │  Creates Agent SDK query with streaming input            │
 │  Manages turn lifecycle and transcript recording         │
 └──────┬──────────────┬──────────────────┬────────────────┘
@@ -88,12 +88,14 @@ This boundary exists because eval logic is inherently opinionated — different 
 The core orchestrator. Responsibilities:
 
 - Parse and validate the session YAML config
+- If `project:` is configured, scaffold a temporary project directory (symlink skills, write CLAUDE.md/settings)
 - Initialize the Agent SDK `query()` with an `AsyncIterable<SDKUserMessage>` prompt
 - Feed the initial prompt via the async generator, then await turn decisions
 - Use Promise/resolver coordination: on `ResultMessage`, consult the Synthetic User, then resolve the generator's Promise to yield a follow-up or return to end the session
 - Record every event to the transcript
 - Enforce turn limits and budget constraints
 - Handle errors and timeouts gracefully
+- Clean up scaffolded temp directory after session ends (or on error)
 
 **Turn completion signal:** The SDK emits a `ResultMessage` when a query completes. This message carries `stop_reason`, `session_id`, `usage`, `total_cost_usd`, `num_turns`, `is_error`, and `subtype` (e.g., `"success"`, `"error_max_turns"`). The runner uses this as the trigger for turn policy decisions and as the source for the `session_end` transcript event.
 
@@ -154,8 +156,21 @@ tools:                              # Tools the agent may use (maps to SDK `tool
   - Grep
   - AskUserQuestion                 # Warren handles this via synthetic user
 
+# --- Project Configuration ---
+# When present, warren scaffolds a temporary project directory that becomes
+# the agent's cwd. Controls what CLAUDE.md, skills, and settings the agent sees.
+# When absent, use `cwd` to point at an existing directory (raw mode).
+project:
+  claude_md: |                      # Optional: written to <tempdir>/CLAUDE.md
+    Use clear, accessible language.
+  skills:                           # Optional: symlinked into <tempdir>/.claude/skills/
+    - ~/.claude/skills/haiku-writer
+  settings: {}                      # Optional: written to <tempdir>/.claude/settings.json
+
 # --- Working Directory ---
-cwd: /tmp/warren-sandbox            # Working directory for the session
+# Raw mode: when `project:` is absent, this is the agent's cwd.
+# Managed mode: when `project:` is present, this is ignored (temp dir is used).
+cwd: /tmp/warren-sandbox
 
 # --- Permission Mode ---
 permission_mode: bypassPermissions  # Auto-approve all (default for headless use)
@@ -172,7 +187,8 @@ user:
 
 # --- Agent SDK Options ---
 sdk:
-  setting_sources: []               # Empty = no CLAUDE.md files loaded
+  # setting_sources: auto-set to ["project"] when project: is present;
+  #                  defaults to [] when project: is absent
   # persist_session: true by default — SDK session file is the conversation record
   thinking:                         # Optional thinking configuration
     type: adaptive
@@ -188,7 +204,7 @@ output:
 
 ### Config Validation
 
-Session configs are validated via Pydantic models. Required fields:
+Session configs are validated via Zod schemas. Required fields:
 - `prompt` (string)
 
 Everything else has sensible defaults:
@@ -198,6 +214,12 @@ Everything else has sensible defaults:
 - `permission_mode`: `"bypassPermissions"` (with `allowDangerouslySkipPermissions: true`)
 - `user.turn_policy`: `"single"` (no follow-ups unless configured)
 - `user.oracle_model`: `"claude-haiku-4-5"`
+- `sdk.setting_sources`: `["project"]` when `project:` is present, `[]` otherwise
+
+Project-specific validation:
+- `project.skills`: each path must exist and contain a `SKILL.md` file
+- `project.claude_md`: optional string
+- `project.settings`: optional object (written as JSON to `.claude/settings.json`)
 
 ### Config Merging
 
@@ -391,7 +413,7 @@ Each line is a JSON object with a common envelope:
 
 | Type | Description | Data Fields |
 |------|-------------|-------------|
-| `session_start` | Session initialized | `config` (sanitized), `warren_version`, `sdk_session_path` |
+| `session_start` | Session initialized | `config` (sanitized), `warren_version`, `sdk_session_path`, `scaffolded_project_path` (if managed) |
 | `ask_user_question` | AskUserQuestion intercepted by oracle | `questions`, `oracle_response`, `oracle_model`, `oracle_usage` |
 | `turn_policy` | Synthetic user turn decision | `decision`, `message`, `reasoning`, `oracle_model`, `oracle_usage` |
 | `error` | Warren-level error | `error_type`, `message`, `recoverable` |
@@ -458,6 +480,7 @@ done
 | Error | Behavior |
 |-------|----------|
 | Invalid session config | Exit 1 with validation error |
+| Invalid skill path in `project.skills` | Exit 1 (path doesn't exist or missing SKILL.md) |
 | API key missing/invalid | Exit 2 with auth error |
 | Session timeout | Write `session_end` with `stop_reason: "timeout"`, exit 5 |
 
@@ -469,19 +492,18 @@ done
 
 | Package | Purpose |
 |---------|---------|
-| `claude-agent-sdk` | Core Agent SDK for driving Claude sessions |
-| `anthropic` | Direct API access for the oracle LLM (Haiku calls) |
-| `pydantic` | Session config validation and structured models |
-| `click` | CLI framework |
-| `pyyaml` | YAML parsing for session configs |
+| `@anthropic-ai/claude-agent-sdk` | Core Agent SDK for driving Claude sessions |
+| `@anthropic-ai/sdk` | Direct API access for the oracle LLM (Haiku calls) |
+| `zod` | Session config validation and structured schemas |
+| `commander` | CLI framework |
+| `yaml` | YAML parsing for session configs |
 
 ### Optional / Development
 
 | Package | Purpose |
 |---------|---------|
-| `rich` | Pretty terminal output (progress, tables, errors) |
-| `pytest` | Testing |
-| `pytest-asyncio` | Async test support |
+| `vitest` | Testing |
+| `tsx` | TypeScript execution for development |
 
 ---
 
@@ -489,35 +511,39 @@ done
 
 ```
 warren/
-├── pyproject.toml              # Package config, dependencies, entry points
-├── SPEC.md                     # This file
-├── README.md                   # Usage documentation
+├── package.json               # Package config, dependencies, scripts
+├── tsconfig.json              # TypeScript configuration
+├── SPEC.md                    # This file
+├── README.md                  # Usage documentation
 ├── src/
-│   └── warren/
-│       ├── __init__.py
-│       ├── cli.py              # Click CLI entry point
-│       ├── config.py           # Pydantic models for session config
-│       ├── runner.py           # Session runner (core orchestrator)
-│       ├── synthetic_user.py   # Synthetic user (AskUserQuestion + turn policy)
-│       ├── oracle.py           # LLM oracle wrapper (Haiku calls)
-│       ├── transcript.py       # JSONL transcript recorder
-│       └── events.py           # Event type definitions
+│   ├── cli.ts                 # Commander CLI entry point
+│   ├── config.ts              # Zod schemas for session config
+│   ├── runner.ts              # Session runner (core orchestrator)
+│   ├── synthetic-user.ts      # Synthetic user (AskUserQuestion + turn policy)
+│   ├── oracle.ts              # LLM oracle wrapper (Haiku calls)
+│   ├── events.ts              # Event recorder and type definitions
+│   └── project.ts             # Project directory scaffolding
 ├── tests/
-│   ├── test_config.py          # Config parsing and validation
-│   ├── test_synthetic_user.py  # Synthetic user logic
-│   ├── test_oracle.py          # Oracle LLM wrapper
-│   └── test_runner.py          # Integration tests
+│   ├── config.test.ts         # Config parsing and validation
+│   ├── synthetic-user.test.ts # Synthetic user logic
+│   ├── oracle.test.ts         # Oracle LLM wrapper
+│   ├── project.test.ts        # Project scaffolding
+│   └── runner.test.ts         # Integration tests
 └── examples/
-    ├── simple.yml              # Minimal session config
-    ├── interactive.yml         # Session with AskUserQuestion handling
-    └── multi-turn.yml          # Reactive multi-turn session
+    ├── simple.yml             # Minimal session config
+    ├── interactive.yml        # Session with AskUserQuestion handling
+    ├── skill-eval.yml         # Skill evaluation with managed project
+    └── multi-turn.yml         # Reactive multi-turn session
 ```
 
 ### Entry Point
 
-```toml
-[project.scripts]
-warren = "warren.cli:main"
+```json
+{
+  "bin": {
+    "warren": "./dist/cli.js"
+  }
+}
 ```
 
 ---
