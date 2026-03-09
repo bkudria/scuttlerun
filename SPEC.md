@@ -2,7 +2,7 @@
 
 ## Overview
 
-Warren is a Python CLI tool that uses the Claude Agent SDK to drive multi-turn Claude sessions programmatically. It enables headless, scriptable, fully-observable interactions with Claude — including support for interactive tools like `AskUserQuestion` — by simulating a synthetic user powered by an LLM.
+Warren is a TypeScript CLI tool that uses the Claude Agent SDK to drive multi-turn Claude sessions programmatically. It enables headless, scriptable, fully-observable interactions with Claude — including support for interactive tools like `AskUserQuestion` — by simulating a synthetic user powered by an LLM.
 
 Warren is **general-purpose**. Any use case requiring programmatic, multi-turn, observable Claude sessions is in scope — evaluations, automated testing, CI/CD pipelines, batch processing with interactive steps, reproducible demos, and more.
 
@@ -27,15 +27,15 @@ This boundary exists because eval logic is inherently opinionated — different 
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Language | Python | Matches Agent SDK's async patterns; rich ecosystem |
+| Language | TypeScript | More complete SDK (hooks, session control, no workarounds); native async/await |
 | Scope | General-purpose session driver | Not coupled to eval; eval is built on top |
 | Interface | CLI-first | `warren run session.yml` as primary invocation |
 | Interactivity | LLM-driven synthetic user | Full simulation via a second LLM call |
 | Synthetic user model | Haiku default + override | Fast and cheap for routine responses; configurable |
 | Turn model | Reactive multi-turn | LLM-driven policy decides follow-ups based on context |
-| Permissions | Auto-approve all | Headless/testing context; not production |
-| Transcript format | JSONL | One event per line; matches Claude Code transcripts; jq-queryable |
-| Dependencies | Pragmatic | click, pydantic, rich, etc. as appropriate |
+| Permissions | `bypassPermissions` default | Guarantees headless operation; configurable per session |
+| Output | SDK session + warren events sidecar | SDK records conversation for free; warren only writes oracle decisions |
+| Dependencies | Pragmatic | commander, zod, yaml, etc. as appropriate |
 | User persona | Scenario-defined context | Each session config defines user context/persona |
 | Project location | ~/code/warren | Standalone repo with its own pyproject.toml |
 
@@ -60,12 +60,12 @@ This boundary exists because eval logic is inherently opinionated — different 
        │              │                  │
        ▼              ▼                  ▼
 ┌─────────────┐ ┌──────────────┐ ┌──────────────────────┐
-│ Agent SDK   │ │  Synthetic   │ │  Transcript          │
-│ (streaming  │ │  User        │ │  Recorder            │
-│  input mode)│ │              │ │                      │
-│             │ │  canUseTool  │ │  JSONL writer        │
-│  query()    │ │  callback +  │ │  One event per line  │
-│  with async │ │  turn policy │ │  Structured events   │
+│ Agent SDK   │ │  Synthetic   │ │  Event Recorder      │
+│ (streaming  │ │  User        │ │                      │
+│  input mode)│ │              │ │  Warren events       │
+│             │ │  PreToolUse  │ │  sidecar (JSONL)     │
+│  query()    │ │  hook +      │ │  Oracle decisions    │
+│  with async │ │  turn policy │ │  + session metadata  │
 │  generator  │ │              │ │                      │
 └─────────────┘ └──────┬───────┘ └──────────────────────┘
                        │
@@ -88,21 +88,25 @@ This boundary exists because eval logic is inherently opinionated — different 
 The core orchestrator. Responsibilities:
 
 - Parse and validate the session YAML config
-- Initialize the Agent SDK `query()` with streaming input mode
-- Feed the initial prompt via the async generator
-- After each agent turn completes, consult the Synthetic User to decide next action
+- Initialize the Agent SDK `query()` with an `AsyncIterable<SDKUserMessage>` prompt
+- Feed the initial prompt via the async generator, then await turn decisions
+- Use Promise/resolver coordination: on `ResultMessage`, consult the Synthetic User, then resolve the generator's Promise to yield a follow-up or return to end the session
 - Record every event to the transcript
 - Enforce turn limits and budget constraints
 - Handle errors and timeouts gracefully
+
+**Turn completion signal:** The SDK emits a `ResultMessage` when a query completes. This message carries `stop_reason`, `session_id`, `usage`, `total_cost_usd`, `num_turns`, `is_error`, and `subtype` (e.g., `"success"`, `"error_max_turns"`). The runner uses this as the trigger for turn policy decisions and as the source for the `session_end` transcript event.
+
+**Multi-turn coordination:** The async generator and the message consumer (`for await` loop) coordinate via a shared Promise. After each `ResultMessage`, the consumer decides the next action and resolves the Promise — the generator either yields the next user message or returns.
 
 #### 2. Synthetic User
 
 An LLM-powered simulation of a human user. Two roles:
 
-**a) AskUserQuestion responder** — When the agent calls `AskUserQuestion`, Warren intercepts it via the `canUseTool` callback and:
+**a) AskUserQuestion responder** — When the agent calls `AskUserQuestion`, Warren intercepts it via a `PreToolUse` hook and:
 1. Sends the question, options, full conversation context, and user persona to the oracle LLM
 2. The oracle selects an option (or provides free-text) consistent with the persona
-3. Returns the answer in the format the Agent SDK expects (`PermissionResultAllow` with `updated_input` containing `answers`)
+3. Returns via the hook output with `permissionDecision: "allow"` and `updatedInput` containing the answers
 
 **b) Turn policy** — After each agent response (when `stop_reason == "end_turn"`), Warren consults the oracle to decide:
 - **Continue**: Send a follow-up message (oracle generates it)
@@ -118,12 +122,9 @@ A thin wrapper around the Anthropic Messages API (not the Agent SDK) that:
 - Returns structured output (JSON) for reliable parsing
 - Is stateless — each call gets the full relevant context
 
-#### 4. Transcript Recorder
+#### 4. Event Recorder
 
-Writes a JSONL file with one event per line. Events are structured objects with:
-- Timestamp
-- Event type (see [Transcript Schema](#transcript-schema))
-- Event data
+Warren relies on the Agent SDK's built-in session persistence for the full conversation record (written automatically to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`). Warren writes a lightweight **events sidecar** (JSONL) containing only warren-specific decisions: oracle responses, turn policy decisions, and session metadata. This avoids reimplementing conversation serialization and leverages existing session-transcripts tooling.
 
 ---
 
@@ -157,7 +158,7 @@ tools:                              # Tools the agent may use (maps to SDK `tool
 cwd: /tmp/warren-sandbox            # Working directory for the session
 
 # --- Permission Mode ---
-permission_mode: acceptEdits        # Auto-accept file edits (default)
+permission_mode: bypassPermissions  # Auto-approve all (default for headless use)
 
 # --- Synthetic User Configuration ---
 user:
@@ -172,6 +173,7 @@ user:
 # --- Agent SDK Options ---
 sdk:
   setting_sources: []               # Empty = no CLAUDE.md files loaded
+  # persist_session: true by default — SDK session file is the conversation record
   thinking:                         # Optional thinking configuration
     type: adaptive
   mcp_servers: {}                   # Optional MCP servers
@@ -180,7 +182,7 @@ sdk:
 
 # --- Output ---
 output:
-  transcript: transcript.jsonl      # Transcript file path (default: stdout)
+  events: warren-events.jsonl       # Warren events sidecar path (default: <cwd>/warren-events.jsonl)
   result: result.txt                # Final result text (optional)
 ```
 
@@ -193,7 +195,7 @@ Everything else has sensible defaults:
 - `model`: system default
 - `max_turns`: 50
 - `tools`: `["Read", "Write", "Edit", "Bash", "Glob", "Grep"]`
-- `permission_mode`: `"acceptEdits"`
+- `permission_mode`: `"bypassPermissions"` (with `allowDangerouslySkipPermissions: true`)
 - `user.turn_policy`: `"single"` (no follow-ups unless configured)
 - `user.oracle_model`: `"claude-haiku-4-5"`
 
@@ -222,8 +224,8 @@ Usage:
   warren version
 
 Run options:
-  --output, -o PATH        Override transcript output path
-  --result PATH            Override result output path
+  --output, -o PATH        Override warren events output path
+  --result PATH            Override result text output path
   --model MODEL            Override agent model
   --oracle-model MODEL     Override synthetic user model
   --prompt TEXT             Override prompt (for quick one-offs)
@@ -260,11 +262,15 @@ This creates an ephemeral config with the specified options and runs it.
 
 ## Synthetic User: Detailed Design
 
+### Hook Routing
+
+Warren registers a single `PreToolUse` hook with `matcher: "AskUserQuestion"`. This hook only fires for `AskUserQuestion` calls — all other tools (Read, Write, Bash, etc.) fall through to the configured `permission_mode` without any custom handling.
+
 ### AskUserQuestion Handling
 
-When the agent calls `AskUserQuestion`, the `canUseTool` callback fires. Warren:
+When the agent calls `AskUserQuestion`, the `PreToolUse` hook fires. Warren:
 
-1. **Extracts the question data**: `questions` array with options, multiSelect flags
+1. **Extracts the question data**: `tool_input.questions` array with options, multiSelect flags
 2. **Builds an oracle prompt** containing:
    - The user persona from session config
    - The conversation so far (summarized if long)
@@ -280,12 +286,15 @@ When the agent calls `AskUserQuestion`, the `canUseTool` callback fires. Warren:
      "reasoning": "The user persona prefers simple output..."
    }
    ```
-4. **Returns to the Agent SDK** via `PermissionResultAllow` with:
-   ```python
-   PermissionResultAllow(updated_input={
-       "questions": original_questions,
-       "answers": oracle_response["answers"]
-   })
+4. **Returns to the Agent SDK** via the hook output:
+   ```typescript
+   {
+     permissionDecision: "allow",
+     updatedInput: {
+       questions: originalQuestions,
+       answers: oracleResponse.answers
+     }
+   }
    ```
 
 ### Turn Policy (Reactive Multi-Turn)
@@ -312,8 +321,8 @@ After each agent response where `stop_reason == "end_turn"`, Warren:
      "reasoning": "The agent completed the task as requested."
    }
    ```
-3. **If "continue"**: Yields the follow-up message to the async generator, triggering another agent turn
-4. **If "end"**: Closes the async generator, ending the session
+3. **If "continue"**: Resolves the generator's Promise with the follow-up message, triggering another agent turn
+4. **If "end"**: Resolves with `null`, causing the generator to return and ending the session
 
 ### Oracle System Prompts
 
@@ -353,7 +362,19 @@ When `user.turn_policy: single`, Warren skips the turn policy entirely. One prom
 
 ---
 
-## Transcript Schema (JSONL)
+## Output Artifacts
+
+Warren produces two artifacts per session:
+
+### 1. SDK Session File (conversation record)
+
+Written automatically by the Agent SDK to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Contains the full conversation: assistant messages, user messages, tool calls, tool results, thinking blocks, etc. in Claude Code's native JSONL format.
+
+Queryable with standard jq filters against the native JSONL format.
+
+### 2. Warren Events File (sidecar)
+
+Written by warren to the path specified by `--output` (default: `<cwd>/warren-events.jsonl`). Contains only warren-specific events — decisions the oracle made, not the conversation itself.
 
 Each line is a JSON object with a common envelope:
 
@@ -361,74 +382,62 @@ Each line is a JSON object with a common envelope:
 {
   "timestamp": "2026-03-08T12:00:00.000Z",
   "type": "event_type",
+  "session_id": "abc123-...",
   "data": { ... }
 }
 ```
 
-### Event Types
+#### Event Types
 
 | Type | Description | Data Fields |
 |------|-------------|-------------|
-| `session_start` | Session initialized | `session_id`, `config` (sanitized), `warren_version` |
-| `agent_message` | Assistant response | `content` (full content blocks), `stop_reason`, `usage` |
-| `user_message` | User/synthetic user message | `content`, `source` ("initial" \| "synthetic_user" \| "tool_result") |
-| `tool_call` | Agent called a tool | `tool_name`, `tool_input`, `tool_use_id` |
-| `tool_result` | Tool execution result | `tool_use_id`, `content`, `is_error` |
-| `ask_user_question` | AskUserQuestion intercepted | `questions`, `oracle_response`, `oracle_model`, `oracle_usage` |
-| `turn_policy` | Synthetic user decision | `decision`, `message`, `reasoning`, `oracle_model`, `oracle_usage` |
-| `permission_request` | Tool permission handled | `tool_name`, `action` ("auto_approved") |
-| `error` | Error occurred | `error_type`, `message`, `recoverable` |
-| `session_end` | Session completed | `stop_reason`, `total_turns`, `total_usage`, `duration_ms` |
+| `session_start` | Session initialized | `config` (sanitized), `warren_version`, `sdk_session_path` |
+| `ask_user_question` | AskUserQuestion intercepted by oracle | `questions`, `oracle_response`, `oracle_model`, `oracle_usage` |
+| `turn_policy` | Synthetic user turn decision | `decision`, `message`, `reasoning`, `oracle_model`, `oracle_usage` |
+| `error` | Warren-level error | `error_type`, `message`, `recoverable` |
+| `session_end` | Session completed (from SDK `ResultMessage`) | `stop_reason`, `subtype`, `is_error`, `total_turns`, `total_cost_usd`, `duration_ms`, `result`, `oracle_usage_total` |
 
-### Usage Tracking
+#### Oracle Usage Tracking
 
-The `session_end` event includes aggregated usage:
+The `session_end` event includes aggregated oracle usage:
 
 ```json
 {
-  "total_usage": {
-    "agent": {
-      "input_tokens": 12345,
-      "output_tokens": 6789,
-      "cache_read_tokens": 50000,
-      "cache_creation_tokens": 10000
-    },
-    "oracle": {
-      "input_tokens": 2000,
-      "output_tokens": 500,
-      "calls": 3
-    }
+  "oracle_usage_total": {
+    "input_tokens": 2000,
+    "output_tokens": 500,
+    "calls": 3
   }
 }
 ```
+
+Agent token usage is available from the SDK's `ResultMessage` and the native session file.
 
 ---
 
 ## Downstream Usage
 
-Warren produces structured JSONL transcripts. What happens next is entirely the caller's concern. Warren's design supports this by ensuring transcripts are:
+Warren produces two artifacts: the SDK session file (full conversation) and a warren events sidecar (oracle decisions). What happens next is entirely the caller's concern.
 
-- **Self-contained** — The `session_start` event records the full config; the `session_end` event records aggregated usage and timing. A transcript is interpretable without external context.
-- **Queryable** — JSONL + structured event types work with jq, grep, and the session-transcripts skill out of the box.
-- **Composable** — Config merging lets callers generate many session configs from a base template, invoke `warren run` for each, and process the resulting transcripts however they see fit.
+- **SDK session files** are standard Claude Code JSONL — queryable with jq for conversation, tool calls, errors, etc.
+- **Warren events** are lightweight JSONL containing only oracle/turn-policy decisions — easy to query with `jq`.
+- **Config merging** lets callers generate many session configs from a base template, invoke `warren run` for each, and process the results however they see fit.
 
 Example caller patterns (implemented *outside* warren):
 
 ```bash
-# A/B comparison: same prompt, different configs
-warren run base.yml variant-a.yml -o a/transcript.jsonl
-warren run base.yml variant-b.yml -o b/transcript.jsonl
-# caller diffs or grades the two transcripts
+# Run a session
+warren run session.yml -o results/events.jsonl --cwd /tmp/sandbox
+# SDK session file: ~/.claude/projects/-tmp-sandbox/<session-id>.jsonl
+# Warren events: results/events.jsonl
+
+# Inspect oracle decisions
+jq 'select(.type=="ask_user_question")' results/events.jsonl
 
 # Batch processing
 for config in scenarios/*.yml; do
     warren run base.yml "$config" -o "results/$(basename $config .yml).jsonl"
 done
-# caller aggregates results
-
-# Interactive scenario
-warren run interactive-session.yml -o transcript.jsonl
-# transcript contains AskUserQuestion/oracle events for inspection
 ```
 
 ---
@@ -532,6 +541,9 @@ Fork a session at a specific turn to explore different paths (useful for A/B tes
 ### Token Budget Optimization
 Context summarization for the oracle LLM when conversations get long, rather than sending the full transcript every time.
 
+### Agent SDK V2 Migration
+The TypeScript SDK has a preview V2 API (`unstable_v2_createSession()` / `unstable_v2_resumeSession()`) with explicit `send()`/`stream()` cycles. When V2 stabilizes, it would replace the async generator + Promise coordination with a simpler per-turn call pattern.
+
 ---
 
 ## Trade-offs
@@ -575,25 +587,27 @@ Mitigation for non-determinism: transcript records oracle responses, so every ru
 
 For eval scenarios that need deterministic conversation flows, `turn_policy: single` provides that escape hatch.
 
-### JSONL vs. Structured JSON
+### SDK Session + Sidecar vs. Self-Contained Transcript
 
-**Chosen: JSONL.** Trade-offs:
+**Chosen: SDK session file + warren events sidecar.** Trade-offs:
 
-- **Pro**: Streamable — can write events as they happen (no buffering the whole session)
-- **Pro**: Matches Claude Code's native transcript format
-- **Pro**: Easy to query with jq, grep, existing session-transcripts tooling
-- **Con**: Harder to load as a single document (need to parse line by line)
-- **Con**: No built-in schema validation for the whole file
+- **Pro**: Zero implementation cost for conversation recording — SDK does it automatically
+- **Pro**: SDK session files are in Claude Code's native format, queryable with standard jq
+- **Pro**: Warren's events sidecar is lightweight — only oracle/turn-policy decisions
+- **Pro**: Existing tooling for Claude Code sessions works out of the box
+- **Con**: Two files per session instead of one
+- **Con**: Consumer needs to correlate session ID between the sidecar and the SDK session file
 
-The `session_end` event contains aggregated summary data, so consumers that just want the final result can read the last line.
+The `session_start` event in the sidecar includes `sdk_session_path` for easy correlation.
 
-### Auto-Approve All vs. Configurable Permissions
+### `bypassPermissions` vs. Configurable Permissions
 
-**Chosen: Auto-approve all.** Trade-offs:
+**Chosen: `bypassPermissions` default.** Trade-offs:
 
-- **Pro**: Simplest model for headless/eval use
-- **Pro**: No permission prompts blocking execution
+- **Pro**: Guarantees no tool call ever blocks on a permission prompt — essential for headless use
+- **Pro**: Simplest model; only the `PreToolUse` hook for AskUserQuestion adds custom behavior
+- **Con**: Requires `allowDangerouslySkipPermissions: true` (intentionally friction-ful)
 - **Con**: Can't test permission-related behaviors
-- **Con**: Less safe for non-eval use cases
+- **Con**: Less safe for non-testing use cases
 
-This is appropriate for the primary use case (eval/testing). The Agent SDK's `permission_mode` is still passed through, so callers can set `"default"` if they want permission handling for other scenarios.
+The `permission_mode` field is still configurable in session YAML, so callers can set `"default"` or `"acceptEdits"` for other scenarios. But the default is `bypassPermissions` because warren's primary purpose is headless session driving.
