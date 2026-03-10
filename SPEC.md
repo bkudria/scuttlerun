@@ -95,9 +95,8 @@ The core orchestrator. Responsibilities:
 - Use Promise/resolver coordination: on `ResultMessage`, consult the Synthetic User, then resolve the generator's Promise to yield a follow-up or return to end the session
 - Record every event to the transcript
 - Enforce turn limits and budget constraints
-- Handle errors and timeouts gracefully (timeout via SDK `abortController`)
-- Call `query.close()` on session end, error, or timeout to clean up the SDK child process
-- Clean up scaffolded temp directory after session ends (or on error)
+- Handle errors and timeouts gracefully
+- Clean up SDK child process and scaffolded temp directory after session ends (or on error)
 
 **Session initialization:** The SDK emits a `SystemMessage` (subtype: `"init"`) at the start of each query turn, carrying the `session_id`. Warren captures the first one to populate the `session_start` event. Note: subsequent turns also emit `init` messages (same `session_id`).
 
@@ -128,7 +127,7 @@ The core orchestrator. Responsibilities:
 
 **Cleanup:** On session completion (normal or error), warren calls `query.close()` to terminate the SDK's child process, then removes the scaffolded temp directory (if applicable). The `finally` block ensures cleanup runs even on unhandled errors.
 
-**Agent stderr:** The SDK accepts a `stderr: (data: Buffer) => void` callback. Warren captures agent stderr lines and writes them as `agent_stderr` events to the events sidecar. This provides observability into the agent's internal output without polluting warren's own stderr.
+**Agent stderr:** The SDK accepts a `stderr: (data: Buffer) => void` callback. Warren line-buffers the incoming chunks and periodically flushes accumulated lines as a single `agent_stderr` event (every 500ms or on session end, whichever comes first). Unlike oracle events, stderr events are written without fsync — they are low-value diagnostic data and losing the last batch on a crash is acceptable. This avoids the pathological case of hundreds of fsynced writes for chatty agent output.
 
 #### 2. Synthetic User
 
@@ -158,7 +157,7 @@ A thin wrapper around the Anthropic Messages API (not the Agent SDK) that:
 
 Warren relies on the Agent SDK's built-in session persistence for the full conversation record (written automatically to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`). Warren writes a lightweight **events sidecar** (JSONL) containing only warren-specific decisions: oracle responses, turn policy decisions, agent stderr, and session metadata. This avoids reimplementing conversation serialization and leverages existing session-transcripts tooling.
 
-**Flushing:** Events are written and fsynced to disk immediately (one write per event). This ensures events survive crashes and SIGTERM. The overhead is negligible since a typical session produces fewer than 20 events.
+**Flushing:** Oracle and lifecycle events (`session_start`, `ask_user_question`, `turn_policy`, `error`, `session_end`) are written and fsynced to disk immediately. These are high-value events worth preserving across crashes; a typical session produces fewer than 20. `agent_stderr` events are buffered and written without fsync (see Agent stderr above).
 
 ---
 
@@ -356,7 +355,7 @@ canUseTool: async (
 ) => Promise<PermissionResult>
 ```
 
-This callback fires whenever the agent requests permission to use a tool, including `AskUserQuestion`. For AskUserQuestion calls, Warren intercepts and provides synthetic answers; for all other tools, it returns `{ behavior: "allow" }` (the actual permission enforcement is handled by the configured `permissionMode`). Warren records `toolUseID` in the `ask_user_question` event for correlation with the SDK session file.
+This callback fires whenever the agent requests permission to use a tool, including `AskUserQuestion`. For AskUserQuestion calls, Warren intercepts and provides synthetic answers; for all other tools, it returns `{ behavior: "allow" }` (the actual permission enforcement is handled by the configured `permissionMode`). Warren records the SDK's `toolUseID` value as `tool_use_id` (snake_case) in the `ask_user_question` event for correlation with the SDK session file.
 
 **SDK note:** `canUseTool` fires for AskUserQuestion regardless of `permissionMode`. Even with `bypassPermissions`, the callback executes and provides the answers. This is the officially documented mechanism for programmatic AskUserQuestion handling (see [Agent SDK docs](https://platform.claude.com/docs/en/agent-sdk/user-input#handle-clarifying-questions)).
 
@@ -385,9 +384,9 @@ When the agent calls `AskUserQuestion`, the `canUseTool` callback fires. Warren:
    ```
 2. **Builds an oracle prompt** containing:
    - The user persona from session config
-   - The conversation so far (initial prompt + last 10 user/assistant pairs; truncated for long sessions)
+   - The conversation so far (initial prompt + last 10 user/assistant pairs, with tool call/result content stripped — only user messages and assistant text blocks are included; truncated for long sessions)
    - The specific questions and options
-3. **Calls the oracle LLM** with `output_config.format` (JSON schema) to get:
+3. **Calls the oracle** (see LLM Oracle) to get:
    ```json
    {
      "answers": {
@@ -417,10 +416,10 @@ After each `ResultMessage` where `subtype === "success"`, Warren consults the tu
 
 1. **Builds a turn-policy prompt** containing:
    - The user persona
-   - The conversation so far (initial prompt + last 10 user/assistant pairs; truncated for long sessions)
+   - The conversation so far (initial prompt + last 10 user/assistant pairs, with tool call/result content stripped — only user messages and assistant text blocks are included; truncated for long sessions)
    - The original task/prompt
    - Instruction: "Should the user send a follow-up, or is the task complete?"
-2. **Calls the oracle LLM** with `output_config.format` (JSON schema):
+2. **Calls the oracle** (see LLM Oracle):
    ```json
    {
      "decision": "continue",
@@ -452,7 +451,7 @@ appropriate answers. For each question, provide a selected option label
 (or free text if no option fits) and brief reasoning.
 ```
 
-The oracle call uses `output_config.format` with a JSON schema enforcing:
+The JSON schema for this call enforces:
 ```json
 {
   "answers": { "<question>": "<selected option label or free text>" },
@@ -476,7 +475,7 @@ Review the conversation so far. Decide whether the user would:
 If continuing, write the follow-up message the user would send.
 ```
 
-The oracle call uses `output_config.format` with a JSON schema enforcing:
+The JSON schema for this call enforces:
 ```json
 {
   "decision": "continue | end",
@@ -525,7 +524,7 @@ Each line is a JSON object with a common envelope:
 | `session_start` | Session initialized | `config` (sanitized), `warren_version`, `sdk_session_path`, `scaffolded_project_path` (if managed) |
 | `ask_user_question` | AskUserQuestion intercepted by oracle | `tool_use_id`, `questions`, `oracle_response`, `oracle_model`, `oracle_usage` |
 | `turn_policy` | Synthetic user turn decision | `decision`, `message`, `reasoning`, `oracle_model`, `oracle_usage` |
-| `agent_stderr` | Stderr output from SDK child process | `text` |
+| `agent_stderr` | Batched stderr output from SDK child process | `text` (accumulated lines, newline-separated) |
 | `error` | Warren-level error | `error_type`, `message`, `recoverable` |
 | `session_end` | Session completed (from SDK `ResultMessage`) | `stop_reason`, `subtype`, `is_error`, `total_turns`, `total_cost_usd`, `duration_ms`, `oracle_usage_total` |
 
