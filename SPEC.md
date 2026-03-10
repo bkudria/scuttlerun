@@ -30,6 +30,7 @@ This boundary exists because eval logic is inherently opinionated — different 
 | Language | TypeScript | More complete SDK (hooks, session control, no workarounds); native async/await |
 | Scope | General-purpose session driver | Not coupled to eval; eval is built on top |
 | Interface | CLI-first | `warren run session.yml` as primary invocation |
+| AskUserQuestion | `canUseTool` callback | Official SDK mechanism for intercepting AskUserQuestion; PreToolUse hooks do not work for this |
 | Interactivity | LLM-driven synthetic user | Full simulation via a second LLM call |
 | Synthetic user model | Haiku default + override | Fast and cheap for routine responses; configurable |
 | Turn model | Reactive multi-turn | LLM-driven policy decides follow-ups based on context |
@@ -63,9 +64,9 @@ This boundary exists because eval logic is inherently opinionated — different 
 │ Agent SDK   │ │  Synthetic   │ │  Event Recorder      │
 │ (streaming  │ │  User        │ │                      │
 │  input mode)│ │              │ │  Warren events       │
-│             │ │  PreToolUse  │ │  sidecar (JSONL)     │
-│  query()    │ │  hook +      │ │  Oracle decisions    │
-│  with async │ │  turn policy │ │  + session metadata  │
+│             │ │ canUseTool + │ │  sidecar (JSONL)     │
+│  query()    │ │  turn policy │ │  Oracle decisions    │
+│  with async │ │              │ │  + session metadata  │
 │  generator  │ │              │ │                      │
 └─────────────┘ └──────┬───────┘ └──────────────────────┘
                        │
@@ -97,20 +98,42 @@ The core orchestrator. Responsibilities:
 - Handle errors and timeouts gracefully
 - Clean up scaffolded temp directory after session ends (or on error)
 
-**Turn completion signal:** The SDK emits a `ResultMessage` when a query completes. This message carries `stop_reason`, `session_id`, `usage`, `total_cost_usd`, `num_turns`, `is_error`, and `subtype` (e.g., `"success"`, `"error_max_turns"`). The runner uses this as the trigger for turn policy decisions and as the source for the `session_end` transcript event.
+**Session initialization:** The SDK emits a `SystemMessage` (subtype: `"init"`) at the start of each query turn, carrying the `session_id`. Warren captures the first one to populate the `session_start` event. Note: subsequent turns also emit `init` messages (same `session_id`).
 
-**Multi-turn coordination:** The async generator and the message consumer (`for await` loop) coordinate via a shared Promise. After each `ResultMessage`, the consumer decides the next action and resolves the Promise — the generator either yields the next user message or returns.
+**Turn completion signal:** The SDK emits a `ResultMessage` when a query turn completes. This message carries `stop_reason`, `session_id`, `usage`, `total_cost_usd`, `num_turns`, `is_error`, and `subtype`:
+- `"success"` — normal completion; triggers the turn policy
+- `"error_max_turns"` — agent hit `maxTurns` limit; maps to exit code 3
+- `"error_max_budget_usd"` — agent exceeded budget; maps to exit code 4
+- `"error_during_execution"` — runtime error; maps to exit code 2
+
+**Multi-turn coordination:** The async generator and the message consumer (`for await` loop) coordinate via a shared Promise. After each `ResultMessage` with `subtype === "success"`, the consumer consults the turn policy and resolves the Promise — the generator either yields the next `SDKUserMessage` or returns.
+
+**SDKUserMessage structure:** When yielding messages from the async generator, each message must conform to:
+```typescript
+{
+  type: "user",
+  session_id: string,            // "" works; SDK uses the active session
+  message: {
+    role: "user",
+    content: [{ type: "text", text: string }],
+  },
+  parent_tool_use_id: null,      // null for top-level turns
+}
+```
+
+**Nested sessions:** The Agent SDK spawns a Claude Code child process. Warren must ensure the `CLAUDECODE` environment variable is unset when launching, to avoid "nested session" errors when warren itself runs inside Claude Code.
 
 #### 2. Synthetic User
 
 An LLM-powered simulation of a human user. Two roles:
 
-**a) AskUserQuestion responder** — When the agent calls `AskUserQuestion`, Warren intercepts it via a `PreToolUse` hook and:
-1. Sends the question, options, full conversation context, and user persona to the oracle LLM
-2. The oracle selects an option (or provides free-text) consistent with the persona
-3. Returns via the hook output with `permissionDecision: "allow"` and `updatedInput` containing the answers
+**a) AskUserQuestion responder** — When the agent calls `AskUserQuestion`, Warren intercepts it via the `canUseTool` callback and:
+1. Extracts the question data (`input.questions` array with options, multiSelect flags)
+2. Sends the questions, conversation context, and user persona to the oracle LLM
+3. The oracle selects an option (or provides free-text) consistent with the persona
+4. Returns `{ behavior: "allow", updatedInput: { questions, answers } }` to the SDK
 
-**b) Turn policy** — After each agent response (when `stop_reason == "end_turn"`), Warren consults the oracle to decide:
+**b) Turn policy** — After each agent `ResultMessage` (when `subtype === "success"`), Warren consults the oracle to decide:
 - **Continue**: Send a follow-up message (oracle generates it)
 - **End**: The session is complete; no more messages
 
@@ -146,11 +169,13 @@ max_turns: 20                       # Max agent turns (default: 50)
 max_budget_usd: 1.00                # Max spend for this session (optional)
 system_prompt: |                    # Optional system prompt override
   You are a helpful assistant.
+effort: high                        # Thinking effort: low, medium, high, max (default: high)
 
 # --- Tools ---
-tools:                              # Tools the agent may use (maps to SDK `tools` param)
+tools:                              # Tools available to the agent (maps to SDK `tools` option)
   - Read
   - Write
+  - Edit
   - Bash
   - Glob
   - Grep
@@ -183,7 +208,7 @@ user:
     If asked to choose a topic, pick "ocean" or "sea".
   oracle_model: claude-haiku-4-5    # Model for synthetic user (default: claude-haiku-4-5)
   turn_policy: reactive             # "reactive" (LLM decides) or "single" (no follow-ups)
-  max_user_turns: 5                 # Max follow-up messages from synthetic user
+  max_user_turns: 5                 # Max follow-up messages (not counting initial prompt)
 
 # --- Agent SDK Options ---
 sdk:
@@ -198,8 +223,7 @@ sdk:
 
 # --- Output ---
 output:
-  events: warren-events.jsonl       # Warren events sidecar path (default: <cwd>/warren-events.jsonl)
-  result: result.txt                # Final result text (optional)
+  events: warren-events.jsonl       # Warren events sidecar path (default: <invocation-dir>/warren-events.jsonl)
 ```
 
 ### Config Validation
@@ -210,16 +234,28 @@ Session configs are validated via Zod schemas. Required fields:
 Everything else has sensible defaults:
 - `model`: system default
 - `max_turns`: 50
-- `tools`: `["Read", "Write", "Edit", "Bash", "Glob", "Grep"]`
+- `effort`: `"high"`
+- `tools`: `["Read", "Write", "Edit", "Bash", "Glob", "Grep", "AskUserQuestion"]`
 - `permission_mode`: `"bypassPermissions"` (with `allowDangerouslySkipPermissions: true`)
 - `user.turn_policy`: `"single"` (no follow-ups unless configured)
 - `user.oracle_model`: `"claude-haiku-4-5"`
-- `sdk.setting_sources`: `["project"]` when `project:` is present, `[]` otherwise
+- `sdk.setting_sources`: `["project"]` when `project:` is present, `[]` otherwise (explicit `sdk.setting_sources` in YAML always overrides the auto-set)
 
 Project-specific validation:
 - `project.skills`: each path must exist and contain a `SKILL.md` file
 - `project.claude_md`: optional string
 - `project.settings`: optional object (written as JSON to `.claude/settings.json`)
+
+### Project Scaffolding
+
+When `project:` is present, warren scaffolds a temporary project directory:
+
+- **Temp directory**: created via `fs.mkdtemp` in `os.tmpdir()` with prefix `warren-project-`
+- **Skill paths**: tilde (`~`) is expanded; relative paths are resolved from the config file's directory
+- **Symlinks**: each skill directory is symlinked (not copied) into `<tempdir>/.claude/skills/<name>/`
+- **Cleanup**: temp directory is removed after session ends, including on errors (via `finally` block)
+- **SIGKILL**: if warren is killed with SIGKILL, the temp directory is orphaned. This is unavoidable; callers can clean up `/tmp/warren-project-*` manually.
+- **`--keep-project`**: CLI flag to preserve the scaffolded directory for debugging. Path is printed to stderr.
 
 ### Config Merging
 
@@ -229,7 +265,7 @@ Multiple YAML files can be merged for composability:
 warren run base-config.yml scenario-override.yml
 ```
 
-Later files override earlier ones (deep merge on dicts, replace on scalars/lists). This enables patterns like:
+Later files override earlier ones (deep merge on objects, replace on scalars/arrays). For example, `tools: [Grep]` in an override replaces the entire base tools list — it does not append. This enables patterns like:
 - `base.yml` defines shared settings (model, tools, permissions)
 - `scenario.yml` overrides prompt, user persona, output paths
 
@@ -247,16 +283,17 @@ Usage:
 
 Run options:
   --output, -o PATH        Override warren events output path
-  --result PATH            Override result text output path
   --model MODEL            Override agent model
   --oracle-model MODEL     Override synthetic user model
   --prompt TEXT             Override prompt (for quick one-offs)
   --cwd PATH               Override working directory
   --max-turns N            Override max agent turns
+  --tools TOOLS            Override tools (comma-separated, e.g. Read,Glob,Grep)
+  --effort LEVEL           Override effort (low, medium, high, max)
   --timeout SECONDS        Overall session timeout (default: 300)
   --verbose, -v            Verbose logging to stderr
   --quiet, -q              Suppress progress output
-  --dry-run                Parse config and show what would run, without running
+  --keep-project           Don't delete scaffolded project dir (for debugging)
 ```
 
 ### Quick Invocation
@@ -284,18 +321,38 @@ This creates an ephemeral config with the specified options and runs it.
 
 ## Synthetic User: Detailed Design
 
-### Hook Routing
+### canUseTool Routing
 
-Warren registers a single `PreToolUse` hook with `matcher: "AskUserQuestion"`. This hook only fires for `AskUserQuestion` calls — all other tools (Read, Write, Bash, etc.) fall through to the configured `permission_mode` without any custom handling.
+Warren passes a `canUseTool` callback in the SDK `query()` options. This callback fires whenever the agent requests permission to use a tool, including `AskUserQuestion`. For AskUserQuestion calls, Warren intercepts and provides synthetic answers; for all other tools, it returns `{ behavior: "allow" }` (the actual permission enforcement is handled by the configured `permissionMode`).
+
+**SDK note:** `canUseTool` fires for AskUserQuestion regardless of `permissionMode`. Even with `bypassPermissions`, the callback executes and provides the answers. This is the officially documented mechanism for programmatic AskUserQuestion handling (see [Agent SDK docs](https://platform.claude.com/docs/en/agent-sdk/user-input#handle-clarifying-questions)).
+
+**Why not PreToolUse hooks?** Spike testing confirmed that `PreToolUse` hooks with `updatedInput` do **not** work for AskUserQuestion — the tool returns `is_error: true` because the hook's `updatedInput` doesn't bypass the internal prompting mechanism. The `canUseTool` callback is the correct approach.
+
+**Note:** `AskUserQuestion` must be in the `tools` list for the agent to use it. If a caller overrides `tools:` without including `AskUserQuestion`, the agent cannot call it and the callback never fires — effectively disabling synthetic user interaction.
 
 ### AskUserQuestion Handling
 
-When the agent calls `AskUserQuestion`, the `PreToolUse` hook fires. Warren:
+When the agent calls `AskUserQuestion`, the `canUseTool` callback fires. Warren:
 
-1. **Extracts the question data**: `tool_input.questions` array with options, multiSelect flags
+1. **Extracts the question data** from the `input` argument:
+   ```typescript
+   // AskUserQuestion input schema (confirmed via spike)
+   {
+     questions: [{
+       question: string,       // "What programming language do you prefer?"
+       header: string,         // Short label, max 12 chars
+       options: [{
+         label: string,        // "Python"
+         description: string,  // "A versatile language..."
+       }],                     // 2-4 options
+       multiSelect: boolean,   // Whether multiple selections allowed
+     }]                        // 1-4 questions
+   }
+   ```
 2. **Builds an oracle prompt** containing:
    - The user persona from session config
-   - The conversation so far (summarized if long)
+   - The conversation so far (initial prompt + last 10 turns; truncated for long sessions)
    - The specific questions and options
    - Instruction to respond in structured JSON
 3. **Calls the oracle LLM** with structured output to get:
@@ -308,24 +365,27 @@ When the agent calls `AskUserQuestion`, the `PreToolUse` hook fires. Warren:
      "reasoning": "The user persona prefers simple output..."
    }
    ```
-4. **Returns to the Agent SDK** via the hook output:
+4. **Returns to the Agent SDK** via the `canUseTool` return value:
    ```typescript
-   {
-     permissionDecision: "allow",
+   return {
+     behavior: "allow",
      updatedInput: {
-       questions: originalQuestions,
+       questions: input.questions,  // Pass through original questions
        answers: oracleResponse.answers
      }
-   }
+   };
    ```
+   For multi-select questions, multiple labels are joined with `", "`. Free-text answers are used directly as the value.
+
+The SDK produces a successful tool result: `"User has answered your questions: \"<question>\"=\"<answer>\". You can now continue with the user's answers in mind."`
 
 ### Turn Policy (Reactive Multi-Turn)
 
-After each agent response where `stop_reason == "end_turn"`, Warren:
+After each `ResultMessage` where `subtype === "success"`, Warren consults the turn policy. Other subtypes (`"error_max_turns"`, `"error_during_execution"`, `"error_max_budget_usd"`) cause the session to end immediately with the appropriate exit code. Warren:
 
 1. **Builds a turn-policy prompt** containing:
    - The user persona
-   - The full conversation so far
+   - The conversation so far (initial prompt + last 10 turns; truncated for long sessions)
    - The original task/prompt
    - Instruction: "Should the user send a follow-up, or is the task complete?"
 2. **Calls the oracle LLM** with structured output:
@@ -390,13 +450,15 @@ Warren produces two artifacts per session:
 
 ### 1. SDK Session File (conversation record)
 
-Written automatically by the Agent SDK to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Contains the full conversation: assistant messages, user messages, tool calls, tool results, thinking blocks, etc. in Claude Code's native JSONL format.
+Written automatically by the Agent SDK to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Contains the full conversation: assistant messages, user messages, tool calls, tool results, thinking blocks, etc. in Claude Code's native JSONL format. The `<encoded-cwd>` is the agent's working directory with `/` replaced by `-`.
+
+**Note (managed mode):** When `project:` is present, the agent's cwd is the scaffolded temp directory (e.g., `/tmp/warren-project-abc123`), so the session file path is derived from the temp dir. After cleanup, the session file remains at its encoded path. The `session_start` event's `sdk_session_path` field provides the exact path for correlation.
 
 Queryable with standard jq filters against the native JSONL format.
 
 ### 2. Warren Events File (sidecar)
 
-Written by warren to the path specified by `--output` (default: `<cwd>/warren-events.jsonl`). Contains only warren-specific events — decisions the oracle made, not the conversation itself.
+Written by warren to the path specified by `--output` (default: `<invocation-dir>/warren-events.jsonl`, where invocation-dir is `process.cwd()` — not the agent's `cwd`). Contains only warren-specific events — decisions the oracle made, not the conversation itself.
 
 Each line is a JSON object with a common envelope:
 
@@ -470,7 +532,8 @@ done
 
 | Error | Recovery |
 |-------|----------|
-| Oracle LLM call fails | Retry once; if still fails, use a fallback (select first option for AskUserQuestion, "end" for turn policy) |
+| Oracle LLM call fails | Retry once; if still fails, write `error` event and end session (exit 2) |
+| Oracle returns malformed JSON | Retry once; if still malformed, write `error` event and end session (exit 2) |
 | Agent SDK connection drops | Retry with exponential backoff (max 3 attempts) |
 | Tool execution fails | Let the agent handle it (tool errors are normal agent flow) |
 | AskUserQuestion in subagent | Log warning; Agent SDK doesn't support this — deny gracefully |
@@ -579,7 +642,7 @@ The TypeScript SDK has a preview V2 API (`unstable_v2_createSession()` / `unstab
 **Chosen: Agent SDK.** Trade-offs:
 
 - **Pro**: Built-in tool execution (Read, Write, Bash, etc.) without reimplementing
-- **Pro**: `canUseTool` callback is exactly the hook needed for AskUserQuestion
+- **Pro**: `canUseTool` callback is the official mechanism for intercepting AskUserQuestion
 - **Pro**: Session management, context handling, and agent loop handled by SDK
 - **Con**: Requires the Claude Code CLI to be installed (Agent SDK wraps it)
 - **Con**: Less control over the raw message loop than building from scratch
@@ -631,7 +694,7 @@ The `session_start` event in the sidecar includes `sdk_session_path` for easy co
 **Chosen: `bypassPermissions` default.** Trade-offs:
 
 - **Pro**: Guarantees no tool call ever blocks on a permission prompt — essential for headless use
-- **Pro**: Simplest model; only the `PreToolUse` hook for AskUserQuestion adds custom behavior
+- **Pro**: Simplest model; only the `canUseTool` callback for AskUserQuestion adds custom behavior
 - **Con**: Requires `allowDangerouslySkipPermissions: true` (intentionally friction-ful)
 - **Con**: Can't test permission-related behaviors
 - **Con**: Less safe for non-testing use cases
