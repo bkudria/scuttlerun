@@ -95,7 +95,8 @@ The core orchestrator. Responsibilities:
 - Use Promise/resolver coordination: on `ResultMessage`, consult the Synthetic User, then resolve the generator's Promise to yield a follow-up or return to end the session
 - Record every event to the transcript
 - Enforce turn limits and budget constraints
-- Handle errors and timeouts gracefully
+- Handle errors and timeouts gracefully (timeout via SDK `abortController`)
+- Call `query.close()` on session end, error, or timeout to clean up the SDK child process
 - Clean up scaffolded temp directory after session ends (or on error)
 
 **Session initialization:** The SDK emits a `SystemMessage` (subtype: `"init"`) at the start of each query turn, carrying the `session_id`. Warren captures the first one to populate the `session_start` event. Note: subsequent turns also emit `init` messages (same `session_id`).
@@ -121,7 +122,13 @@ The core orchestrator. Responsibilities:
 }
 ```
 
-**Nested sessions:** The Agent SDK spawns a Claude Code child process. Warren must ensure the `CLAUDECODE` environment variable is unset when launching, to avoid "nested session" errors when warren itself runs inside Claude Code.
+**Nested sessions:** The Agent SDK spawns a Claude Code child process. Warren must call `delete process.env.CLAUDECODE` before calling `query()`, to avoid "nested session" errors when warren itself runs inside Claude Code.
+
+**Timeout implementation:** Warren creates an `AbortController` and passes it via the SDK's `abortController` option. A `setTimeout` triggers `controller.abort()` after `--timeout` seconds. On abort, warren writes a `session_end` event with `stop_reason: "timeout"` and exits with code 5.
+
+**Cleanup:** On session completion (normal or error), warren calls `query.close()` to terminate the SDK's child process, then removes the scaffolded temp directory (if applicable). The `finally` block ensures cleanup runs even on unhandled errors.
+
+**Agent stderr:** The SDK accepts a `stderr: (data: Buffer) => void` callback. Warren captures agent stderr lines and writes them as `agent_stderr` events to the events sidecar. This provides observability into the agent's internal output without polluting warren's own stderr.
 
 #### 2. Synthetic User
 
@@ -144,12 +151,14 @@ The turn policy receives the full conversation so far plus the user persona, and
 A thin wrapper around the Anthropic Messages API (not the Agent SDK) that:
 - Uses `claude-haiku-4-5` by default (configurable)
 - Has a focused system prompt depending on the role (question answering vs. turn policy)
-- Returns structured output (JSON) for reliable parsing
+- Uses `output_config.format` with a JSON schema (Zod-derived) for guaranteed structured output — no malformed JSON is possible
 - Is stateless — each call gets the full relevant context
 
 #### 4. Event Recorder
 
-Warren relies on the Agent SDK's built-in session persistence for the full conversation record (written automatically to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`). Warren writes a lightweight **events sidecar** (JSONL) containing only warren-specific decisions: oracle responses, turn policy decisions, and session metadata. This avoids reimplementing conversation serialization and leverages existing session-transcripts tooling.
+Warren relies on the Agent SDK's built-in session persistence for the full conversation record (written automatically to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`). Warren writes a lightweight **events sidecar** (JSONL) containing only warren-specific decisions: oracle responses, turn policy decisions, agent stderr, and session metadata. This avoids reimplementing conversation serialization and leverages existing session-transcripts tooling.
+
+**Flushing:** Events are written and fsynced to disk immediately (one write per event). This ensures events survive crashes and SIGTERM. The overhead is negligible since a typical session produces fewer than 20 events.
 
 ---
 
@@ -170,6 +179,10 @@ max_budget_usd: 1.00                # Max spend for this session (optional)
 system_prompt: |                    # Optional system prompt override
   You are a helpful assistant.
 effort: high                        # Thinking effort: low, medium, high, max (default: high)
+                                    # Note: `effort` and `sdk.thinking` are orthogonal.
+                                    # `effort` maps to SDK `effort` (controls depth/token spend).
+                                    # `sdk.thinking` maps to SDK `thinking` (controls mechanism).
+                                    # Both are forwarded independently to the Agent SDK.
 
 # --- Tools ---
 tools:                              # Tools available to the agent (maps to SDK `tools` option)
@@ -191,6 +204,7 @@ project:
   skills:                           # Optional: symlinked into <tempdir>/.claude/skills/
     - ~/.claude/skills/haiku-writer
   settings: {}                      # Optional: written to <tempdir>/.claude/settings.json
+  git_init: false                   # Optional: run `git init` in scaffolded dir (default: false)
 
 # --- Working Directory ---
 # Raw mode: when `project:` is absent, this is the agent's cwd.
@@ -245,6 +259,7 @@ Project-specific validation:
 - `project.skills`: each path must exist and contain a `SKILL.md` file
 - `project.claude_md`: optional string
 - `project.settings`: optional object (written as JSON to `.claude/settings.json`)
+- `project.git_init`: optional boolean (default: `false`)
 
 ### Project Scaffolding
 
@@ -253,6 +268,7 @@ When `project:` is present, warren scaffolds a temporary project directory:
 - **Temp directory**: created via `fs.mkdtemp` in `os.tmpdir()` with prefix `warren-project-`
 - **Skill paths**: tilde (`~`) is expanded; relative paths are resolved from the config file's directory
 - **Symlinks**: each skill directory is symlinked (not copied) into `<tempdir>/.claude/skills/<name>/`
+- **Git init**: when `project.git_init: true`, warren runs `git init` in the scaffolded directory. Default is `false`. Some agent behaviors (e.g., `Bash` with git commands) may require a git repo; callers should enable this when needed.
 - **Cleanup**: temp directory is removed after session ends, including on errors (via `finally` block)
 - **SIGKILL**: if warren is killed with SIGKILL, the temp directory is orphaned. This is unavoidable; callers can clean up `/tmp/warren-project-*` manually.
 - **`--keep-project`**: CLI flag to preserve the scaffolded directory for debugging. Path is printed to stderr.
@@ -323,7 +339,24 @@ This creates an ephemeral config with the specified options and runs it.
 
 ### canUseTool Routing
 
-Warren passes a `canUseTool` callback in the SDK `query()` options. This callback fires whenever the agent requests permission to use a tool, including `AskUserQuestion`. For AskUserQuestion calls, Warren intercepts and provides synthetic answers; for all other tools, it returns `{ behavior: "allow" }` (the actual permission enforcement is handled by the configured `permissionMode`).
+Warren passes a `canUseTool` callback in the SDK `query()` options. The full SDK signature is:
+
+```typescript
+canUseTool: async (
+  toolName: string,
+  input: Record<string, unknown>,
+  options: {
+    signal: AbortSignal,
+    toolUseID: string,       // Correlates with tool call in SDK session file
+    agentID?: string,        // Identifies main agent vs subagent
+    suggestions?: PermissionUpdate[],
+    blockedPath?: string,
+    decisionReason?: string,
+  }
+) => Promise<PermissionResult>
+```
+
+This callback fires whenever the agent requests permission to use a tool, including `AskUserQuestion`. For AskUserQuestion calls, Warren intercepts and provides synthetic answers; for all other tools, it returns `{ behavior: "allow" }` (the actual permission enforcement is handled by the configured `permissionMode`). Warren records `toolUseID` in the `ask_user_question` event for correlation with the SDK session file.
 
 **SDK note:** `canUseTool` fires for AskUserQuestion regardless of `permissionMode`. Even with `bypassPermissions`, the callback executes and provides the answers. This is the officially documented mechanism for programmatic AskUserQuestion handling (see [Agent SDK docs](https://platform.claude.com/docs/en/agent-sdk/user-input#handle-clarifying-questions)).
 
@@ -352,10 +385,9 @@ When the agent calls `AskUserQuestion`, the `canUseTool` callback fires. Warren:
    ```
 2. **Builds an oracle prompt** containing:
    - The user persona from session config
-   - The conversation so far (initial prompt + last 10 turns; truncated for long sessions)
+   - The conversation so far (initial prompt + last 10 user/assistant pairs; truncated for long sessions)
    - The specific questions and options
-   - Instruction to respond in structured JSON
-3. **Calls the oracle LLM** with structured output to get:
+3. **Calls the oracle LLM** with `output_config.format` (JSON schema) to get:
    ```json
    {
      "answers": {
@@ -385,10 +417,10 @@ After each `ResultMessage` where `subtype === "success"`, Warren consults the tu
 
 1. **Builds a turn-policy prompt** containing:
    - The user persona
-   - The conversation so far (initial prompt + last 10 turns; truncated for long sessions)
+   - The conversation so far (initial prompt + last 10 user/assistant pairs; truncated for long sessions)
    - The original task/prompt
    - Instruction: "Should the user send a follow-up, or is the task complete?"
-2. **Calls the oracle LLM** with structured output:
+2. **Calls the oracle LLM** with `output_config.format` (JSON schema):
    ```json
    {
      "decision": "continue",
@@ -416,8 +448,16 @@ the agent's clarifying questions consistent with the following persona:
 {persona}
 
 Given the conversation so far and the questions below, select the most
-appropriate answers. Respond in JSON with an "answers" object mapping
-each question to a selected option label (or free text if no option fits).
+appropriate answers. For each question, provide a selected option label
+(or free text if no option fits) and brief reasoning.
+```
+
+The oracle call uses `output_config.format` with a JSON schema enforcing:
+```json
+{
+  "answers": { "<question>": "<selected option label or free text>" },
+  "reasoning": "<brief explanation>"
+}
 ```
 
 **For turn policy:**
@@ -434,8 +474,15 @@ Review the conversation so far. Decide whether the user would:
 2. End the session (task is done, or no useful follow-up)
 
 If continuing, write the follow-up message the user would send.
-Respond in JSON with "decision" ("continue" or "end") and optionally
-"message" (the follow-up text).
+```
+
+The oracle call uses `output_config.format` with a JSON schema enforcing:
+```json
+{
+  "decision": "continue | end",
+  "message": "<follow-up text, required when decision is continue>",
+  "reasoning": "<brief explanation>"
+}
 ```
 
 ### Single-Turn Mode
@@ -476,10 +523,11 @@ Each line is a JSON object with a common envelope:
 | Type | Description | Data Fields |
 |------|-------------|-------------|
 | `session_start` | Session initialized | `config` (sanitized), `warren_version`, `sdk_session_path`, `scaffolded_project_path` (if managed) |
-| `ask_user_question` | AskUserQuestion intercepted by oracle | `questions`, `oracle_response`, `oracle_model`, `oracle_usage` |
+| `ask_user_question` | AskUserQuestion intercepted by oracle | `tool_use_id`, `questions`, `oracle_response`, `oracle_model`, `oracle_usage` |
 | `turn_policy` | Synthetic user turn decision | `decision`, `message`, `reasoning`, `oracle_model`, `oracle_usage` |
+| `agent_stderr` | Stderr output from SDK child process | `text` |
 | `error` | Warren-level error | `error_type`, `message`, `recoverable` |
-| `session_end` | Session completed (from SDK `ResultMessage`) | `stop_reason`, `subtype`, `is_error`, `total_turns`, `total_cost_usd`, `duration_ms`, `result`, `oracle_usage_total` |
+| `session_end` | Session completed (from SDK `ResultMessage`) | `stop_reason`, `subtype`, `is_error`, `total_turns`, `total_cost_usd`, `duration_ms`, `oracle_usage_total` |
 
 #### Oracle Usage Tracking
 
@@ -533,7 +581,7 @@ done
 | Error | Recovery |
 |-------|----------|
 | Oracle LLM call fails | Retry once; if still fails, write `error` event and end session (exit 2) |
-| Oracle returns malformed JSON | Retry once; if still malformed, write `error` event and end session (exit 2) |
+| Oracle returns refusal (`stop_reason: "refusal"`) | Write `error` event with refusal detail and end session (exit 2). Rare — the oracle prompts are benign. |
 | Agent SDK connection drops | Retry with exponential backoff (max 3 attempts) |
 | Tool execution fails | Let the agent handle it (tool errors are normal agent flow) |
 | AskUserQuestion in subagent | Log warning; Agent SDK doesn't support this — deny gracefully |
@@ -614,6 +662,9 @@ warren/
 ## Future Considerations
 
 These are explicitly **out of scope for v1** but noted for future work:
+
+### `disallowedTools` Support
+The Agent SDK supports `disallowedTools` — a list of tools that are blocked even under `bypassPermissions`. Useful for eval safety (e.g., allow bypass but still block `Bash`). Currently callers control available tools via the `tools:` list; `disallowedTools` would add a belt-and-suspenders option.
 
 ### Parallel Session Execution
 Run multiple sessions concurrently. The current design is single-session; callers orchestrate batches externally.
