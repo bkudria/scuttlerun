@@ -108,11 +108,13 @@ The core orchestrator. Responsibilities:
 
 **Multi-turn coordination:** The async generator and the message consumer (`for await` loop) coordinate via a shared Promise. After each `ResultMessage` with `subtype === "success"`, the consumer consults the turn policy and resolves the Promise — the generator either yields the next `SDKUserMessage` or returns.
 
+**Conversation buffer:** Warren maintains an in-memory array of conversation entries, appending each `SDKAssistantMessage` and `SDKUserMessage` as they stream through the `for await` loop. When building oracle context (for AskUserQuestion or turn-policy prompts), assistant messages are filtered to keep only `TextBlock` content — `ToolUseBlock`, `ThinkingBlock`, and other block types are stripped. Assistant messages with no remaining text blocks after filtering are omitted entirely. The buffer is truncated to the last 10 user/assistant pairs before inclusion in oracle prompts.
+
 **SDKUserMessage structure:** When yielding messages from the async generator, each message must conform to:
 ```typescript
 {
   type: "user",
-  session_id: string,            // "" works; SDK uses the active session
+  session_id: string,            // Use the session_id captured from the init SystemMessage
   message: {
     role: "user",
     content: [{ type: "text", text: string }],
@@ -127,7 +129,7 @@ The core orchestrator. Responsibilities:
 
 **Cleanup:** On session completion (normal or error), warren calls `query.close()` to terminate the SDK's child process, then removes the scaffolded temp directory (if applicable). The `finally` block ensures cleanup runs even on unhandled errors.
 
-**Agent stderr:** The SDK accepts a `stderr: (data: Buffer) => void` callback. Warren line-buffers the incoming chunks and periodically flushes accumulated lines as a single `agent_stderr` event (every 500ms or on session end, whichever comes first). Unlike oracle events, stderr events are written without fsync — they are low-value diagnostic data and losing the last batch on a crash is acceptable. This avoids the pathological case of hundreds of fsynced writes for chatty agent output.
+**Agent stderr:** The SDK accepts a `stderr: (data: string) => void` callback. Warren accumulates all stderr output in an in-memory buffer and writes a single `agent_stderr` event at session end. Stderr is low-value diagnostic data — losing it on a crash is acceptable. For live stderr during development, `--verbose` tees it to warren's own stderr.
 
 #### 2. Synthetic User
 
@@ -150,7 +152,7 @@ The turn policy receives the full conversation so far plus the user persona, and
 A thin wrapper around the Anthropic Messages API (not the Agent SDK) that:
 - Uses `claude-haiku-4-5` by default (configurable)
 - Has a focused system prompt depending on the role (question answering vs. turn policy)
-- Uses `output_config.format` with a JSON schema (Zod-derived) for guaranteed structured output — no malformed JSON is possible
+- Uses `client.messages.parse()` from `@anthropic-ai/sdk` with Zod schemas for type-safe structured output — the SDK validates responses against the schema automatically and returns typed `parsed_output`
 - Is stateless — each call gets the full relevant context
 
 #### 4. Event Recorder
@@ -192,6 +194,8 @@ tools:                              # Tools available to the agent (maps to SDK 
   - Glob
   - Grep
   - AskUserQuestion                 # Warren handles this via synthetic user
+disallowed_tools:                   # Tools to always deny, even under bypassPermissions (maps to SDK `disallowedTools`)
+  - Agent                           # Example: block subagent spawning
 
 # --- Project Configuration ---
 # When present, warren scaffolds a temporary project directory that becomes
@@ -284,6 +288,19 @@ Later files override earlier ones (deep merge on objects, replace on scalars/arr
 - `base.yml` defines shared settings (model, tools, permissions)
 - `scenario.yml` overrides prompt, user persona, output paths
 
+### YAML-to-SDK Option Mapping
+
+Most YAML fields map directly to SDK options (e.g., `model` → `model`, `max_turns` → `maxTurns`). The following have non-obvious semantics:
+
+| YAML Field | SDK Option | Notes |
+|------------|-----------|-------|
+| `tools` | `tools` | Restricts which tools are *available* — the agent cannot see unlisted tools. This is NOT `allowedTools` (which pre-approves tools but doesn't restrict). |
+| `disallowed_tools` | `disallowedTools` | Always deny these tools, even under `bypassPermissions`. Overrides everything. |
+| `permission_mode` | `permissionMode` + `allowDangerouslySkipPermissions` | When `permission_mode: bypassPermissions`, warren also sets `allowDangerouslySkipPermissions: true`. |
+| `sdk.setting_sources` | `settingSources` | Controls which filesystem settings to load. `["project"]` means "load CLAUDE.md from cwd." Auto-set to `["project"]` when `project:` is present (cwd is the scaffolded temp dir). |
+| `sdk.thinking` | `thinking` | Discriminated union: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens?: number }`, or `{ type: "disabled" }`. |
+| `effort` | `effort` | Top-level in both YAML and SDK. Orthogonal to `thinking`. |
+
 ---
 
 ## CLI Interface
@@ -293,7 +310,6 @@ warren — Multi-turn Claude session driver
 
 Usage:
   warren run <session.yml> [<override.yml>...] [options]
-  warren validate <session.yml>
   warren version
 
 Run options:
@@ -310,16 +326,6 @@ Run options:
   --quiet, -q              Suppress progress output
   --keep-project           Don't delete scaffolded project dir (for debugging)
 ```
-
-### Quick Invocation
-
-For simple one-off sessions without a YAML file:
-
-```bash
-warren run --prompt "Explain what this code does" --cwd ./my-project --tools Read,Glob,Grep
-```
-
-This creates an ephemeral config with the specified options and runs it.
 
 ### Exit Codes
 
@@ -526,7 +532,7 @@ Each line is a JSON object with a common envelope:
 | `turn_policy` | Synthetic user turn decision | `decision`, `message`, `reasoning`, `oracle_model`, `oracle_usage` |
 | `agent_stderr` | Batched stderr output from SDK child process | `text` (accumulated lines, newline-separated) |
 | `error` | Warren-level error | `error_type`, `message`, `recoverable` |
-| `session_end` | Session completed (from SDK `ResultMessage`) | `stop_reason`, `subtype`, `is_error`, `total_turns`, `total_cost_usd`, `duration_ms`, `oracle_usage_total` |
+| `session_end` | Session completed (from SDK `ResultMessage`) | `stop_reason`, `subtype`, `is_error`, `total_turns`, `total_cost_usd`, `duration_ms` (from SDK), `oracle_usage_total` |
 
 #### Oracle Usage Tracking
 
@@ -661,9 +667,6 @@ warren/
 ## Future Considerations
 
 These are explicitly **out of scope for v1** but noted for future work:
-
-### `disallowedTools` Support
-The Agent SDK supports `disallowedTools` — a list of tools that are blocked even under `bypassPermissions`. Useful for eval safety (e.g., allow bypass but still block `Bash`). Currently callers control available tools via the `tools:` list; `disallowedTools` would add a belt-and-suspenders option.
 
 ### Parallel Session Execution
 Run multiple sessions concurrently. The current design is single-session; callers orchestrate batches externally.
