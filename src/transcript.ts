@@ -1,3 +1,5 @@
+import { stringify } from "yaml";
+
 export interface HeaderOptions {
   session: string;
   configPaths: string[];
@@ -81,8 +83,8 @@ export function writeTool(name: string, input: unknown): void {
       write(`    pattern: ${singleQuote(String(inp.pattern ?? ""))}\n`);
       break;
     default:
-      write(`    input: |\n`);
-      write(blockLines(JSON.stringify(inp, null, 2), 6));
+      write(`    input:\n`);
+      write(blockLines(stringify(inp, { indent: 2 }), 6));
       break;
   }
   write("\n");

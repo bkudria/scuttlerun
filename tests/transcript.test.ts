@@ -142,12 +142,11 @@ describe("transcript", () => {
       expect(parsed.conversation[0].pattern).toBe("function\\s+\\w+");
     });
 
-    it("writes unknown tools with input as block scalar JSON", () => {
+    it("writes unknown tools with input as YAML mapping", () => {
       writeTool("Agent", { prompt: "do something" });
       const parsed = parseYaml("conversation:\n" + output);
       expect(parsed.conversation[0].tool).toBe("Agent");
-      const inputParsed = JSON.parse(parsed.conversation[0].input);
-      expect(inputParsed.prompt).toBe("do something");
+      expect(parsed.conversation[0].input.prompt).toBe("do something");
     });
   });
 
