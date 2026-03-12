@@ -522,6 +522,8 @@ describe("runSession", () => {
           content: [
             { type: "text", text: "I'll write a file." },
             { type: "tool_use", id: "tu-1", name: "Write", input: { file_path: "/tmp/ocean.txt", content: "waves" } },
+            { type: "tool_use", id: "tu-2", name: "Edit", input: { file_path: "/tmp/shore.txt", old_string: "a", new_string: "b" } },
+            { type: "tool_use", id: "tu-3", name: "Read", input: { file_path: "/tmp/sky.txt" } },
           ],
         },
       },
@@ -544,7 +546,14 @@ describe("runSession", () => {
 
     expect(stdoutOutput).toContain("- tool: Write");
     expect(stdoutOutput).toContain("path: /tmp/ocean.txt");
-    // Footer should count the tool call
-    expect(stdoutOutput).toContain("tool_calls: 1");
+    // Footer should count all tool calls
+    expect(stdoutOutput).toContain("tool_calls: 3");
+    // Footer should list files by operation
+    expect(stdoutOutput).toContain("files_written:");
+    expect(stdoutOutput).toContain("  - /tmp/ocean.txt");
+    expect(stdoutOutput).toContain("files_edited:");
+    expect(stdoutOutput).toContain("  - /tmp/shore.txt");
+    expect(stdoutOutput).toContain("files_read:");
+    expect(stdoutOutput).toContain("  - /tmp/sky.txt");
   });
 });

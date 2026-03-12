@@ -210,5 +210,48 @@ describe("transcript", () => {
       });
       expect(output).not.toContain("cost_usd");
     });
+
+    it("writes file lists when provided", () => {
+      writeFooter({
+        turns: 1,
+        toolCalls: 3,
+        durationMs: 5000,
+        totalCostUsd: 0.01,
+        filesWritten: ["/tmp/foo.txt"],
+        filesEdited: ["/tmp/bar.ts"],
+        filesRead: ["/tmp/baz.md", "/tmp/qux.ts"],
+      });
+      const parsed = parseYaml(output);
+      expect(parsed.files_written).toEqual(["/tmp/foo.txt"]);
+      expect(parsed.files_edited).toEqual(["/tmp/bar.ts"]);
+      expect(parsed.files_read).toEqual(["/tmp/baz.md", "/tmp/qux.ts"]);
+    });
+
+    it("omits file lists when empty", () => {
+      writeFooter({
+        turns: 1,
+        toolCalls: 0,
+        durationMs: 5000,
+        totalCostUsd: 0,
+        filesWritten: [],
+        filesEdited: [],
+        filesRead: [],
+      });
+      expect(output).not.toContain("files_written");
+      expect(output).not.toContain("files_edited");
+      expect(output).not.toContain("files_read");
+    });
+
+    it("omits file lists when not provided", () => {
+      writeFooter({
+        turns: 1,
+        toolCalls: 0,
+        durationMs: 5000,
+        totalCostUsd: 0,
+      });
+      expect(output).not.toContain("files_written");
+      expect(output).not.toContain("files_edited");
+      expect(output).not.toContain("files_read");
+    });
   });
 });

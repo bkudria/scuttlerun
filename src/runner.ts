@@ -201,6 +201,9 @@ export async function runSession(
     const startTime = Date.now();
     let resultNumTurns = 0;
     let resultTotalCostUsd = 0;
+    const filesWritten = new Set<string>();
+    const filesEdited = new Set<string>();
+    const filesRead = new Set<string>();
 
     // Process messages — race each iteration against the abort signal
     const iterator = (queryHandle as AsyncIterable<Record<string, unknown>>)[Symbol.asyncIterator]();
@@ -248,6 +251,10 @@ export async function runSession(
             } else if (block.type === "tool_use" && block.name) {
               writeTool(block.name, block.input);
               toolCallCount++;
+              const inp = block.input as Record<string, unknown>;
+              if (block.name === "Write" && typeof inp.file_path === "string") filesWritten.add(inp.file_path);
+              else if (block.name === "Edit" && typeof inp.file_path === "string") filesEdited.add(inp.file_path);
+              else if (block.name === "Read" && typeof inp.file_path === "string") filesRead.add(inp.file_path);
             }
           }
           if (textParts.length > 0 && syntheticUser) {
@@ -301,6 +308,9 @@ export async function runSession(
       toolCalls: toolCallCount,
       durationMs: duration,
       totalCostUsd: resultTotalCostUsd,
+      filesWritten: Array.from(filesWritten),
+      filesEdited: Array.from(filesEdited),
+      filesRead: Array.from(filesRead),
     });
 
     return { exitCode, sessionId };

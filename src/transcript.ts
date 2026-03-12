@@ -12,6 +12,9 @@ export interface FooterStats {
   toolCalls: number;
   durationMs: number;
   totalCostUsd: number;
+  filesWritten?: string[];
+  filesEdited?: string[];
+  filesRead?: string[];
 }
 
 function write(text: string): void {
@@ -127,5 +130,17 @@ export function writeFooter(stats: FooterStats): void {
   write(`duration_s: ${durationSec}\n`);
   if (stats.totalCostUsd > 0) {
     write(`cost_usd: ${stats.totalCostUsd.toFixed(2)}\n`);
+  }
+  if (stats.filesWritten && stats.filesWritten.length > 0) {
+    write(`files_written:\n`);
+    for (const f of stats.filesWritten) write(`  - ${f}\n`);
+  }
+  if (stats.filesEdited && stats.filesEdited.length > 0) {
+    write(`files_edited:\n`);
+    for (const f of stats.filesEdited) write(`  - ${f}\n`);
+  }
+  if (stats.filesRead && stats.filesRead.length > 0) {
+    write(`files_read:\n`);
+    for (const f of stats.filesRead) write(`  - ${f}\n`);
   }
 }
