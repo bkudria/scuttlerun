@@ -124,44 +124,6 @@ export function mergeRawConfigs(
   );
 }
 
-export function mergeConfigs(...configs: SessionConfig[]): SessionConfig {
-  if (configs.length === 0) {
-    throw new Error("At least one config is required");
-  }
-  if (configs.length === 1) {
-    return configs[0];
-  }
-
-  return configs.reduce((acc, override) => deepMerge(acc, override));
-}
-
-function deepMerge(base: SessionConfig, override: SessionConfig): SessionConfig {
-  const result: Record<string, unknown> = { ...base };
-
-  for (const [key, value] of Object.entries(override)) {
-    const baseValue = (base as unknown as Record<string, unknown>)[key];
-
-    if (Array.isArray(value)) {
-      result[key] = value;
-    } else if (
-      value !== null &&
-      typeof value === "object" &&
-      baseValue !== null &&
-      typeof baseValue === "object" &&
-      !Array.isArray(baseValue)
-    ) {
-      result[key] = deepMergeObjects(
-        baseValue as Record<string, unknown>,
-        value as Record<string, unknown>,
-      );
-    } else {
-      result[key] = value;
-    }
-  }
-
-  return result as unknown as SessionConfig;
-}
-
 function deepMergeObjects(
   base: Record<string, unknown>,
   override: Record<string, unknown>,

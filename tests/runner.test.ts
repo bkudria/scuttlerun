@@ -345,7 +345,7 @@ describe("runSession", () => {
     expect(capturedCanUseTool).toBeDefined();
 
     // Non-AskUserQuestion tools should be allowed
-    const allowResult = await capturedCanUseTool!("Read", {}, { toolUseID: "t1" });
+    const allowResult = await capturedCanUseTool!("Read", {});
     expect(allowResult.behavior).toBe("allow");
   });
 
@@ -444,6 +444,7 @@ describe("runSession", () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
     await runSession(minConfig());
 
+    expect(stdoutOutput).toContain("[Tool]");
     expect(stdoutOutput).toContain("⚙ Write /tmp/ocean.txt");
     // Summary should count the tool call
     expect(stdoutOutput).toContain("Tool calls: 1");

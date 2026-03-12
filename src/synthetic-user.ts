@@ -50,7 +50,6 @@ export class SyntheticUser {
 
   async handleAskUserQuestion(
     input: { questions: QuestionInput[] },
-    toolUseId: string,
   ): Promise<CanUseToolResult> {
     const context = this.getRecentContext();
 

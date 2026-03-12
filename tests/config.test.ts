@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   parseSessionConfig,
-  mergeConfigs,
 } from "../src/config.js";
 
 describe("parseSessionConfig", () => {
@@ -150,51 +149,5 @@ describe("parseSessionConfig", () => {
       sdk: { thinking: { type: "disabled" } },
     });
     expect(disabled.sdk.thinking).toEqual({ type: "disabled" });
-  });
-});
-
-describe("mergeConfigs", () => {
-  it("later config overrides scalars", () => {
-    const base = parseSessionConfig({ prompt: "base", max_turns: 10 });
-    const override = parseSessionConfig({ prompt: "override", max_turns: 20 });
-    const merged = mergeConfigs(base, override);
-    expect(merged.prompt).toBe("override");
-    expect(merged.max_turns).toBe(20);
-  });
-
-  it("later config replaces arrays entirely", () => {
-    const base = parseSessionConfig({
-      prompt: "base",
-      tools: ["Read", "Write", "Grep"],
-    });
-    const override = parseSessionConfig({
-      prompt: "override",
-      tools: ["Grep"],
-    });
-    const merged = mergeConfigs(base, override);
-    expect(merged.tools).toEqual(["Grep"]);
-  });
-
-  it("deep merges objects", () => {
-    const base = parseSessionConfig({
-      prompt: "base",
-      user: { persona: "base persona", turn_policy: "single" },
-    });
-    const override = parseSessionConfig({
-      prompt: "override",
-      user: { persona: "override persona" },
-    });
-    const merged = mergeConfigs(base, override);
-    expect(merged.user.persona).toBe("override persona");
-    expect(merged.user.turn_policy).toBe("single"); // preserved from base
-  });
-
-  it("merges multiple configs in order", () => {
-    const a = parseSessionConfig({ prompt: "a", max_turns: 10 });
-    const b = parseSessionConfig({ prompt: "b" });
-    const c = parseSessionConfig({ prompt: "c", max_turns: 30 });
-    const merged = mergeConfigs(a, b, c);
-    expect(merged.prompt).toBe("c");
-    expect(merged.max_turns).toBe(30);
   });
 });

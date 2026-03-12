@@ -50,7 +50,6 @@ describe("SyntheticUser", () => {
             },
           ],
         },
-        "tool-use-123",
       );
 
       expect(result.behavior).toBe("allow");

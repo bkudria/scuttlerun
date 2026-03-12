@@ -16,7 +16,6 @@ interface CliOverrides {
   effort?: string;
   timeout?: number;
   verbose?: boolean;
-  quiet?: boolean;
 }
 
 /**
@@ -186,7 +185,6 @@ async function main() {
     .option("--effort <level>", "Thinking effort: low, medium, high, max (default: high)")
     .option("--timeout <seconds>", "Session timeout in seconds", parseInt, 300)
     .option("-v, --verbose", "Verbose logging to stderr (includes agent stderr)")
-    .option("-q, --quiet", "Suppress progress output")
     .action(async (sessionFile: string, overrideFiles: string[], opts) => {
       try {
         // Read all YAML files
@@ -215,7 +213,6 @@ async function main() {
         const result = await runSession(config, {
           timeoutSeconds: opts.timeout,
           verbose: opts.verbose,
-          quiet: opts.quiet,
           configDir,
           configPaths,
         });

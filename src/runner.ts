@@ -8,7 +8,9 @@ import {
   printTranscriptPath,
   printSessionStarted,
   printUserMessage,
-  printAssistantMessage,
+  printThinking,
+  printAssistantText,
+  printToolUse,
   printOracleAskUser,
   printOracleTurnPolicy,
   printSummary,
@@ -22,7 +24,6 @@ export interface RunResult {
 export interface RunOptions {
   timeoutSeconds?: number;
   verbose?: boolean;
-  quiet?: boolean;
   configDir?: string;
   configPaths?: string[];
 }
@@ -38,7 +39,6 @@ export async function runSession(
 
   let sessionId: string | undefined;
   let queryHandle: ReturnType<typeof query> | undefined;
-  const stderrBuffer: string[] = [];
 
   // Always create a project directory
   let projectDir: string;
@@ -128,12 +128,11 @@ export async function runSession(
     if (config.sdk.env) sdkOptions.env = config.sdk.env;
 
     // Stderr capture
-    sdkOptions.stderr = (data: string) => {
-      stderrBuffer.push(data);
-      if (verbose) {
+    if (verbose) {
+      sdkOptions.stderr = (data: string) => {
         process.stderr.write(data);
-      }
-    };
+      };
+    }
 
     // Create a lazy SyntheticUser — initialized once we have a session ID
     let syntheticUser: SyntheticUser | undefined;
@@ -142,12 +141,10 @@ export async function runSession(
     sdkOptions.canUseTool = async (
       toolName: string,
       input: Record<string, unknown>,
-      opts: { toolUseID: string; agentID?: string },
     ) => {
       if (toolName === "AskUserQuestion" && syntheticUser) {
         const result = await syntheticUser.handleAskUserQuestion(
           input as { questions: any[] },
-          opts.toolUseID,
         );
         // Print oracle decision
         printOracleAskUser(
@@ -211,16 +208,18 @@ export async function runSession(
         // Add initial prompt to conversation buffer
         syntheticUser.addUserMessage(config.prompt);
       } else if (message.type === "assistant") {
-        // Process all content blocks from assistant messages
         const content = (message as any).message?.content;
         if (content && Array.isArray(content)) {
-          toolCallCount += printAssistantMessage(content);
-
-          // Extract text parts for conversation buffer
           const textParts: string[] = [];
           for (const block of content) {
-            if (block.type === "text") {
+            if (block.type === "thinking" && block.thinking) {
+              printThinking(block.thinking);
+            } else if (block.type === "text" && block.text) {
+              printAssistantText(block.text);
               textParts.push(block.text);
+            } else if (block.type === "tool_use" && block.name) {
+              printToolUse(block.name, block.input);
+              toolCallCount++;
             }
           }
           if (textParts.length > 0 && syntheticUser) {
