@@ -4,16 +4,14 @@ import { Oracle } from "./oracle.js";
 import { SyntheticUser } from "./synthetic-user.js";
 import { scaffoldProject, createProjectDir } from "./project.js";
 import {
-  printPreamble,
-  printTranscriptPath,
-  printSessionStarted,
-  printUserMessage,
-  printThinking,
-  printAssistantText,
-  printToolUse,
-  printOracleAskUser,
-  printOracleTurnPolicy,
-  printSummary,
+  writeHeader,
+  writeUser,
+  writeThinking,
+  writeAssistant,
+  writeTool,
+  writeOracleAsk,
+  writeOracleTurn,
+  writeFooter,
 } from "./transcript.js";
 
 export interface RunResult {
@@ -58,9 +56,6 @@ export async function runSession(
   // Create oracle
   const oracle = new Oracle(config.user.oracle_model);
 
-  // Print preamble
-  printPreamble(options.configPaths || [], projectDir);
-
   // Set up timeout
   const abortController = new AbortController();
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
@@ -68,7 +63,6 @@ export async function runSession(
 
   // Track stats
   let toolCallCount = 0;
-  let sdkSessionPath = "";
 
   try {
     // Build the async generator for multi-turn input
@@ -146,8 +140,7 @@ export async function runSession(
         const result = await syntheticUser.handleAskUserQuestion(
           input as { questions: any[] },
         );
-        // Print oracle decision
-        printOracleAskUser(
+        writeOracleAsk(
           result.oracleResponse.answers,
           result.oracleResponse.reasoning,
         );
@@ -197,13 +190,15 @@ export async function runSession(
         sessionId = message.session_id as string;
         syntheticUser = new SyntheticUser(oracle, config.user, config.prompt);
 
-        // Compute SDK session path and print it
-        sdkSessionPath = buildSdkSessionPath(cwd, sessionId);
-        printTranscriptPath(sdkSessionPath);
-
-        // Print session started and initial user message
-        printSessionStarted(sessionId);
-        printUserMessage(config.prompt);
+        // Write YAML header and first user message
+        const sdkSessionPath = buildSdkSessionPath(cwd, sessionId);
+        writeHeader({
+          session: sessionId,
+          configPaths: options.configPaths || [],
+          projectDir,
+          transcriptPath: sdkSessionPath,
+        });
+        writeUser(config.prompt);
 
         // Add initial prompt to conversation buffer
         syntheticUser.addUserMessage(config.prompt);
@@ -213,12 +208,12 @@ export async function runSession(
           const textParts: string[] = [];
           for (const block of content) {
             if (block.type === "thinking" && block.thinking) {
-              printThinking(block.thinking);
+              writeThinking(block.thinking);
             } else if (block.type === "text" && block.text) {
-              printAssistantText(block.text);
+              writeAssistant(block.text);
               textParts.push(block.text);
             } else if (block.type === "tool_use" && block.name) {
-              printToolUse(block.name, block.input);
+              writeTool(block.name, block.input);
               toolCallCount++;
             }
           }
@@ -237,14 +232,14 @@ export async function runSession(
           // Consult turn policy
           const decision = await syntheticUser.decideTurn();
 
-          // Print oracle turn policy decision
+          // Write oracle turn policy decision
           if (config.user.turn_policy === "reactive") {
-            printOracleTurnPolicy(decision.decision, decision.message, decision.reasoning);
+            writeOracleTurn(decision.decision, decision.message, decision.reasoning);
           }
 
           if (decision.decision === "continue" && decision.message) {
             syntheticUser.addUserMessage(decision.message);
-            printUserMessage(decision.message);
+            writeUser(decision.message);
             resolveNextAction?.({ type: "continue", message: decision.message });
           } else {
             resolveNextAction?.({ type: "end" });
@@ -267,11 +262,8 @@ export async function runSession(
       exitCode = 5;
     }
 
-    // Print summary
-    printSummary({
-      configPaths: options.configPaths || [],
-      projectDir,
-      sdkSessionPath,
+    // Write footer
+    writeFooter({
       turns: resultNumTurns,
       toolCalls: toolCallCount,
       durationMs: duration,

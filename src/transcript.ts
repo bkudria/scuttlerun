@@ -1,125 +1,129 @@
-export interface SessionStats {
+export interface HeaderOptions {
+  session: string;
   configPaths: string[];
   projectDir: string;
-  sdkSessionPath: string;
+  transcriptPath: string;
+}
+
+export interface FooterStats {
   turns: number;
   toolCalls: number;
   durationMs: number;
   totalCostUsd: number;
 }
 
-const DIVIDER = "─".repeat(39);
-
 function write(text: string): void {
   process.stdout.write(text);
 }
 
-function indent(text: string): string {
+function blockLines(text: string, indent: number): string {
+  const pad = " ".repeat(indent);
   return text
+    .trimEnd()
     .split("\n")
-    .map((line) => (line.length > 0 ? "    " + line : ""))
-    .join("\n");
+    .map((line) => (line.length > 0 ? `${pad}${line}` : ""))
+    .join("\n") + "\n";
 }
 
-function writeConfigPaths(configPaths: string[]): void {
-  if (configPaths.length === 0) return;
-  write(`Config:     ${configPaths[0]}\n`);
-  for (const p of configPaths.slice(1)) {
-    write(`            ${p}\n`);
+function singleQuote(value: string): string {
+  return "'" + value.replace(/'/g, "''") + "'";
+}
+
+export function writeHeader(opts: HeaderOptions): void {
+  write(`session: ${opts.session}\n`);
+  if (opts.configPaths.length === 1) {
+    write(`config: ${opts.configPaths[0]}\n`);
+  } else {
+    write(`config:\n`);
+    for (const p of opts.configPaths) {
+      write(`  - ${p}\n`);
+    }
   }
+  write(`project: ${opts.projectDir}\n`);
+  write(`transcript: ${opts.transcriptPath}\n`);
+  write(`\nconversation:\n`);
 }
 
-export function printPreamble(configPaths: string[], projectDir: string): void {
-  write(`─── Warren Session ${DIVIDER.slice(19)}\n`);
-  writeConfigPaths(configPaths);
-  write(`Project:    ${projectDir}\n`);
+export function writeUser(text: string): void {
+  write(`  - user: |\n`);
+  write(blockLines(text, 6));
+  write("\n");
 }
 
-export function printTranscriptPath(sdkSessionPath: string): void {
-  write(`Transcript: ${sdkSessionPath}\n`);
-  write(`${DIVIDER}\n`);
+export function writeThinking(text: string): void {
+  write(`  - thinking: |\n`);
+  write(blockLines(text, 6));
+  write("\n");
 }
 
-export function printSessionStarted(sessionId: string): void {
-  write(`\n[warren] Session started: ${sessionId}\n`);
+export function writeAssistant(text: string): void {
+  write(`  - assistant: |\n`);
+  write(blockLines(text, 6));
+  write("\n");
 }
 
-export function printUserMessage(text: string): void {
-  write(`\n[User]\n${indent(text.trimEnd())}\n`);
-}
-
-export function printThinking(text: string): void {
-  write(`\n[Thinking]\n${indent(text.trimEnd())}\n`);
-}
-
-export function printAssistantText(text: string): void {
-  write(`\n[Assistant]\n${indent(text.trimEnd())}\n`);
-}
-
-export function printToolUse(name: string, input: unknown): void {
-  write(`\n[Tool]\n${indent(formatToolUse(name, input))}\n`);
-}
-
-function formatToolUse(name: string, input: unknown): string {
+export function writeTool(name: string, input: unknown): void {
+  write(`  - tool: ${name}\n`);
   const inp = input as Record<string, unknown>;
 
   switch (name) {
     case "Read":
-      return `⚙ Read ${inp.file_path ?? ""}`;
     case "Write":
-      return `⚙ Write ${inp.file_path ?? ""}`;
     case "Edit":
-      return `⚙ Edit ${inp.file_path ?? ""}`;
-    case "Bash": {
-      const cmd = String(inp.command ?? "");
-      return `⚙ Bash: ${cmd.length > 100 ? cmd.slice(0, 100) + "…" : cmd}`;
-    }
+      write(`    path: ${inp.file_path ?? ""}\n`);
+      break;
+    case "Bash":
+      write(`    command: |\n`);
+      write(blockLines(String(inp.command ?? ""), 6));
+      break;
     case "Glob":
-      return `⚙ Glob ${inp.pattern ?? ""}`;
     case "Grep":
-      return `⚙ Grep "${inp.pattern ?? ""}"`;
+      write(`    pattern: ${singleQuote(String(inp.pattern ?? ""))}\n`);
+      break;
     default:
-      return `⚙ ${name}`;
+      write(`    input: |\n`);
+      write(blockLines(JSON.stringify(inp, null, 2), 6));
+      break;
   }
+  write("\n");
 }
 
-export function printOracleAskUser(
+export function writeOracleAsk(
   answers: Record<string, string>,
   reasoning: string,
 ): void {
-  const parts = Object.entries(answers)
-    .map(([q, a]) => `${q} → ${a}`)
-    .join("; ");
-  write(`    ⚡ Oracle answered: ${parts}\n`);
-  write(`      Reasoning: ${reasoning}\n`);
+  write(`  - oracle: ask_user\n`);
+  write(`    answers:\n`);
+  for (const [q, a] of Object.entries(answers)) {
+    write(`      "${q}": ${a}\n`);
+  }
+  write(`    reasoning: ${reasoning}\n`);
+  write("\n");
 }
 
-export function printOracleTurnPolicy(
+export function writeOracleTurn(
   decision: string,
   message?: string,
   reasoning?: string,
 ): void {
-  write(`    ⚡ Oracle: ${decision}`);
+  write(`  - oracle: turn_policy\n`);
+  write(`    decision: ${decision}\n`);
   if (message) {
-    write(` — "${message}"`);
+    write(`    message: |\n`);
+    write(blockLines(message, 6));
+  }
+  if (reasoning) {
+    write(`    reasoning: ${reasoning}\n`);
   }
   write("\n");
-  if (reasoning) {
-    write(`      Reasoning: ${reasoning}\n`);
-  }
 }
 
-export function printSummary(stats: SessionStats): void {
-  write(`\n─── Summary ${DIVIDER.slice(12)}\n`);
-  writeConfigPaths(stats.configPaths);
-  write(`Project:    ${stats.projectDir}\n`);
-  write(`Transcript: ${stats.sdkSessionPath}\n`);
-  write(`Turns:      ${stats.turns}\n`);
-  write(`Tool calls: ${stats.toolCalls}\n`);
-  const durationSec = (stats.durationMs / 1000).toFixed(1);
-  write(`Duration:   ${durationSec}s\n`);
+export function writeFooter(stats: FooterStats): void {
+  write(`\nturns: ${stats.turns}\n`);
+  write(`tool_calls: ${stats.toolCalls}\n`);
+  const durationSec = +(stats.durationMs / 1000).toFixed(1);
+  write(`duration_s: ${durationSec}\n`);
   if (stats.totalCostUsd > 0) {
-    write(`Cost:       $${stats.totalCostUsd.toFixed(2)}\n`);
+    write(`cost_usd: ${stats.totalCostUsd.toFixed(2)}\n`);
   }
-  write(`${DIVIDER}\n`);
 }

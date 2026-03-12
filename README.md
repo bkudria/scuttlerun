@@ -124,35 +124,33 @@ Warren wraps the Claude Agent SDK's `query()` with an async generator for multi-
 
 ## Output
 
-Warren streams a human-readable transcript to stdout as the session runs:
+Warren streams a YAML transcript to stdout as the session runs:
 
+```yaml
+session: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+config: /path/to/session.yml
+project: /tmp/warren-project-xK3f9m
+transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
+
+conversation:
+  - user: |
+      Write a haiku about the ocean and save it to ocean.txt
+
+  - assistant: |
+      I'll write a haiku about the ocean.
+
+  - tool: Write
+    path: ocean.txt
+
+  - assistant: |
+      Done! I saved the haiku to ocean.txt.
+
+turns: 2
+tool_calls: 1
+duration_s: 12.3
 ```
-─── Warren Session ───────────────────
-Config:     /path/to/session.yml
-Project:    /tmp/warren-project-xK3f9m
-Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
-───────────────────────────────────────
 
->>> User
-Write a haiku about the ocean and save it to ocean.txt
-
-<<< Assistant
-I'll write a haiku about the ocean.
-
-  ⚙ Write ocean.txt
-
-<<< Assistant
-Done! I saved the haiku to ocean.txt.
-
-─── Summary ──────────────────────────
-Config:     /path/to/session.yml
-Project:    /tmp/warren-project-xK3f9m
-Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
-Turns:      2
-Tool calls: 1
-Duration:   12.3s
-───────────────────────────────────────
-```
+The output is valid YAML and machine-parseable (e.g. with `yq`).
 
 **Project directory** — Always created in `$TMPDIR`, preserved after the session ends. Inspect agent-created files there.
 

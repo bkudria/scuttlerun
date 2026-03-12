@@ -215,13 +215,14 @@ describe("runSession", () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
     await runSession(minConfig());
 
-    // Should contain preamble, transcript, and summary
-    expect(stdoutOutput).toContain("Warren Session");
-    expect(stdoutOutput).toContain("[User]");
+    // Should contain YAML header, conversation entries, and footer
+    expect(stdoutOutput).toContain("session: s-transcript");
+    expect(stdoutOutput).toContain("conversation:");
+    expect(stdoutOutput).toContain("- user: |");
     expect(stdoutOutput).toContain("Write a haiku");
-    expect(stdoutOutput).toContain("[Assistant]");
+    expect(stdoutOutput).toContain("- assistant: |");
     expect(stdoutOutput).toContain("Here is your haiku.");
-    expect(stdoutOutput).toContain("Summary");
+    expect(stdoutOutput).toContain("turns:");
   });
 
   it("handles error_max_turns with exit code 3", async () => {
@@ -444,9 +445,9 @@ describe("runSession", () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
     await runSession(minConfig());
 
-    expect(stdoutOutput).toContain("[Tool]");
-    expect(stdoutOutput).toContain("⚙ Write /tmp/ocean.txt");
-    // Summary should count the tool call
-    expect(stdoutOutput).toContain("Tool calls: 1");
+    expect(stdoutOutput).toContain("- tool: Write");
+    expect(stdoutOutput).toContain("path: /tmp/ocean.txt");
+    // Footer should count the tool call
+    expect(stdoutOutput).toContain("tool_calls: 1");
   });
 });

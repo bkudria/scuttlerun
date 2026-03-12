@@ -1,15 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { parse as parseYaml } from "yaml";
 import {
-  printPreamble,
-  printTranscriptPath,
-  printSessionStarted,
-  printUserMessage,
-  printThinking,
-  printAssistantText,
-  printToolUse,
-  printOracleAskUser,
-  printOracleTurnPolicy,
-  printSummary,
+  writeHeader,
+  writeUser,
+  writeThinking,
+  writeAssistant,
+  writeTool,
+  writeOracleAsk,
+  writeOracleTurn,
+  writeFooter,
 } from "../src/transcript.js";
 
 describe("transcript", () => {
@@ -28,174 +27,189 @@ describe("transcript", () => {
     process.stdout.write = originalWrite;
   });
 
-  describe("printPreamble", () => {
-    it("prints header with config paths and project dir", () => {
-      printPreamble(["/path/to/session.yml"], "/tmp/warren-project-abc123");
-      expect(output).toContain("Warren Session");
-      expect(output).toContain("/path/to/session.yml");
-      expect(output).toContain("/tmp/warren-project-abc123");
+  describe("writeHeader", () => {
+    it("writes session, config, project, transcript and conversation header", () => {
+      writeHeader({
+        session: "abc-123",
+        configPaths: ["/path/to/session.yml"],
+        projectDir: "/tmp/warren-project-abc123",
+        transcriptPath: "/home/user/.claude/projects/-tmp-foo/abc123.jsonl",
+      });
+      const parsed = parseYaml(output + "  - user: |\n      placeholder\n");
+      expect(parsed.session).toBe("abc-123");
+      expect(parsed.config).toBe("/path/to/session.yml");
+      expect(parsed.project).toBe("/tmp/warren-project-abc123");
+      expect(parsed.transcript).toBe("/home/user/.claude/projects/-tmp-foo/abc123.jsonl");
+      expect(output).toContain("conversation:\n");
     });
 
-    it("prints multiple config paths", () => {
-      printPreamble(
-        ["/path/to/base.yml", "/path/to/override.yml"],
-        "/tmp/warren-project-abc123",
-      );
-      expect(output).toContain("/path/to/base.yml");
-      expect(output).toContain("/path/to/override.yml");
-    });
-  });
-
-  describe("printTranscriptPath", () => {
-    it("prints SDK session path and divider", () => {
-      printTranscriptPath("/home/user/.claude/projects/-tmp-foo/abc123.jsonl");
-      expect(output).toContain(
-        "/home/user/.claude/projects/-tmp-foo/abc123.jsonl",
-      );
-      expect(output).toContain("───");
-    });
-  });
-
-  describe("printSessionStarted", () => {
-    it("prints session started message", () => {
-      printSessionStarted("abc-123");
-      expect(output).toContain("[warren] Session started: abc-123");
+    it("writes config as list for multiple paths", () => {
+      writeHeader({
+        session: "abc-123",
+        configPaths: ["/path/to/base.yml", "/path/to/override.yml"],
+        projectDir: "/tmp/warren-project-abc123",
+        transcriptPath: "/home/user/.claude/projects/-tmp-foo/abc123.jsonl",
+      });
+      const parsed = parseYaml(output + "  - user: |\n      placeholder\n");
+      expect(parsed.config).toEqual(["/path/to/base.yml", "/path/to/override.yml"]);
     });
   });
 
-  describe("printUserMessage", () => {
-    it("prints user message with [User] header and indented content", () => {
-      printUserMessage("Write a haiku about the ocean");
-      expect(output).toContain("[User]");
-      expect(output).toContain("    Write a haiku about the ocean");
+  describe("writeUser", () => {
+    it("writes user entry as block scalar", () => {
+      writeUser("Write a haiku about the ocean");
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].user).toBe("Write a haiku about the ocean\n");
     });
 
-    it("indents multi-line content", () => {
-      printUserMessage("Line one\nLine two");
-      expect(output).toContain("    Line one\n    Line two");
-    });
-  });
-
-  describe("printThinking", () => {
-    it("prints thinking block with [Thinking] header and indented content", () => {
-      printThinking("I should write a 5-7-5 haiku.");
-      expect(output).toContain("[Thinking]");
-      expect(output).toContain("    I should write a 5-7-5 haiku.");
+    it("preserves multi-line content", () => {
+      writeUser("Line one\nLine two");
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].user).toBe("Line one\nLine two\n");
     });
   });
 
-  describe("printAssistantText", () => {
-    it("prints [Assistant] header with indented text", () => {
-      printAssistantText("Here is a haiku.");
-      expect(output).toContain("[Assistant]");
-      expect(output).toContain("    Here is a haiku.");
-    });
-
-    it("indents multi-line text", () => {
-      printAssistantText("Line one\nLine two");
-      expect(output).toContain("    Line one\n    Line two");
+  describe("writeThinking", () => {
+    it("writes thinking entry as block scalar", () => {
+      writeThinking("I should write a 5-7-5 haiku.");
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].thinking).toBe("I should write a 5-7-5 haiku.\n");
     });
   });
 
-  describe("printToolUse", () => {
-    it("prints [Tool] header with formatted tool line", () => {
-      printToolUse("Write", { file_path: "/tmp/foo.txt" });
-      expect(output).toContain("[Tool]");
-      expect(output).toContain("    ⚙ Write /tmp/foo.txt");
+  describe("writeAssistant", () => {
+    it("writes assistant entry as block scalar", () => {
+      writeAssistant("Here is a haiku.");
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].assistant).toBe("Here is a haiku.\n");
     });
 
-    it("abbreviates Read tool", () => {
-      printToolUse("Read", { file_path: "/tmp/foo.txt" });
-      expect(output).toContain("    ⚙ Read /tmp/foo.txt");
+    it("preserves multi-line content with markdown", () => {
+      writeAssistant("Here it is:\n\n> *Waves crash*\n> *Salt wind*");
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].assistant).toContain("> *Waves crash*");
+      expect(parsed.conversation[0].assistant).toContain("> *Salt wind*");
+    });
+  });
+
+  describe("writeTool", () => {
+    it("writes Read with path", () => {
+      writeTool("Read", { file_path: "/tmp/foo.txt" });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("Read");
+      expect(parsed.conversation[0].path).toBe("/tmp/foo.txt");
     });
 
-    it("truncates long Bash commands", () => {
+    it("writes Write with path", () => {
+      writeTool("Write", { file_path: "/tmp/foo.txt" });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("Write");
+      expect(parsed.conversation[0].path).toBe("/tmp/foo.txt");
+    });
+
+    it("writes Edit with path", () => {
+      writeTool("Edit", { file_path: "/tmp/bar.ts" });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("Edit");
+      expect(parsed.conversation[0].path).toBe("/tmp/bar.ts");
+    });
+
+    it("writes Bash with command as block scalar", () => {
+      writeTool("Bash", { command: "echo hello && pwd" });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("Bash");
+      expect(parsed.conversation[0].command).toBe("echo hello && pwd\n");
+    });
+
+    it("does not truncate long Bash commands", () => {
       const longCmd = "a".repeat(200);
-      printToolUse("Bash", { command: longCmd });
-      expect(output).toContain("⚙ Bash: " + "a".repeat(100) + "…");
+      writeTool("Bash", { command: longCmd });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].command).toBe(longCmd + "\n");
     });
 
-    it("abbreviates Glob tool", () => {
-      printToolUse("Glob", { pattern: "**/*.ts" });
-      expect(output).toContain("⚙ Glob **/*.ts");
+    it("writes Glob with single-quoted pattern", () => {
+      writeTool("Glob", { pattern: "**/*.ts" });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("Glob");
+      expect(parsed.conversation[0].pattern).toBe("**/*.ts");
     });
 
-    it("abbreviates Grep tool", () => {
-      printToolUse("Grep", { pattern: "function\\s+\\w+" });
-      expect(output).toContain('⚙ Grep "function\\s+\\w+"');
+    it("writes Grep with single-quoted pattern", () => {
+      writeTool("Grep", { pattern: "function\\s+\\w+" });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("Grep");
+      expect(parsed.conversation[0].pattern).toBe("function\\s+\\w+");
     });
 
-    it("shows generic format for unknown tools", () => {
-      printToolUse("Agent", { prompt: "do something" });
-      expect(output).toContain("⚙ Agent");
-    });
-
-    it("abbreviates Edit tool", () => {
-      printToolUse("Edit", { file_path: "/tmp/bar.ts" });
-      expect(output).toContain("⚙ Edit /tmp/bar.ts");
+    it("writes unknown tools with input as block scalar JSON", () => {
+      writeTool("Agent", { prompt: "do something" });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("Agent");
+      const inputParsed = JSON.parse(parsed.conversation[0].input);
+      expect(inputParsed.prompt).toBe("do something");
     });
   });
 
-  describe("printOracleAskUser", () => {
-    it("prints oracle answers", () => {
-      printOracleAskUser(
+  describe("writeOracleAsk", () => {
+    it("writes oracle ask_user entry with answers and reasoning", () => {
+      writeOracleAsk(
         { "What language?": "Python" },
         "User prefers Python",
       );
-      expect(output).toContain("⚡ Oracle");
-      expect(output).toContain("Python");
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.oracle).toBe("ask_user");
+      expect(entry.answers["What language?"]).toBe("Python");
+      expect(entry.reasoning).toBe("User prefers Python");
     });
   });
 
-  describe("printOracleTurnPolicy", () => {
-    it("prints continue decision with message", () => {
-      printOracleTurnPolicy(
-        "continue",
-        "Can you add tests?",
-        "Task incomplete",
-      );
-      expect(output).toContain("⚡ Oracle");
-      expect(output).toContain("continue");
+  describe("writeOracleTurn", () => {
+    it("writes continue decision with message and reasoning", () => {
+      writeOracleTurn("continue", "Can you add tests?", "Task incomplete");
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.oracle).toBe("turn_policy");
+      expect(entry.decision).toBe("continue");
+      expect(entry.message).toContain("Can you add tests?");
+      expect(entry.reasoning).toBe("Task incomplete");
     });
 
-    it("prints end decision", () => {
-      printOracleTurnPolicy("end", undefined, "Task complete");
-      expect(output).toContain("⚡ Oracle");
-      expect(output).toContain("end");
+    it("writes end decision without message", () => {
+      writeOracleTurn("end", undefined, "Task complete");
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.oracle).toBe("turn_policy");
+      expect(entry.decision).toBe("end");
+      expect(entry.message).toBeUndefined();
+      expect(entry.reasoning).toBe("Task complete");
     });
   });
 
-  describe("printSummary", () => {
-    it("prints summary with paths and stats", () => {
-      printSummary({
-        configPaths: ["/path/to/session.yml"],
-        projectDir: "/tmp/warren-project-abc123",
-        sdkSessionPath: "/home/user/.claude/projects/-tmp-foo/abc.jsonl",
+  describe("writeFooter", () => {
+    it("writes stats as top-level YAML keys", () => {
+      writeFooter({
         turns: 5,
         toolCalls: 3,
         durationMs: 12345,
         totalCostUsd: 0.05,
       });
-      expect(output).toContain("Summary");
-      expect(output).toContain("/path/to/session.yml");
-      expect(output).toContain("/tmp/warren-project-abc123");
-      expect(output).toContain("5");
-      expect(output).toContain("3");
-      expect(output).toContain("12.3s");
-      expect(output).toContain("$0.05");
+      const parsed = parseYaml(output);
+      expect(parsed.turns).toBe(5);
+      expect(parsed.tool_calls).toBe(3);
+      expect(parsed.duration_s).toBe(12.3);
+      expect(parsed.cost_usd).toBe(0.05);
     });
 
-    it("omits cost when zero", () => {
-      printSummary({
-        configPaths: ["/path/to/session.yml"],
-        projectDir: "/tmp/warren-project-abc123",
-        sdkSessionPath: "/home/user/.claude/projects/-tmp-foo/abc.jsonl",
+    it("omits cost_usd when zero", () => {
+      writeFooter({
         turns: 1,
         toolCalls: 0,
         durationMs: 5000,
         totalCostUsd: 0,
       });
-      expect(output).not.toContain("Cost");
+      expect(output).not.toContain("cost_usd");
     });
   });
 });
