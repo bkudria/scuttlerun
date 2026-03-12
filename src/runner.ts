@@ -1,4 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { realpathSync } from "node:fs";
 import type { SessionConfig } from "./config.js";
 import { Oracle } from "./oracle.js";
 import { SyntheticUser } from "./synthetic-user.js";
@@ -292,6 +293,12 @@ export async function runSession(
 
 function buildSdkSessionPath(cwd: string, sessionId: string): string {
   const home = process.env.HOME || process.env.USERPROFILE || "";
-  const encodedCwd = cwd.replace(/\//g, "-");
+  let resolved: string;
+  try {
+    resolved = realpathSync(cwd);
+  } catch {
+    resolved = cwd;
+  }
+  const encodedCwd = resolved.replace(/[/_]/g, "-");
   return `${home}/.claude/projects/${encodedCwd}/${sessionId}.jsonl`;
 }

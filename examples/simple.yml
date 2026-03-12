@@ -3,3 +3,7 @@ version: "1"
 
 prompt: |
   Write a haiku about the ocean and save it to ocean.txt
+
+project:
+  claude_md: |
+    Save all files to the current working directory using relative paths.
