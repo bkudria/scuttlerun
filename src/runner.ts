@@ -187,7 +187,7 @@ export async function runSession(
       if (result.done || timedOut) break;
       const message = result.value as Record<string, unknown>;
 
-      if (message.type === "system" && message.subtype === "init") {
+      if (message.type === "system" && message.subtype === "init" && !sessionId) {
         sessionId = message.session_id as string;
         syntheticUser = new SyntheticUser(oracle, config.user, config.prompt);
 
