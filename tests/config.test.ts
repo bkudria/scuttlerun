@@ -22,6 +22,7 @@ describe("parseSessionConfig", () => {
       "Glob",
       "Grep",
       "AskUserQuestion",
+      "Skill",
     ]);
     expect(config.model).toBe("claude-haiku-4-5");
     expect(config.permission_mode).toBe("bypassPermissions");

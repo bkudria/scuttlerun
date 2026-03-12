@@ -2,12 +2,11 @@
 version: "1"
 
 prompt: |
-  Write a haiku about the sunset and save it to sunset.txt
+  Write a haiku for the user
 
 project:
   claude_md: |
     Save all files to the current working directory using relative paths.
-    Always use the haiku-writer skill when writing haiku.
   skills:
     - ~/.claude/skills/haiku-writer
   git_init: false

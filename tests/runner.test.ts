@@ -39,7 +39,7 @@ function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
     prompt: "Write a haiku",
     max_turns: 50,
     effort: "high",
-    tools: ["Read", "Write", "AskUserQuestion"],
+    tools: ["Read", "Write", "AskUserQuestion", "Skill"],
     permission_mode: "bypassPermissions",
     user: {
       oracle_model: "claude-haiku-4-5",

@@ -73,12 +73,13 @@ Session Config (YAML):
     # --- Tools ---
     tools:                              # Tools the agent can use (default: below)
       - Read                            #   Read, Write, Edit, Bash,
-      - Write                           #   Glob, Grep, AskUserQuestion
-      - Edit
+      - Write                           #   Glob, Grep, AskUserQuestion,
+      - Edit                            #   Skill
       - Bash
       - Glob
       - Grep
       - AskUserQuestion                 # Handled by the synthetic user
+      - Skill                           # Invoke Claude Code skills
     disallowed_tools:                   # Always deny these tools (optional)
       - Agent
 

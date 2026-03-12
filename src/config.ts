@@ -65,7 +65,7 @@ const SessionConfigRawSchema = z.object({
   effort: z.enum(["low", "medium", "high", "max"]).default("high"),
   tools: z
     .array(z.string())
-    .default(["Read", "Write", "Edit", "Bash", "Glob", "Grep", "AskUserQuestion"]),
+    .default(["Read", "Write", "Edit", "Bash", "Glob", "Grep", "AskUserQuestion", "Skill"]),
   disallowed_tools: z.array(z.string()).optional(),
   project: ProjectConfigSchema.optional(),
   permission_mode: z
