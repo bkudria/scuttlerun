@@ -127,6 +127,8 @@ The core orchestrator. Responsibilities:
 
 **Timeout implementation:** Warren creates an `AbortController` and passes it via the SDK's `abortController` option. A `setTimeout` triggers `controller.abort()` after `--timeout` seconds. On abort, warren writes a `session_end` event with `stop_reason: "timeout"` and exits with code 5.
 
+**Implementation note:** The `for await` loop over the SDK's async iterable does not respond to `AbortController` signals mid-iteration. Warren uses a manual async iterator with `Promise.race` — each `iterator.next()` call is raced against a Promise that resolves when the abort signal fires. This ensures the timeout fires within one iteration rather than waiting for the next SDK message.
+
 **Cleanup:** On session completion (normal or error), warren calls `query.close()` to terminate the SDK's child process, then removes the scaffolded temp directory (if applicable). The `finally` block ensures cleanup runs even on unhandled errors.
 
 **Agent stderr:** The SDK accepts a `stderr: (data: string) => void` callback. Warren accumulates all stderr output in an in-memory buffer and writes a single `agent_stderr` event at session end. Stderr is low-value diagnostic data — losing it on a crash is acceptable. For live stderr during development, `--verbose` tees it to warren's own stderr.
@@ -245,7 +247,7 @@ output:
 
 ### Config Validation
 
-Session configs are validated via Zod schemas. Required fields:
+Session configs are validated via Zod v4 schemas. Required fields:
 - `prompt` (string)
 
 Everything else has sensible defaults:
@@ -257,6 +259,8 @@ Everything else has sensible defaults:
 - `user.turn_policy`: `"single"` (no follow-ups unless configured)
 - `user.oracle_model`: `"claude-haiku-4-5"`
 - `sdk.setting_sources`: `["project"]` when `project:` is present, `[]` otherwise (explicit `sdk.setting_sources` in YAML always overrides the auto-set)
+
+**Zod v4 note:** The top-level schema uses `.optional()` for nested objects (`user`, `sdk`, `output`) rather than `.default({})`, because Zod v4's `.default({})` does not trigger inner field defaults. Instead, `parseSessionConfig()` re-parses each nested object through its own schema to apply inner defaults correctly.
 
 Project-specific validation:
 - `project.skills`: each path must exist and contain a `SKILL.md` file
@@ -287,6 +291,8 @@ warren run base-config.yml scenario-override.yml
 Later files override earlier ones (deep merge on objects, replace on scalars/arrays). For example, `tools: [Grep]` in an override replaces the entire base tools list — it does not append. This enables patterns like:
 - `base.yml` defines shared settings (model, tools, permissions)
 - `scenario.yml` overrides prompt, user persona, output paths
+
+**Implementation note:** Merging happens on raw YAML objects *before* applying Zod schema defaults. This is critical — if defaults were applied first, an override YAML missing a field would get the default value, which would then replace the base's value during merge. The `mergeRawConfigs()` function merges raw objects, and `parseSessionConfig()` is called once on the merged result.
 
 ### YAML-to-SDK Option Mapping
 
@@ -610,7 +616,7 @@ done
 |---------|---------|
 | `@anthropic-ai/claude-agent-sdk` | Core Agent SDK for driving Claude sessions |
 | `@anthropic-ai/sdk` | Direct API access for the oracle LLM (Haiku calls) |
-| `zod` | Session config validation and structured schemas |
+| `zod` (v4) | Session config validation and structured schemas. v4 required — `@anthropic-ai/claude-agent-sdk` peer-depends on zod v4. Notable v4 API differences: `z.record()` requires two args (`z.record(z.string(), z.unknown())`); `.default({})` on objects does not trigger inner field defaults. |
 | `commander` | CLI framework |
 | `yaml` | YAML parsing for session configs |
 
@@ -629,6 +635,7 @@ done
 warren/
 ├── package.json               # Package config, dependencies, scripts
 ├── tsconfig.json              # TypeScript configuration
+├── vitest.config.ts           # Vitest test configuration
 ├── SPEC.md                    # This file
 ├── README.md                  # Usage documentation
 ├── src/
@@ -640,11 +647,13 @@ warren/
 │   ├── events.ts              # Event recorder and type definitions
 │   └── project.ts             # Project directory scaffolding
 ├── tests/
+│   ├── cli.test.ts            # CLI config building and YAML merging
 │   ├── config.test.ts         # Config parsing and validation
-│   ├── synthetic-user.test.ts # Synthetic user logic
+│   ├── events.test.ts         # Event recording and JSONL output
 │   ├── oracle.test.ts         # Oracle LLM wrapper
 │   ├── project.test.ts        # Project scaffolding
-│   └── runner.test.ts         # Integration tests
+│   ├── runner.test.ts         # Session runner (core orchestration)
+│   └── synthetic-user.test.ts # Synthetic user logic
 └── examples/
     ├── simple.yml             # Minimal session config
     ├── interactive.yml        # Session with AskUserQuestion handling

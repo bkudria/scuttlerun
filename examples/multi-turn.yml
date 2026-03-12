@@ -1,0 +1,18 @@
+# Reactive multi-turn session — oracle decides follow-ups
+version: "1"
+
+prompt: |
+  Write a simple calculator module in TypeScript with add, subtract,
+  multiply, and divide functions. Save it to calc.ts.
+
+max_turns: 30
+
+user:
+  persona: |
+    You are a senior developer who cares about code quality.
+    After seeing the initial implementation, you want to ask for:
+    1. Input validation (division by zero)
+    2. Unit tests
+    You are satisfied after both are addressed.
+  turn_policy: reactive
+  max_user_turns: 3

@@ -1,0 +1,19 @@
+# Skill evaluation with managed project scaffolding
+version: "1"
+
+prompt: |
+  Write a haiku about the sunset and save it to sunset.txt
+
+project:
+  claude_md: |
+    Always use the haiku-writer skill when writing haiku.
+  skills:
+    - ~/.claude/skills/haiku-writer
+  git_init: false
+
+user:
+  persona: |
+    You appreciate well-crafted haiku. If the haiku doesn't follow
+    the 5-7-5 syllable pattern, ask for a revision.
+  turn_policy: reactive
+  max_user_turns: 2
