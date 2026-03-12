@@ -99,6 +99,28 @@ Session Config (YAML):
       settings: {}                      # Written to <tempdir>/.claude/settings.json
       git_init: false                   # Run 'git init' in temp dir (default: false)
 
+    # --- Sandbox ---
+    # Always enabled by default. The agent runs inside an OS-level sandbox
+    # that restricts filesystem and network access.
+    sandbox:
+      enabled: true                       # (default: true)
+      network:
+        allowed_domains: []               # Domains the agent can reach (default: [])
+                                          #   No network access by default
+        allow_local_binding: false        # Bind to local ports (default: false)
+      filesystem:
+        deny_read:                        # Paths denied for reading (default: below)
+          - ~/.ssh
+          - ~/.aws
+          - ~/.config/gcloud
+        allow_write: []                   # Extra writable paths (default: [])
+                                          #   cwd and /tmp are always writable
+        deny_write:                       # Paths denied for writing (default: below)
+          - .env
+
+    # When sandbox is enabled, HOME is redirected to <projectDir>/.home
+    # so tools (npm, pip, cargo, etc.) write caches inside the sandbox.
+
     # --- Synthetic User ---
     user:
       persona: |                        # Persona guiding oracle responses (optional)

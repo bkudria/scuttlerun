@@ -1,5 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { realpathSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
+import { join } from "node:path";
 import type { SessionConfig } from "./config.js";
 import { Oracle } from "./oracle.js";
 import { SyntheticUser } from "./synthetic-user.js";
@@ -53,6 +54,13 @@ export async function runSession(
   }
 
   const cwd = projectDir;
+
+  // When sandbox is enabled, redirect HOME into the project dir so tools
+  // (npm, pip, cargo, etc.) write caches there instead of ~/
+  const sandboxHome = config.sandbox.enabled ? join(cwd, ".home") : undefined;
+  if (sandboxHome) {
+    mkdirSync(sandboxHome, { recursive: true });
+  }
 
   // Create oracle
   const oracle = new Oracle(config.user.oracle_model);
@@ -120,7 +128,31 @@ export async function runSession(
     if (config.sdk.thinking) sdkOptions.thinking = config.sdk.thinking;
     if (config.sdk.mcp_servers) sdkOptions.mcpServers = config.sdk.mcp_servers;
     if (config.sdk.agents) sdkOptions.agents = config.sdk.agents;
-    if (config.sdk.env) sdkOptions.env = config.sdk.env;
+    // Subprocess environment: when sandbox is enabled, inherit full env and
+    // override HOME to the isolated dir inside the project
+    if (sandboxHome) {
+      sdkOptions.env = { ...process.env, ...config.sdk.env, HOME: sandboxHome };
+    } else if (config.sdk.env) {
+      sdkOptions.env = config.sdk.env;
+    }
+
+    // Sandbox settings
+    if (config.sandbox.enabled) {
+      sdkOptions.sandbox = {
+        enabled: true,
+        autoAllowBashIfSandboxed: true,
+        allowUnsandboxedCommands: false,
+        network: {
+          allowedDomains: config.sandbox.network.allowed_domains,
+          allowLocalBinding: config.sandbox.network.allow_local_binding,
+        },
+        filesystem: {
+          allowWrite: [cwd, "/tmp", ...config.sandbox.filesystem.allow_write],
+          denyRead: config.sandbox.filesystem.deny_read,
+          denyWrite: config.sandbox.filesystem.deny_write,
+        },
+      };
+    }
 
     // Stderr capture
     if (verbose) {
@@ -192,7 +224,7 @@ export async function runSession(
         syntheticUser = new SyntheticUser(oracle, config.user, config.prompt);
 
         // Write YAML header and first user message
-        const sdkSessionPath = buildSdkSessionPath(cwd, sessionId);
+        const sdkSessionPath = buildSdkSessionPath(cwd, sessionId, sandboxHome);
         writeHeader({
           session: sessionId,
           configPaths: options.configPaths || [],
@@ -291,8 +323,8 @@ export async function runSession(
   }
 }
 
-function buildSdkSessionPath(cwd: string, sessionId: string): string {
-  const home = process.env.HOME || process.env.USERPROFILE || "";
+function buildSdkSessionPath(cwd: string, sessionId: string, sandboxHome?: string): string {
+  const home = sandboxHome || process.env.HOME || process.env.USERPROFILE || "";
   let resolved: string;
   try {
     resolved = realpathSync(cwd);

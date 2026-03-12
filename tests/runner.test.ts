@@ -23,6 +23,13 @@ vi.mock("../src/project.js", () => {
     scaffoldProject: vi.fn().mockResolvedValue({ projectPath: "/tmp/warren-project-scaffold123" }),
   };
 });
+vi.mock("node:fs", async () => {
+  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  return {
+    ...actual,
+    mkdirSync: vi.fn(),
+  };
+});
 
 import { query as mockQueryFn } from "@anthropic-ai/claude-agent-sdk";
 import { createProjectDir as mockCreateProjectDir, scaffoldProject as mockScaffoldProject } from "../src/project.js";
@@ -40,6 +47,18 @@ function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
       max_user_turns: 5,
     },
     sdk: { setting_sources: [] },
+    sandbox: {
+      enabled: true,
+      network: {
+        allowed_domains: [],
+        allow_local_binding: false,
+      },
+      filesystem: {
+        deny_read: ["~/.ssh", "~/.aws", "~/.config/gcloud"],
+        allow_write: [],
+        deny_write: [".env"],
+      },
+    },
     ...overrides,
   };
 }
@@ -407,6 +426,84 @@ describe("runSession", () => {
     });
 
     await runSession(minConfig());
+  });
+
+  it("sets HOME to sandbox home dir when sandbox is enabled", async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+      capturedOptions = opts.options;
+      return createMockQuery([
+        {
+          type: "system",
+          subtype: "init",
+          session_id: "s-sandbox-home",
+          tools: [],
+          model: "claude-haiku-4-5",
+        },
+        {
+          type: "result",
+          subtype: "success",
+          session_id: "s-sandbox-home",
+          stop_reason: "end_turn",
+          is_error: false,
+          num_turns: 1,
+          total_cost_usd: 0.001,
+          duration_ms: 1000,
+          usage: { input_tokens: 50, output_tokens: 20 },
+          result: "Done",
+        },
+      ]);
+    });
+
+    await runSession(minConfig());
+
+    const env = capturedOptions?.env as Record<string, string>;
+    expect(env).toBeDefined();
+    expect(env.HOME).toBe("/tmp/warren-project-test123/.home");
+  });
+
+  it("does not set env when sandbox is disabled and no sdk.env", async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+      capturedOptions = opts.options;
+      return createMockQuery([
+        {
+          type: "system",
+          subtype: "init",
+          session_id: "s-no-sandbox",
+          tools: [],
+          model: "claude-haiku-4-5",
+        },
+        {
+          type: "result",
+          subtype: "success",
+          session_id: "s-no-sandbox",
+          stop_reason: "end_turn",
+          is_error: false,
+          num_turns: 1,
+          total_cost_usd: 0.001,
+          duration_ms: 1000,
+          usage: { input_tokens: 50, output_tokens: 20 },
+          result: "Done",
+        },
+      ]);
+    });
+
+    await runSession(minConfig({
+      sandbox: {
+        enabled: false,
+        network: { allowed_domains: [], allow_local_binding: false },
+        filesystem: {
+          deny_read: [],
+          allow_write: [],
+          deny_write: [],
+        },
+      },
+    }));
+
+    expect(capturedOptions?.env).toBeUndefined();
   });
 
   it("prints tool use blocks from assistant messages", async () => {

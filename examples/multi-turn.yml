@@ -11,6 +11,11 @@ project:
   claude_md: |
     Save all files to the current working directory using relative paths.
 
+sandbox:
+  network:
+    allowed_domains:
+      - registry.npmjs.org
+
 user:
   persona: |
     You are a senior developer who cares about code quality.

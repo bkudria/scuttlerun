@@ -129,6 +129,84 @@ describe("parseSessionConfig", () => {
     expect(config.project?.git_init).toBe(false);
   });
 
+  it("applies sandbox defaults when omitted", () => {
+    const config = parseSessionConfig({ prompt: "hi" });
+    expect(config.sandbox.enabled).toBe(true);
+    expect(config.sandbox.network.allowed_domains).toEqual([]);
+    expect(config.sandbox.network.allow_local_binding).toBe(false);
+    expect(config.sandbox.filesystem.deny_read).toEqual([
+      "~/.ssh",
+      "~/.aws",
+      "~/.config/gcloud",
+    ]);
+    expect(config.sandbox.filesystem.allow_write).toEqual([]);
+    expect(config.sandbox.filesystem.deny_write).toEqual([".env"]);
+  });
+
+  it("allows sandbox to be explicitly disabled", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sandbox: { enabled: false },
+    });
+    expect(config.sandbox.enabled).toBe(false);
+  });
+
+  it("overrides sandbox network allowed_domains (array replace)", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sandbox: {
+        network: {
+          allowed_domains: ["registry.npmjs.org", "api.anthropic.com"],
+        },
+      },
+    });
+    expect(config.sandbox.network.allowed_domains).toEqual([
+      "registry.npmjs.org",
+      "api.anthropic.com",
+    ]);
+  });
+
+  it("overrides sandbox filesystem deny_read", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sandbox: { filesystem: { deny_read: ["~/.ssh"] } },
+    });
+    expect(config.sandbox.filesystem.deny_read).toEqual(["~/.ssh"]);
+    // Other filesystem defaults still apply
+    expect(config.sandbox.filesystem.allow_write).toEqual([]);
+    expect(config.sandbox.filesystem.deny_write).toEqual([".env"]);
+  });
+
+  it("parses full sandbox config", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sandbox: {
+        enabled: true,
+        network: {
+          allowed_domains: ["example.com"],
+          allow_local_binding: true,
+        },
+        filesystem: {
+          deny_read: ["/secret"],
+          allow_write: ["/extra"],
+          deny_write: [".credentials"],
+        },
+      },
+    });
+    expect(config.sandbox).toEqual({
+      enabled: true,
+      network: {
+        allowed_domains: ["example.com"],
+        allow_local_binding: true,
+      },
+      filesystem: {
+        deny_read: ["/secret"],
+        allow_write: ["/extra"],
+        deny_write: [".credentials"],
+      },
+    });
+  });
+
   it("parses thinking config variants", () => {
     const adaptive = parseSessionConfig({
       prompt: "hi",

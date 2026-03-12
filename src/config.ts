@@ -23,6 +23,25 @@ const UserConfigSchema = z.object({
   max_user_turns: z.number().int().min(1).default(5),
 });
 
+const SandboxNetworkConfigSchema = z.object({
+  allowed_domains: z.array(z.string()).default([]),
+  allow_local_binding: z.boolean().default(false),
+});
+
+const SandboxFilesystemConfigSchema = z.object({
+  deny_read: z
+    .array(z.string())
+    .default(["~/.ssh", "~/.aws", "~/.config/gcloud"]),
+  allow_write: z.array(z.string()).default([]),
+  deny_write: z.array(z.string()).default([".env"]),
+});
+
+const SandboxConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  network: SandboxNetworkConfigSchema.optional(),
+  filesystem: SandboxFilesystemConfigSchema.optional(),
+});
+
 const SettingSourceSchema = z.enum(["user", "project", "local"]);
 
 const SdkConfigSchema = z.object({
@@ -54,6 +73,7 @@ const SessionConfigRawSchema = z.object({
     .default("bypassPermissions"),
   user: z.unknown().optional(),
   sdk: z.unknown().optional(),
+  sandbox: z.unknown().optional(),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
@@ -61,6 +81,15 @@ export type SdkConfig = z.infer<typeof SdkConfigSchema> & {
   setting_sources: z.infer<typeof SettingSourceSchema>[];
 };
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
+export type SandboxNetworkConfig = z.infer<typeof SandboxNetworkConfigSchema>;
+export type SandboxFilesystemConfig = z.infer<
+  typeof SandboxFilesystemConfigSchema
+>;
+export interface SandboxConfig {
+  enabled: boolean;
+  network: SandboxNetworkConfig;
+  filesystem: SandboxFilesystemConfig;
+}
 
 export interface SessionConfig {
   version?: string;
@@ -76,6 +105,7 @@ export interface SessionConfig {
   permission_mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk";
   user: UserConfig;
   sdk: SdkConfig;
+  sandbox: SandboxConfig;
 }
 
 export function parseSessionConfig(raw: unknown): SessionConfig {
@@ -84,6 +114,13 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
   // Re-parse nested objects through their schemas to apply inner defaults
   const user = UserConfigSchema.parse(parsed.user ?? {});
   const sdkRaw = SdkConfigSchema.parse(parsed.sdk ?? {});
+  const sandboxRaw = SandboxConfigSchema.parse(parsed.sandbox ?? {});
+  const sandboxNetwork = SandboxNetworkConfigSchema.parse(
+    sandboxRaw.network ?? {},
+  );
+  const sandboxFilesystem = SandboxFilesystemConfigSchema.parse(
+    sandboxRaw.filesystem ?? {},
+  );
 
   // Auto-set setting_sources when project is present and not explicitly set
   let settingSources = sdkRaw.setting_sources;
@@ -107,6 +144,11 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
     sdk: {
       ...sdkRaw,
       setting_sources: settingSources,
+    },
+    sandbox: {
+      enabled: sandboxRaw.enabled,
+      network: sandboxNetwork,
+      filesystem: sandboxFilesystem,
     },
   };
 }
