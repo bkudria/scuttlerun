@@ -23,6 +23,7 @@ describe("parseSessionConfig", () => {
       "Grep",
       "AskUserQuestion",
     ]);
+    expect(config.model).toBe("claude-haiku-4-5");
     expect(config.permission_mode).toBe("bypassPermissions");
     expect(config.user.turn_policy).toBe("single");
     expect(config.user.oracle_model).toBe("claude-haiku-4-5");

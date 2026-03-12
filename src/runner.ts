@@ -113,7 +113,7 @@ export async function runSession(
       settingSources: config.sdk.setting_sources,
     };
 
-    if (config.model) sdkOptions.model = config.model;
+    sdkOptions.model = config.model;
     if (config.max_budget_usd) sdkOptions.maxBudgetUsd = config.max_budget_usd;
     if (config.system_prompt) sdkOptions.systemPrompt = config.system_prompt;
     if (config.disallowed_tools) sdkOptions.disallowedTools = config.disallowed_tools;

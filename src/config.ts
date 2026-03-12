@@ -39,7 +39,7 @@ const SdkConfigSchema = z.object({
 const SessionConfigRawSchema = z.object({
   version: z.string().optional(),
   prompt: z.string(),
-  model: z.string().optional(),
+  model: z.string().default("claude-haiku-4-5"),
   max_turns: z.number().int().min(1).default(50),
   max_budget_usd: z.number().positive().optional(),
   system_prompt: z.string().optional(),
@@ -65,7 +65,7 @@ export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 export interface SessionConfig {
   version?: string;
   prompt: string;
-  model?: string;
+  model: string;
   max_turns: number;
   max_budget_usd?: number;
   system_prompt?: string;

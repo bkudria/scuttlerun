@@ -63,7 +63,7 @@ Session Config (YAML):
       Write a haiku about the ocean and save it to ocean.txt
 
     # --- Agent ---
-    model: claude-sonnet-4-6            # Agent model (default: system default)
+    model: claude-sonnet-4-6            # Agent model (default: claude-haiku-4-5)
     max_turns: 50                       # Max agent turns (default: 50)
     max_budget_usd: 1.00                # Max spend in USD (optional)
     system_prompt: |                    # Custom system prompt (optional)
@@ -179,7 +179,7 @@ async function main() {
     .description("Run a warren session from a YAML config file")
     .argument("<session.yml>", "Session config file (YAML). Only 'prompt' is required.")
     .argument("[override.yml...]", "Additional YAML files to deep-merge (last wins)")
-    .option("--model <model>", "Agent model (e.g. claude-sonnet-4-6, claude-haiku-4-5)")
+    .option("--model <model>", "Agent model (default: claude-haiku-4-5)")
     .option("--oracle-model <model>", "Synthetic user oracle model (default: claude-haiku-4-5)")
     .option("--prompt <text>", "Override the prompt from the YAML config")
     .option("--max-turns <n>", "Max agent turns (default: 50)", parseInt)
