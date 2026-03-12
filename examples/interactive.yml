@@ -10,6 +10,10 @@ tools:
   - Write
   - AskUserQuestion
 
+project:
+  claude_md: |
+    Save all files to the current working directory using relative paths.
+
 user:
   persona: |
     You are a Python enthusiast. When asked about programming languages,

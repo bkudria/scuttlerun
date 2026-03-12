@@ -1,9 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
 // Schema for AskUserQuestion oracle response
 const AskUserQuestionResponseSchema = z.object({
-  answers: z.record(z.string(), z.string()),
+  answers: z.array(z.object({
+    question: z.string(),
+    answer: z.string(),
+  })),
   reasoning: z.string(),
 });
 
@@ -90,8 +94,12 @@ export class Oracle {
 
     this.trackUsage(response.usage);
 
+    const answers = Object.fromEntries(
+      response.parsed_output.answers.map((a) => [a.question, a.answer]),
+    );
+
     return {
-      answers: response.parsed_output.answers,
+      answers,
       reasoning: response.parsed_output.reasoning,
       usage: {
         input_tokens: response.usage.input_tokens,
@@ -137,13 +145,17 @@ export class Oracle {
     let lastError: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return await (this.client.messages as any).parse({
+        const response = await this.client.messages.parse({
           model: this.model,
           max_tokens: 1024,
           system: systemPrompt,
           messages: [{ role: "user" as const, content: userMessage }],
-          output_format: schema,
+          output_config: { format: zodOutputFormat(schema) },
         });
+        if (!response.parsed_output) {
+          throw new Error("Oracle returned no structured output");
+        }
+        return { parsed_output: response.parsed_output, usage: response.usage };
       } catch (err) {
         lastError = err;
       }
@@ -165,8 +177,9 @@ the agent's clarifying questions consistent with the following persona:
 ${persona ?? "A helpful user who provides reasonable answers."}
 
 Given the conversation so far and the questions below, select the most
-appropriate answers. For each question, provide a selected option label
-(or free text if no option fits) and brief reasoning.`;
+appropriate answers. Return one entry per question in the answers array,
+using the exact question text and the selected option label (or free text
+if no option fits). Provide brief reasoning.`;
 }
 
 function buildAskUserQuestionUserMessage(

@@ -29,7 +29,7 @@ describe("Oracle", () => {
     it("calls the API with persona, conversation context, and questions", async () => {
       mockParse.mockResolvedValueOnce({
         parsed_output: {
-          answers: { "What format?": "JSON" },
+          answers: [{ question: "What format?", answer: "JSON" }],
           reasoning: "User prefers structured data",
         },
         usage: { input_tokens: 100, output_tokens: 50 },
@@ -71,7 +71,7 @@ describe("Oracle", () => {
         .mockRejectedValueOnce(new Error("API error"))
         .mockResolvedValueOnce({
           parsed_output: {
-            answers: { "Pick one": "A" },
+            answers: [{ question: "Pick one", answer: "A" }],
             reasoning: "retry worked",
           },
           usage: { input_tokens: 50, output_tokens: 30 },
@@ -193,7 +193,7 @@ describe("Oracle", () => {
     it("accumulates usage across calls", async () => {
       mockParse
         .mockResolvedValueOnce({
-          parsed_output: { answers: { Q: "A" }, reasoning: "r" },
+          parsed_output: { answers: [{ question: "Q", answer: "A" }], reasoning: "r" },
           usage: { input_tokens: 100, output_tokens: 50 },
         })
         .mockResolvedValueOnce({

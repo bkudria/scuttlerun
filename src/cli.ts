@@ -91,7 +91,9 @@ Session Config (YAML):
     # Warren always creates a temp dir in $TMPDIR as the agent's cwd.
     project:
       claude_md: |                      # Written to <tempdir>/CLAUDE.md
-        Use clear, accessible language.
+        Save all files using relative paths.
+                                        # ↑ Recommended when the agent writes files,
+                                        #   otherwise it guesses absolute paths.
       skills:                           # Symlinked into <tempdir>/.claude/skills/
         - ~/.claude/skills/my-skill     #   Supports ~ and relative paths
       settings: {}                      # Written to <tempdir>/.claude/settings.json
