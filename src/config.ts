@@ -33,10 +33,6 @@ const SdkConfigSchema = z.object({
   setting_sources: z.array(SettingSourceSchema).optional(),
 });
 
-const OutputConfigSchema = z.object({
-  events: z.string().default("warren-events.jsonl"),
-});
-
 // Top-level schema uses .optional() for nested objects — we re-parse
 // them in parseSessionConfig to apply inner field defaults correctly.
 // (Zod v4's .default({}) does not trigger inner defaults.)
@@ -53,20 +49,17 @@ const SessionConfigRawSchema = z.object({
     .default(["Read", "Write", "Edit", "Bash", "Glob", "Grep", "AskUserQuestion"]),
   disallowed_tools: z.array(z.string()).optional(),
   project: ProjectConfigSchema.optional(),
-  cwd: z.string().optional(),
   permission_mode: z
     .enum(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"])
     .default("bypassPermissions"),
   user: z.unknown().optional(),
   sdk: z.unknown().optional(),
-  output: z.unknown().optional(),
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
 export type SdkConfig = z.infer<typeof SdkConfigSchema> & {
   setting_sources: z.infer<typeof SettingSourceSchema>[];
 };
-export type OutputConfig = z.infer<typeof OutputConfigSchema>;
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
 export interface SessionConfig {
@@ -80,11 +73,9 @@ export interface SessionConfig {
   tools: string[];
   disallowed_tools?: string[];
   project?: ProjectConfig;
-  cwd?: string;
   permission_mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk";
   user: UserConfig;
   sdk: SdkConfig;
-  output: OutputConfig;
 }
 
 export function parseSessionConfig(raw: unknown): SessionConfig {
@@ -93,7 +84,6 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
   // Re-parse nested objects through their schemas to apply inner defaults
   const user = UserConfigSchema.parse(parsed.user ?? {});
   const sdkRaw = SdkConfigSchema.parse(parsed.sdk ?? {});
-  const output = OutputConfigSchema.parse(parsed.output ?? {});
 
   // Auto-set setting_sources when project is present and not explicitly set
   let settingSources = sdkRaw.setting_sources;
@@ -112,14 +102,12 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
     tools: parsed.tools,
     disallowed_tools: parsed.disallowed_tools,
     project: parsed.project,
-    cwd: parsed.cwd,
     permission_mode: parsed.permission_mode,
     user,
     sdk: {
       ...sdkRaw,
       setting_sources: settingSources,
     },
-    output,
   };
 }
 

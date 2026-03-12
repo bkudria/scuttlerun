@@ -2,8 +2,24 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
-import { scaffoldProject, cleanupProject } from "../src/project.js";
+import { scaffoldProject, createProjectDir } from "../src/project.js";
 import type { ProjectConfig } from "../src/config.js";
+
+describe("createProjectDir", () => {
+  it("creates an empty temp directory with warren-project- prefix", async () => {
+    const projectPath = await createProjectDir();
+    try {
+      expect(projectPath).toContain("warren-project-");
+      const stat = await fs.stat(projectPath);
+      expect(stat.isDirectory()).toBe(true);
+      // Directory should be empty
+      const contents = await fs.readdir(projectPath);
+      expect(contents).toEqual([]);
+    } finally {
+      await fs.rm(projectPath, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("scaffoldProject", () => {
   let tempDir: string;
@@ -29,7 +45,7 @@ describe("scaffoldProject", () => {
       const stat = await fs.stat(result.projectPath);
       expect(stat.isDirectory()).toBe(true);
     } finally {
-      await cleanupProject(result.projectPath);
+      await fs.rm(result.projectPath, { recursive: true, force: true });
     }
   });
 
@@ -43,7 +59,7 @@ describe("scaffoldProject", () => {
       );
       expect(content).toBe("Use clear language.");
     } finally {
-      await cleanupProject(result.projectPath);
+      await fs.rm(result.projectPath, { recursive: true, force: true });
     }
   });
 
@@ -55,7 +71,7 @@ describe("scaffoldProject", () => {
         fs.access(join(result.projectPath, "CLAUDE.md")),
       ).rejects.toThrow();
     } finally {
-      await cleanupProject(result.projectPath);
+      await fs.rm(result.projectPath, { recursive: true, force: true });
     }
   });
 
@@ -74,7 +90,7 @@ describe("scaffoldProject", () => {
       const target = await fs.readlink(linkPath);
       expect(target).toBe(skillDir);
     } finally {
-      await cleanupProject(result.projectPath);
+      await fs.rm(result.projectPath, { recursive: true, force: true });
     }
   });
 
@@ -88,7 +104,7 @@ describe("scaffoldProject", () => {
       );
       expect(JSON.parse(content)).toEqual({ key: "value" });
     } finally {
-      await cleanupProject(result.projectPath);
+      await fs.rm(result.projectPath, { recursive: true, force: true });
     }
   });
 
@@ -99,7 +115,7 @@ describe("scaffoldProject", () => {
       const stat = await fs.stat(join(result.projectPath, ".git"));
       expect(stat.isDirectory()).toBe(true);
     } finally {
-      await cleanupProject(result.projectPath);
+      await fs.rm(result.projectPath, { recursive: true, force: true });
     }
   });
 
@@ -111,22 +127,7 @@ describe("scaffoldProject", () => {
         fs.access(join(result.projectPath, ".git")),
       ).rejects.toThrow();
     } finally {
-      await cleanupProject(result.projectPath);
+      await fs.rm(result.projectPath, { recursive: true, force: true });
     }
-  });
-});
-
-describe("cleanupProject", () => {
-  it("removes the scaffolded directory", async () => {
-    const dir = await fs.mkdtemp(join(tmpdir(), "warren-project-cleanup-"));
-    await fs.writeFile(join(dir, "test.txt"), "test");
-    await cleanupProject(dir);
-    await expect(fs.access(dir)).rejects.toThrow();
-  });
-
-  it("does not throw if directory does not exist", async () => {
-    await expect(
-      cleanupProject("/tmp/warren-project-nonexistent-12345"),
-    ).resolves.toBeUndefined();
   });
 });

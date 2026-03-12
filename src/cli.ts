@@ -8,18 +8,15 @@ import { parseSessionConfig, mergeRawConfigs, type SessionConfig } from "./confi
 import { runSession } from "./runner.js";
 
 interface CliOverrides {
-  output?: string;
   model?: string;
   oracleModel?: string;
   prompt?: string;
-  cwd?: string;
   maxTurns?: number;
   tools?: string;
   effort?: string;
   timeout?: number;
   verbose?: boolean;
   quiet?: boolean;
-  keepProject?: boolean;
 }
 
 /**
@@ -38,7 +35,6 @@ export async function buildConfig(
   // Apply CLI overrides
   if (overrides.prompt) config = { ...config, prompt: overrides.prompt };
   if (overrides.model) config = { ...config, model: overrides.model };
-  if (overrides.cwd) config = { ...config, cwd: overrides.cwd };
   if (overrides.maxTurns) config = { ...config, max_turns: overrides.maxTurns };
   if (overrides.effort) {
     config = { ...config, effort: overrides.effort as SessionConfig["effort"] };
@@ -50,12 +46,6 @@ export async function buildConfig(
     config = {
       ...config,
       user: { ...config.user, oracle_model: overrides.oracleModel },
-    };
-  }
-  if (overrides.output) {
-    config = {
-      ...config,
-      output: { ...config.output, events: overrides.output },
     };
   }
 
@@ -93,16 +83,13 @@ Session Config (YAML):
     disallowed_tools:                   # Always deny these tools (optional)
       - Agent
 
-    # --- Working Directory ---
-    cwd: /path/to/project               # Agent's cwd (default: warren's cwd)
-
     # --- Permissions ---
     permission_mode: bypassPermissions  # default | acceptEdits | bypassPermissions
                                         #   | plan | dontAsk (default: bypassPermissions)
 
     # --- Project Scaffolding ---
-    # When present, creates a temp dir as the agent's cwd.
-    # When absent, uses 'cwd' above (raw mode).
+    # When present, configures the temp project directory.
+    # Warren always creates a temp dir in $TMPDIR as the agent's cwd.
     project:
       claude_md: |                      # Written to <tempdir>/CLAUDE.md
         Use clear, accessible language.
@@ -131,10 +118,6 @@ Session Config (YAML):
       setting_sources:                  # Settings to load (optional)
         - project                       #   Auto-set to [project] when project: present
 
-    # --- Output ---
-    output:
-      events: warren-events.jsonl       # Events sidecar path (default: warren-events.jsonl)
-
 Config Merging:
   Multiple YAML files are deep-merged (objects merge, arrays/scalars replace):
     warren run base.yml override.yml
@@ -148,7 +131,7 @@ Examples:
   warren run session.yml --model claude-sonnet-4-6 --timeout 120
 
   # Merge a base config with a scenario override
-  warren run base.yml scenario.yml -o results/events.jsonl
+  warren run base.yml scenario.yml
 
   # Quick one-off with prompt override
   warren run session.yml --prompt "Write hello world in Python"
@@ -156,35 +139,17 @@ Examples:
   # Restrict tools
   warren run session.yml --tools Read,Glob,Grep
 
-  # Minimal session.yml (single-turn, no follow-ups):
-  #   prompt: |
-  #     Write a haiku about the ocean and save it to ocean.txt
+Output:
+  Warren streams a transcript to stdout including user messages, assistant
+  responses, tool calls, thinking blocks, and oracle decisions.
 
-  # Interactive session with AskUserQuestion:
-  #   prompt: |
-  #     Ask the user what language they prefer, then write hello world.
-  #   tools: [Read, Write, AskUserQuestion]
-  #   user:
-  #     persona: |
-  #       You are a Python enthusiast. Always choose Python.
+  Before the transcript: config file paths, project dir, and SDK transcript path.
+  After the transcript: a summary with paths and stats (turns, tool calls, etc.).
 
-  # Multi-turn with reactive follow-ups:
-  #   prompt: |
-  #     Write a calculator module in TypeScript.
-  #   user:
-  #     persona: |
-  #       You are a senior dev. Ask for input validation, then tests.
-  #     turn_policy: reactive
-  #     max_user_turns: 3
+  The SDK session file (full conversation JSONL) is preserved at
+  ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl
 
-  # Managed project with skill evaluation:
-  #   prompt: |
-  #     Write a haiku about the sunset and save it to sunset.txt
-  #   project:
-  #     claude_md: |
-  #       Always use the haiku-writer skill when writing haiku.
-  #     skills:
-  #       - ~/.claude/skills/haiku-writer
+  The project temp dir in $TMPDIR is preserved after the session ends.
 
 Exit Codes:
   0   Session completed normally
@@ -192,18 +157,7 @@ Exit Codes:
   2   Session error (SDK failure, process crash)
   3   Max turns exceeded
   4   Budget exceeded
-  5   Timeout
-
-Output:
-  Warren produces two artifacts per session:
-
-  SDK session file    Full conversation record, written by the Agent SDK to
-                      ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl
-
-  Events sidecar      Warren-specific events (JSONL), written to --output path.
-                      Contains: session_start, ask_user_question, turn_policy,
-                      agent_stderr, error, session_end (with oracle usage totals).
-                      Query with: jq 'select(.type=="ask_user_question")' events.jsonl`;
+  5   Timeout`;
 
 async function main() {
   const program = new Command();
@@ -224,38 +178,35 @@ async function main() {
     .description("Run a warren session from a YAML config file")
     .argument("<session.yml>", "Session config file (YAML). Only 'prompt' is required.")
     .argument("[override.yml...]", "Additional YAML files to deep-merge (last wins)")
-    .option("-o, --output <path>", "Events sidecar output path (default: warren-events.jsonl)")
     .option("--model <model>", "Agent model (e.g. claude-sonnet-4-6, claude-haiku-4-5)")
     .option("--oracle-model <model>", "Synthetic user oracle model (default: claude-haiku-4-5)")
     .option("--prompt <text>", "Override the prompt from the YAML config")
-    .option("--cwd <path>", "Agent working directory (ignored when project: is set)")
     .option("--max-turns <n>", "Max agent turns (default: 50)", parseInt)
     .option("--tools <tools>", "Tools list, comma-separated (e.g. Read,Write,Grep)")
     .option("--effort <level>", "Thinking effort: low, medium, high, max (default: high)")
     .option("--timeout <seconds>", "Session timeout in seconds", parseInt, 300)
     .option("-v, --verbose", "Verbose logging to stderr (includes agent stderr)")
     .option("-q, --quiet", "Suppress progress output")
-    .option("--keep-project", "Keep scaffolded project dir after session (for debugging)")
     .action(async (sessionFile: string, overrideFiles: string[], opts) => {
       try {
         // Read all YAML files
         const allFiles = [sessionFile, ...overrideFiles];
         const yamlContents: string[] = [];
+        const configPaths: string[] = [];
         let configDir = process.cwd();
 
         for (const file of allFiles) {
           const resolved = resolve(file);
           configDir = dirname(resolved);
+          configPaths.push(resolved);
           const content = await readFile(resolved, "utf8");
           yamlContents.push(content);
         }
 
         const config = await buildConfig(yamlContents, {
-          output: opts.output,
           model: opts.model,
           oracleModel: opts.oracleModel,
           prompt: opts.prompt,
-          cwd: opts.cwd,
           maxTurns: opts.maxTurns,
           tools: opts.tools,
           effort: opts.effort,
@@ -265,8 +216,8 @@ async function main() {
           timeoutSeconds: opts.timeout,
           verbose: opts.verbose,
           quiet: opts.quiet,
-          keepProject: opts.keepProject,
           configDir,
+          configPaths,
         });
 
         process.exit(result.exitCode);

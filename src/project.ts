@@ -11,6 +11,10 @@ export interface ScaffoldResult {
   projectPath: string;
 }
 
+export async function createProjectDir(): Promise<string> {
+  return fs.mkdtemp(join(tmpdir(), "warren-project-"));
+}
+
 export async function scaffoldProject(
   config: ProjectConfig,
   _configDir: string,
@@ -50,10 +54,6 @@ export async function scaffoldProject(
   }
 
   return { projectPath };
-}
-
-export async function cleanupProject(projectPath: string): Promise<void> {
-  await fs.rm(projectPath, { recursive: true, force: true });
 }
 
 function resolveSkillPath(skillPath: string, configDir: string): string {

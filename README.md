@@ -44,7 +44,6 @@ prompt: |
 | `effort` | `low` \| `medium` \| `high` \| `max` | `high` |
 | `tools` | string[] | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion]` |
 | `disallowed_tools` | string[] | — |
-| `cwd` | string | — |
 | `permission_mode` | string | `bypassPermissions` |
 
 #### `user` (synthetic user)
@@ -58,7 +57,7 @@ prompt: |
 
 #### `project` (managed project scaffolding)
 
-When present, warren creates a temp directory as the agent's working directory.
+When present, warren populates the project temp directory.
 
 | Field | Type | Default |
 |-------|------|---------|
@@ -77,12 +76,6 @@ When present, warren creates a temp directory as the agent's working directory.
 | `sdk.env` | Record\<string, string\> | — |
 | `sdk.setting_sources` | string[] | `["project"]` if `project:` present, else `[]` |
 
-#### `output`
-
-| Field | Type | Default |
-|-------|------|---------|
-| `output.events` | string | `warren-events.jsonl` |
-
 ### Config Merging
 
 Multiple YAML files are deep-merged (objects merge, arrays/scalars replace):
@@ -100,18 +93,15 @@ warren version
 
 | Option | Description |
 |--------|-------------|
-| `-o, --output <path>` | Override events output path |
 | `--model <model>` | Override agent model |
 | `--oracle-model <model>` | Override synthetic user model |
 | `--prompt <text>` | Override prompt |
-| `--cwd <path>` | Override working directory |
 | `--max-turns <n>` | Override max agent turns |
 | `--tools <tools>` | Override tools (comma-separated) |
 | `--effort <level>` | Override effort level |
 | `--timeout <seconds>` | Session timeout (default: 300) |
 | `-v, --verbose` | Verbose logging to stderr |
 | `-q, --quiet` | Suppress progress output |
-| `--keep-project` | Don't delete scaffolded project dir |
 
 ### Exit Codes
 
@@ -134,24 +124,39 @@ Warren wraps the Claude Agent SDK's `query()` with an async generator for multi-
 
 ## Output
 
-Warren produces two artifacts per session:
+Warren streams a human-readable transcript to stdout as the session runs:
 
-**SDK session file** — Full conversation record, written automatically by the Agent SDK to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`.
+```
+─── Warren Session ───────────────────
+Config:     /path/to/session.yml
+Project:    /tmp/warren-project-xK3f9m
+Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
+───────────────────────────────────────
 
-**Warren events sidecar** — Lightweight JSONL with oracle decisions and session metadata. Each line:
+>>> User
+Write a haiku about the ocean and save it to ocean.txt
 
-```json
-{"timestamp": "...", "type": "event_type", "session_id": "...", "data": {...}}
+<<< Assistant
+I'll write a haiku about the ocean.
+
+  ⚙ Write ocean.txt
+
+<<< Assistant
+Done! I saved the haiku to ocean.txt.
+
+─── Summary ──────────────────────────
+Config:     /path/to/session.yml
+Project:    /tmp/warren-project-xK3f9m
+Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
+Turns:      2
+Tool calls: 1
+Duration:   12.3s
+───────────────────────────────────────
 ```
 
-| Event | Description |
-|-------|-------------|
-| `session_start` | Config, version, SDK session path |
-| `ask_user_question` | Oracle's answers to agent questions |
-| `turn_policy` | Continue/end decision with reasoning |
-| `agent_stderr` | Batched stderr from SDK child process |
-| `error` | Warren-level errors |
-| `session_end` | Stop reason, duration, oracle usage totals |
+**Project directory** — Always created in `$TMPDIR`, preserved after the session ends. Inspect agent-created files there.
+
+**SDK session file** — Full conversation record in Claude Code's native JSONL format at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Queryable with `jq`.
 
 ## Examples
 

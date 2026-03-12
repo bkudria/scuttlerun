@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   parseSessionConfig,
   mergeConfigs,
-  type SessionConfig,
 } from "../src/config.js";
 
 describe("parseSessionConfig", () => {
@@ -47,7 +46,6 @@ describe("parseSessionConfig", () => {
         settings: { key: "value" },
         git_init: true,
       },
-      cwd: "/tmp/sandbox",
       permission_mode: "default" as const,
       user: {
         persona: "You are a beginner programmer.",
@@ -61,9 +59,6 @@ describe("parseSessionConfig", () => {
         agents: {},
         env: {},
         setting_sources: ["project" as const],
-      },
-      output: {
-        events: "custom-events.jsonl",
       },
     };
     const config = parseSessionConfig(raw);
@@ -80,7 +75,6 @@ describe("parseSessionConfig", () => {
     expect(config.user.max_user_turns).toBe(5);
     expect(config.sdk.thinking).toEqual({ type: "adaptive" });
     expect(config.sdk.setting_sources).toEqual(["project"]);
-    expect(config.output.events).toBe("custom-events.jsonl");
   });
 
   it("rejects config without prompt", () => {

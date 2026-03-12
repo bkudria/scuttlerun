@@ -35,7 +35,7 @@ This boundary exists because eval logic is inherently opinionated — different 
 | Synthetic user model | Haiku default + override | Fast and cheap for routine responses; configurable |
 | Turn model | Reactive multi-turn | LLM-driven policy decides follow-ups based on context |
 | Permissions | `bypassPermissions` default | Guarantees headless operation; configurable per session |
-| Output | SDK session + warren events sidecar | SDK records conversation for free; warren only writes oracle decisions |
+| Output | Streaming transcript to stdout + SDK session file | Human-readable transcript streamed live; SDK session file preserved for programmatic queries |
 | Dependencies | Pragmatic | commander, zod, yaml, etc. as appropriate |
 | User persona | Scenario-defined context | Each session config defines user context/persona |
 | Project location | ~/code/warren | Standalone repo with its own package.json |
@@ -47,7 +47,7 @@ This boundary exists because eval logic is inherently opinionated — different 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      warren CLI                          │
-│  warren run session.yml [--output transcript.jsonl]      │
+│  warren run session.yml                                  │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
@@ -55,20 +55,20 @@ This boundary exists because eval logic is inherently opinionated — different 
 │                   Session Runner                         │
 │                                                          │
 │  Loads session.yml → SessionConfig (zod schema)         │
-│  Creates Agent SDK query with streaming input            │
-│  Manages turn lifecycle and transcript recording         │
-└──────┬──────────────┬──────────────────┬────────────────┘
-       │              │                  │
-       ▼              ▼                  ▼
-┌─────────────┐ ┌──────────────┐ ┌──────────────────────┐
-│ Agent SDK   │ │  Synthetic   │ │  Event Recorder      │
-│ (streaming  │ │  User        │ │                      │
-│  input mode)│ │              │ │  Warren events       │
-│             │ │ canUseTool + │ │  sidecar (JSONL)     │
-│  query()    │ │  turn policy │ │  Oracle decisions    │
-│  with async │ │              │ │  + session metadata  │
-│  generator  │ │              │ │                      │
-└─────────────┘ └──────┬───────┘ └──────────────────────┘
+│  Creates temp project dir, starts Agent SDK query        │
+│  Streams transcript to stdout                            │
+└──────┬──────────────┬──────────────────────────────────┘
+       │              │
+       ▼              ▼
+┌─────────────┐ ┌──────────────┐
+│ Agent SDK   │ │  Synthetic   │
+│ (streaming  │ │  User        │
+│  input mode)│ │              │
+│             │ │ canUseTool + │
+│  query()    │ │  turn policy │
+│  with async │ │              │
+│  generator  │ │              │
+└─────────────┘ └──────┬───────┘
                        │
                        ▼
               ┌──────────────────┐
@@ -89,14 +89,14 @@ This boundary exists because eval logic is inherently opinionated — different 
 The core orchestrator. Responsibilities:
 
 - Parse and validate the session YAML config
-- If `project:` is configured, scaffold a temporary project directory (symlink skills, write CLAUDE.md/settings)
+- Always create a temporary project directory in `$TMPDIR` (if `project:` is configured, scaffold it with skills, CLAUDE.md, settings)
 - Initialize the Agent SDK `query()` with an `AsyncIterable<SDKUserMessage>` prompt
 - Feed the initial prompt via the async generator, then await turn decisions
 - Use Promise/resolver coordination: on `ResultMessage`, consult the Synthetic User, then resolve the generator's Promise to yield a follow-up or return to end the session
-- Record every event to the transcript
+- Stream transcript to stdout (user messages, assistant text, thinking, tool calls, oracle decisions)
 - Enforce turn limits and budget constraints
 - Handle errors and timeouts gracefully
-- Clean up SDK child process and scaffolded temp directory after session ends (or on error)
+- Clean up SDK child process after session ends (project directory is preserved)
 
 **Session initialization:** The SDK emits a `SystemMessage` (subtype: `"init"`) at the start of each query turn, carrying the `session_id`. Warren captures the first one to populate the `session_start` event. Note: subsequent turns also emit `init` messages (same `session_id`).
 
@@ -129,7 +129,7 @@ The core orchestrator. Responsibilities:
 
 **Implementation note:** The `for await` loop over the SDK's async iterable does not respond to `AbortController` signals mid-iteration. Warren uses a manual async iterator with `Promise.race` — each `iterator.next()` call is raced against a Promise that resolves when the abort signal fires. This ensures the timeout fires within one iteration rather than waiting for the next SDK message.
 
-**Cleanup:** On session completion (normal or error), warren calls `query.close()` to terminate the SDK's child process, then removes the scaffolded temp directory (if applicable). The `finally` block ensures cleanup runs even on unhandled errors.
+**Cleanup:** On session completion (normal or error), warren calls `query.close()` to terminate the SDK's child process. The project temp directory is never deleted — it is preserved for inspection. The `finally` block ensures the SDK child process is cleaned up even on unhandled errors.
 
 **Agent stderr:** The SDK accepts a `stderr: (data: string) => void` callback. Warren accumulates all stderr output in an in-memory buffer and writes a single `agent_stderr` event at session end. Stderr is low-value diagnostic data — losing it on a crash is acceptable. For live stderr during development, `--verbose` tees it to warren's own stderr.
 
@@ -157,11 +157,20 @@ A thin wrapper around the Anthropic Messages API (not the Agent SDK) that:
 - Uses `client.messages.parse()` from `@anthropic-ai/sdk` with Zod schemas for type-safe structured output — the SDK validates responses against the schema automatically and returns typed `parsed_output`
 - Is stateless — each call gets the full relevant context
 
-#### 4. Event Recorder
+#### 4. Transcript Output
 
-Warren relies on the Agent SDK's built-in session persistence for the full conversation record (written automatically to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`). Warren writes a lightweight **events sidecar** (JSONL) containing only warren-specific decisions: oracle responses, turn policy decisions, agent stderr, and session metadata. This avoids reimplementing conversation serialization and leverages existing session-transcripts tooling.
+Warren streams a human-readable transcript to stdout as the session runs. The transcript includes:
 
-**Flushing:** Oracle and lifecycle events (`session_start`, `ask_user_question`, `turn_policy`, `error`, `session_end`) are written and fsynced to disk immediately. These are high-value events worth preserving across crashes; a typical session produces fewer than 20. `agent_stderr` events are buffered and written without fsync (see Agent stderr above).
+- **Preamble**: config file paths, project temp dir path
+- **Transcript path**: SDK session file path (printed after session ID is known)
+- **User messages**: initial prompt and follow-ups (prefixed `>>> User`)
+- **Assistant text**: full response text (prefixed `<<< Assistant`)
+- **Thinking blocks**: extended thinking content (prefixed `<<< Thinking`)
+- **Tool calls**: abbreviated summaries (e.g., `⚙ Write /tmp/ocean.txt`)
+- **Oracle decisions**: AskUserQuestion answers and turn policy decisions (prefixed `⚡ Oracle`)
+- **Summary**: paths, turn count, tool call count, duration, cost
+
+Warren relies on the Agent SDK's built-in session persistence for the full conversation record (written automatically to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`). This file is queryable with standard jq filters.
 
 ---
 
@@ -211,11 +220,6 @@ project:
   settings: {}                      # Optional: written to <tempdir>/.claude/settings.json
   git_init: false                   # Optional: run `git init` in scaffolded dir (default: false)
 
-# --- Working Directory ---
-# Raw mode: when `project:` is absent, this is the agent's cwd.
-# Managed mode: when `project:` is present, this is ignored (temp dir is used).
-cwd: /tmp/warren-sandbox
-
 # --- Permission Mode ---
 permission_mode: bypassPermissions  # Auto-approve all (default for headless use)
 
@@ -240,9 +244,6 @@ sdk:
   agents: {}                        # Optional subagent definitions
   env: {}                           # Optional environment variables
 
-# --- Output ---
-output:
-  events: warren-events.jsonl       # Warren events sidecar path (default: <invocation-dir>/warren-events.jsonl)
 ```
 
 ### Config Validation
@@ -260,7 +261,7 @@ Everything else has sensible defaults:
 - `user.oracle_model`: `"claude-haiku-4-5"`
 - `sdk.setting_sources`: `["project"]` when `project:` is present, `[]` otherwise (explicit `sdk.setting_sources` in YAML always overrides the auto-set)
 
-**Zod v4 note:** The top-level schema uses `.optional()` for nested objects (`user`, `sdk`, `output`) rather than `.default({})`, because Zod v4's `.default({})` does not trigger inner field defaults. Instead, `parseSessionConfig()` re-parses each nested object through its own schema to apply inner defaults correctly.
+**Zod v4 note:** The top-level schema uses `.optional()` for nested objects (`user`, `sdk`) rather than `.default({})`, because Zod v4's `.default({})` does not trigger inner field defaults. Instead, `parseSessionConfig()` re-parses each nested object through its own schema to apply inner defaults correctly.
 
 Project-specific validation:
 - `project.skills`: each path must exist and contain a `SKILL.md` file
@@ -268,17 +269,17 @@ Project-specific validation:
 - `project.settings`: optional object (written as JSON to `.claude/settings.json`)
 - `project.git_init`: optional boolean (default: `false`)
 
-### Project Scaffolding
+### Project Directory
 
-When `project:` is present, warren scaffolds a temporary project directory:
+Warren always creates a temporary project directory in `$TMPDIR` with prefix `warren-project-`. This directory becomes the agent's working directory (`cwd`).
 
-- **Temp directory**: created via `fs.mkdtemp` in `os.tmpdir()` with prefix `warren-project-`
+- **Always created**: even when `project:` is absent, an empty temp directory is created
+- **Scaffolding**: when `project:` is present, warren populates the temp directory with CLAUDE.md, skill symlinks, settings, and optionally runs `git init`
 - **Skill paths**: tilde (`~`) is expanded; relative paths are resolved from the config file's directory
 - **Symlinks**: each skill directory is symlinked (not copied) into `<tempdir>/.claude/skills/<name>/`
-- **Git init**: when `project.git_init: true`, warren runs `git init` in the scaffolded directory. Default is `false`. Some agent behaviors (e.g., `Bash` with git commands) may require a git repo; callers should enable this when needed.
-- **Cleanup**: temp directory is removed after session ends, including on errors (via `finally` block)
-- **SIGKILL**: if warren is killed with SIGKILL, the temp directory is orphaned. This is unavoidable; callers can clean up `/tmp/warren-project-*` manually.
-- **`--keep-project`**: CLI flag to preserve the scaffolded directory for debugging. Path is printed to stderr.
+- **Git init**: when `project.git_init: true`, warren runs `git init` in the directory. Default is `false`.
+- **Never cleaned up**: the project directory is preserved after the session ends. Its path is printed in the preamble and summary.
+- **Manual cleanup**: callers can clean up old directories via `rm -rf /tmp/warren-project-*`
 
 ### Config Merging
 
@@ -319,18 +320,15 @@ Usage:
   warren version
 
 Run options:
-  --output, -o PATH        Override warren events output path
   --model MODEL            Override agent model
   --oracle-model MODEL     Override synthetic user model
   --prompt TEXT             Override prompt (for quick one-offs)
-  --cwd PATH               Override working directory
   --max-turns N            Override max agent turns
   --tools TOOLS            Override tools (comma-separated, e.g. Read,Glob,Grep)
   --effort LEVEL           Override effort (low, medium, high, max)
   --timeout SECONDS        Overall session timeout (default: 300)
   --verbose, -v            Verbose logging to stderr
   --quiet, -q              Suppress progress output
-  --keep-project           Don't delete scaffolded project dir (for debugging)
 ```
 
 ### Exit Codes
@@ -502,85 +500,82 @@ When `user.turn_policy: single`, Warren skips the turn policy entirely. One prom
 
 ---
 
-## Output Artifacts
+## Output
 
-Warren produces two artifacts per session:
+Warren produces two output artifacts per session:
 
-### 1. SDK Session File (conversation record)
+### 1. Streaming Transcript (stdout)
 
-Written automatically by the Agent SDK to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Contains the full conversation: assistant messages, user messages, tool calls, tool results, thinking blocks, etc. in Claude Code's native JSONL format. The `<encoded-cwd>` is the agent's working directory with `/` replaced by `-`.
+Warren streams a human-readable transcript to stdout as the session runs. The format is:
 
-**Note (managed mode):** When `project:` is present, the agent's cwd is the scaffolded temp directory (e.g., `/tmp/warren-project-abc123`), so the session file path is derived from the temp dir. After cleanup, the session file remains at its encoded path. The `session_start` event's `sdk_session_path` field provides the exact path for correlation.
+```
+─── Warren Session ───────────────────
+Config:     /abs/path/to/session.yml
+Project:    /tmp/warren-project-xK3f9m
+Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
+───────────────────────────────────────
+
+>>> User
+Write a haiku about the ocean and save it to ocean.txt
+
+<<< Thinking
+I'll write a haiku following the 5-7-5 syllable pattern.
+
+<<< Assistant
+I'll write a haiku about the ocean and save it to a file.
+
+  ⚙ Write /tmp/warren-project-xK3f9m/ocean.txt
+  ✓ Wrote 3 lines
+
+<<< Assistant
+Done! I saved the haiku to ocean.txt.
+
+─── Summary ──────────────────────────
+Config:     /abs/path/to/session.yml
+Project:    /tmp/warren-project-xK3f9m
+Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
+Turns:      2
+Tool calls: 1
+Duration:   12.3s
+Cost:       $0.05
+───────────────────────────────────────
+```
+
+Oracle decisions are shown inline:
+- `⚡ Oracle answered: What language? → Python` (AskUserQuestion)
+- `⚡ Oracle: continue — "Can you add tests?"` (turn policy)
+
+### 2. SDK Session File (conversation record)
+
+Written automatically by the Agent SDK to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Contains the full conversation in Claude Code's native JSONL format. The `<encoded-cwd>` is the agent's working directory (the temp dir) with `/` replaced by `-`.
 
 Queryable with standard jq filters against the native JSONL format.
-
-### 2. Warren Events File (sidecar)
-
-Written by warren to the path specified by `--output` (default: `<invocation-dir>/warren-events.jsonl`, where invocation-dir is `process.cwd()` — not the agent's `cwd`). Contains only warren-specific events — decisions the oracle made, not the conversation itself.
-
-Each line is a JSON object with a common envelope:
-
-```json
-{
-  "timestamp": "2026-03-08T12:00:00.000Z",
-  "type": "event_type",
-  "session_id": "abc123-...",
-  "data": { ... }
-}
-```
-
-#### Event Types
-
-| Type | Description | Data Fields |
-|------|-------------|-------------|
-| `session_start` | Session initialized | `config` (sanitized), `warren_version`, `sdk_session_path`, `scaffolded_project_path` (if managed) |
-| `ask_user_question` | AskUserQuestion intercepted by oracle | `tool_use_id`, `questions`, `oracle_response`, `oracle_model`, `oracle_usage` |
-| `turn_policy` | Synthetic user turn decision | `decision`, `message`, `reasoning`, `oracle_model`, `oracle_usage` |
-| `agent_stderr` | Batched stderr output from SDK child process | `text` (accumulated lines, newline-separated) |
-| `error` | Warren-level error | `error_type`, `message`, `recoverable` |
-| `session_end` | Session completed (from SDK `ResultMessage`) | `stop_reason`, `subtype`, `is_error`, `total_turns`, `total_cost_usd`, `duration_ms` (from SDK), `oracle_usage_total` |
-
-#### Oracle Usage Tracking
-
-The `session_end` event includes aggregated oracle usage:
-
-```json
-{
-  "oracle_usage_total": {
-    "input_tokens": 2000,
-    "output_tokens": 500,
-    "calls": 3
-  }
-}
-```
-
-Agent token usage is available from the SDK's `ResultMessage` and the native session file.
 
 ---
 
 ## Downstream Usage
 
-Warren produces two artifacts: the SDK session file (full conversation) and a warren events sidecar (oracle decisions). What happens next is entirely the caller's concern.
+Warren streams a human-readable transcript to stdout and preserves the SDK session file for programmatic queries. What happens next is entirely the caller's concern.
 
+- **Transcript (stdout)** is human-readable — pipe to a file, grep for patterns, or inspect visually
 - **SDK session files** are standard Claude Code JSONL — queryable with jq for conversation, tool calls, errors, etc.
-- **Warren events** are lightweight JSONL containing only oracle/turn-policy decisions — easy to query with `jq`.
+- **Project directories** are preserved in `$TMPDIR` — inspect agent-created files after the session
 - **Config merging** lets callers generate many session configs from a base template, invoke `warren run` for each, and process the results however they see fit.
 
 Example caller patterns (implemented *outside* warren):
 
 ```bash
-# Run a session
-warren run session.yml -o results/events.jsonl --cwd /tmp/sandbox
-# SDK session file: ~/.claude/projects/-tmp-sandbox/<session-id>.jsonl
-# Warren events: results/events.jsonl
-
-# Inspect oracle decisions
-jq 'select(.type=="ask_user_question")' results/events.jsonl
+# Run a session, capture transcript
+warren run session.yml > results/transcript.txt
 
 # Batch processing
 for config in scenarios/*.yml; do
-    warren run base.yml "$config" -o "results/$(basename $config .yml).jsonl"
+    warren run base.yml "$config" > "results/$(basename $config .yml).txt"
 done
+
+# Query the SDK session file for tool calls
+jq 'select(.type=="assistant") | .message.content[] | select(.type=="tool_use")' \
+  ~/.claude/projects/-tmp-warren-project-abc123/<session-id>.jsonl
 ```
 
 ---
@@ -644,16 +639,16 @@ warren/
 │   ├── runner.ts              # Session runner (core orchestrator)
 │   ├── synthetic-user.ts      # Synthetic user (AskUserQuestion + turn policy)
 │   ├── oracle.ts              # LLM oracle wrapper (Haiku calls)
-│   ├── events.ts              # Event recorder and type definitions
+│   ├── transcript.ts          # Streaming transcript formatter (stdout)
 │   └── project.ts             # Project directory scaffolding
 ├── tests/
 │   ├── cli.test.ts            # CLI config building and YAML merging
 │   ├── config.test.ts         # Config parsing and validation
-│   ├── events.test.ts         # Event recording and JSONL output
 │   ├── oracle.test.ts         # Oracle LLM wrapper
 │   ├── project.test.ts        # Project scaffolding
 │   ├── runner.test.ts         # Session runner (core orchestration)
-│   └── synthetic-user.test.ts # Synthetic user logic
+│   ├── synthetic-user.test.ts # Synthetic user logic
+│   └── transcript.test.ts    # Transcript formatting
 └── examples/
     ├── simple.yml             # Minimal session config
     ├── interactive.yml        # Session with AskUserQuestion handling
@@ -738,18 +733,17 @@ Mitigation for non-determinism: transcript records oracle responses, so every ru
 
 For eval scenarios that need deterministic conversation flows, `turn_policy: single` provides that escape hatch.
 
-### SDK Session + Sidecar vs. Self-Contained Transcript
+### Streaming Transcript + SDK Session File vs. Events Sidecar
 
-**Chosen: SDK session file + warren events sidecar.** Trade-offs:
+**Chosen: Streaming transcript to stdout + SDK session file.** Trade-offs:
 
-- **Pro**: Zero implementation cost for conversation recording — SDK does it automatically
+- **Pro**: Human-readable output — easy to inspect, pipe to files, or grep
+- **Pro**: Streaming — see results as they happen, useful for monitoring
+- **Pro**: Oracle decisions visible inline — no separate file correlation needed
 - **Pro**: SDK session files are in Claude Code's native format, queryable with standard jq
-- **Pro**: Warren's events sidecar is lightweight — only oracle/turn-policy decisions
-- **Pro**: Existing tooling for Claude Code sessions works out of the box
-- **Con**: Two files per session instead of one
-- **Con**: Consumer needs to correlate session ID between the sidecar and the SDK session file
-
-The `session_start` event in the sidecar includes `sdk_session_path` for easy correlation.
+- **Pro**: Single stdout stream — simple to capture (`> file.txt`)
+- **Con**: Transcript is not structured (not easily machine-parseable)
+- **Con**: Callers needing structured data must query the SDK session file with jq
 
 ### `bypassPermissions` vs. Configurable Permissions
 

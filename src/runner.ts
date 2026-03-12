@@ -1,10 +1,18 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SessionConfig } from "./config.js";
-import { EventRecorder } from "./events.js";
 import { Oracle } from "./oracle.js";
 import { SyntheticUser } from "./synthetic-user.js";
-import { scaffoldProject, cleanupProject } from "./project.js";
-import { dirname } from "node:path";
+import { scaffoldProject, createProjectDir } from "./project.js";
+import {
+  printPreamble,
+  printTranscriptPath,
+  printSessionStarted,
+  printUserMessage,
+  printAssistantMessage,
+  printOracleAskUser,
+  printOracleTurnPolicy,
+  printSummary,
+} from "./transcript.js";
 
 export interface RunResult {
   exitCode: number;
@@ -15,50 +23,52 @@ export interface RunOptions {
   timeoutSeconds?: number;
   verbose?: boolean;
   quiet?: boolean;
-  keepProject?: boolean;
   configDir?: string;
+  configPaths?: string[];
 }
 
 export async function runSession(
   config: SessionConfig,
   options: RunOptions = {},
 ): Promise<RunResult> {
-  const { timeoutSeconds = 300, verbose = false, keepProject = false } = options;
+  const { timeoutSeconds = 300, verbose = false } = options;
 
   // Prevent nested session errors
   delete process.env.CLAUDECODE;
 
   let sessionId: string | undefined;
-  let scaffoldedPath: string | undefined;
   let queryHandle: ReturnType<typeof query> | undefined;
   const stderrBuffer: string[] = [];
 
-  // Determine working directory
-  let cwd = config.cwd || process.cwd();
-
-  // Scaffold project if configured
+  // Always create a project directory
+  let projectDir: string;
   if (config.project) {
     const configDir = options.configDir || process.cwd();
     const result = await scaffoldProject(config.project, configDir);
-    scaffoldedPath = result.projectPath;
-    cwd = scaffoldedPath;
+    projectDir = result.projectPath;
     if (verbose) {
-      process.stderr.write(`[warren] Scaffolded project at ${scaffoldedPath}\n`);
+      process.stderr.write(`[warren] Scaffolded project at ${projectDir}\n`);
     }
+  } else {
+    projectDir = await createProjectDir();
   }
 
-  // Create event recorder with a temp path until we know the session ID
-  const eventsPath = config.output.events;
-  // We'll create the recorder once we have the session ID, but need a temp one first
-  let recorder: EventRecorder | undefined;
+  const cwd = projectDir;
 
   // Create oracle
   const oracle = new Oracle(config.user.oracle_model);
+
+  // Print preamble
+  printPreamble(options.configPaths || [], projectDir);
 
   // Set up timeout
   const abortController = new AbortController();
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
+
+  // Track stats
+  let toolCallCount = 0;
+  let sdkSessionPath = "";
 
   try {
     // Build the async generator for multi-turn input
@@ -125,7 +135,7 @@ export async function runSession(
       }
     };
 
-    // Create a lazy SyntheticUser — initialized once we have a recorder
+    // Create a lazy SyntheticUser — initialized once we have a session ID
     let syntheticUser: SyntheticUser | undefined;
 
     // canUseTool callback
@@ -135,10 +145,19 @@ export async function runSession(
       opts: { toolUseID: string; agentID?: string },
     ) => {
       if (toolName === "AskUserQuestion" && syntheticUser) {
-        return syntheticUser.handleAskUserQuestion(
+        const result = await syntheticUser.handleAskUserQuestion(
           input as { questions: any[] },
           opts.toolUseID,
         );
+        // Print oracle decision
+        printOracleAskUser(
+          result.oracleResponse.answers,
+          result.oracleResponse.reasoning,
+        );
+        return {
+          behavior: result.behavior,
+          updatedInput: result.updatedInput,
+        };
       }
       return { behavior: "allow" };
     };
@@ -157,6 +176,8 @@ export async function runSession(
 
     let exitCode = 0;
     const startTime = Date.now();
+    let resultNumTurns = 0;
+    let resultTotalCostUsd = 0;
 
     // Process messages — race each iteration against the abort signal
     const iterator = (queryHandle as AsyncIterable<Record<string, unknown>>)[Symbol.asyncIterator]();
@@ -177,46 +198,54 @@ export async function runSession(
 
       if (message.type === "system" && message.subtype === "init") {
         sessionId = message.session_id as string;
-        recorder = new EventRecorder(eventsPath, sessionId);
-        syntheticUser = new SyntheticUser(oracle, recorder, config.user, config.prompt);
+        syntheticUser = new SyntheticUser(oracle, config.user, config.prompt);
 
-        // Record session start
-        await recorder.writeEvent("session_start", {
-          config: sanitizeConfig(config),
-          warren_version: "0.1.0",
-          sdk_session_path: buildSdkSessionPath(cwd, sessionId),
-          ...(scaffoldedPath ? { scaffolded_project_path: scaffoldedPath } : {}),
-        });
+        // Compute SDK session path and print it
+        sdkSessionPath = buildSdkSessionPath(cwd, sessionId);
+        printTranscriptPath(sdkSessionPath);
+
+        // Print session started and initial user message
+        printSessionStarted(sessionId);
+        printUserMessage(config.prompt);
 
         // Add initial prompt to conversation buffer
         syntheticUser.addUserMessage(config.prompt);
-
-        if (!options.quiet) {
-          process.stderr.write(`[warren] Session started: ${sessionId}\n`);
-        }
       } else if (message.type === "assistant") {
-        // Extract text blocks from assistant messages for conversation buffer
+        // Process all content blocks from assistant messages
         const content = (message as any).message?.content;
-        if (content && syntheticUser) {
+        if (content && Array.isArray(content)) {
+          toolCallCount += printAssistantMessage(content);
+
+          // Extract text parts for conversation buffer
           const textParts: string[] = [];
           for (const block of content) {
             if (block.type === "text") {
               textParts.push(block.text);
             }
           }
-          if (textParts.length > 0) {
+          if (textParts.length > 0 && syntheticUser) {
             syntheticUser.addAssistantMessage(textParts.join("\n"));
           }
         }
       } else if (message.type === "result") {
         const subtype = message.subtype as string;
 
+        // Extract stats from result
+        resultNumTurns = (message.num_turns as number) || 0;
+        resultTotalCostUsd = (message.total_cost_usd as number) || 0;
+
         if (subtype === "success" && syntheticUser) {
           // Consult turn policy
           const decision = await syntheticUser.decideTurn();
 
+          // Print oracle turn policy decision
+          if (config.user.turn_policy === "reactive") {
+            printOracleTurnPolicy(decision.decision, decision.message, decision.reasoning);
+          }
+
           if (decision.decision === "continue" && decision.message) {
             syntheticUser.addUserMessage(decision.message);
+            printUserMessage(decision.message);
             resolveNextAction?.({ type: "continue", message: decision.message });
           } else {
             resolveNextAction?.({ type: "end" });
@@ -239,51 +268,21 @@ export async function runSession(
       exitCode = 5;
     }
 
-    // Write stderr event if there's buffered output
-    if (stderrBuffer.length > 0 && recorder) {
-      await recorder.writeEvent("agent_stderr", {
-        text: stderrBuffer.join(""),
-      });
-    }
-
-    // Write session end
-    if (recorder) {
-      await recorder.writeEvent("session_end", {
-        stop_reason: timedOut ? "timeout" : "end_turn",
-        subtype: exitCode === 0 ? "success" : "error",
-        is_error: exitCode !== 0,
-        total_turns: 0, // TODO: track from ResultMessages
-        total_cost_usd: 0,
-        duration_ms: duration,
-        oracle_usage_total: oracle.getTotalUsage(),
-      });
-    }
+    // Print summary
+    printSummary({
+      configPaths: options.configPaths || [],
+      projectDir,
+      sdkSessionPath,
+      turns: resultNumTurns,
+      toolCalls: toolCallCount,
+      durationMs: duration,
+      totalCostUsd: resultTotalCostUsd,
+    });
 
     return { exitCode, sessionId };
   } catch (err: unknown) {
     if (timedOut) {
-      // Timeout case
-      if (recorder) {
-        await recorder.writeEvent("session_end", {
-          stop_reason: "timeout",
-          subtype: "timeout",
-          is_error: true,
-          total_turns: 0,
-          total_cost_usd: 0,
-          duration_ms: 0,
-          oracle_usage_total: oracle.getTotalUsage(),
-        });
-      }
       return { exitCode: 5, sessionId };
-    }
-
-    // Write error event
-    if (recorder) {
-      await recorder.writeEvent("error", {
-        error_type: "session_error",
-        message: err instanceof Error ? err.message : String(err),
-        recoverable: false,
-      });
     }
 
     return { exitCode: 2, sessionId };
@@ -296,27 +295,8 @@ export async function runSession(
       (queryHandle as any).close();
     }
 
-    // Clean up scaffolded project
-    if (scaffoldedPath && !keepProject) {
-      await cleanupProject(scaffoldedPath);
-    } else if (scaffoldedPath && keepProject) {
-      process.stderr.write(`[warren] Keeping scaffolded project at ${scaffoldedPath}\n`);
-    }
+    // No cleanup — project dir is preserved
   }
-}
-
-function sanitizeConfig(config: SessionConfig): Record<string, unknown> {
-  // Remove potentially sensitive data from config for logging
-  const sanitized = { ...config };
-  // Remove SDK env vars (may contain secrets)
-  if (sanitized.sdk?.env) {
-    const sdk = { ...sanitized.sdk };
-    sdk.env = Object.fromEntries(
-      Object.keys(sdk.env!).map((k) => [k, "***"]),
-    );
-    (sanitized as any).sdk = sdk;
-  }
-  return sanitized as unknown as Record<string, unknown>;
 }
 
 function buildSdkSessionPath(cwd: string, sessionId: string): string {

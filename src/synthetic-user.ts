@@ -3,7 +3,6 @@ import type {
   ConversationEntry,
   QuestionInput,
 } from "./oracle.js";
-import type { EventRecorder } from "./events.js";
 import type { UserConfig } from "./config.js";
 
 export interface CanUseToolResult {
@@ -12,16 +11,20 @@ export interface CanUseToolResult {
     questions: QuestionInput[];
     answers: Record<string, string>;
   };
+  oracleResponse: {
+    answers: Record<string, string>;
+    reasoning: string;
+  };
 }
 
 export interface TurnDecision {
   decision: "continue" | "end";
   message?: string;
+  reasoning?: string;
 }
 
 export class SyntheticUser {
   private oracle: Oracle;
-  private recorder: EventRecorder;
   private config: UserConfig;
   private originalPrompt: string;
   private conversationBuffer: ConversationEntry[] = [];
@@ -29,12 +32,10 @@ export class SyntheticUser {
 
   constructor(
     oracle: Oracle,
-    recorder: EventRecorder,
     config: UserConfig,
     originalPrompt: string,
   ) {
     this.oracle = oracle;
-    this.recorder = recorder;
     this.config = config;
     this.originalPrompt = originalPrompt;
   }
@@ -59,22 +60,15 @@ export class SyntheticUser {
       questions: input.questions,
     });
 
-    await this.recorder.writeEvent("ask_user_question", {
-      tool_use_id: toolUseId,
-      questions: input.questions,
-      oracle_response: {
-        answers: result.answers,
-        reasoning: result.reasoning,
-      },
-      oracle_model: this.config.oracle_model,
-      oracle_usage: result.usage,
-    });
-
     return {
       behavior: "allow",
       updatedInput: {
         questions: input.questions,
         answers: result.answers,
+      },
+      oracleResponse: {
+        answers: result.answers,
+        reasoning: result.reasoning,
       },
     };
   }
@@ -98,14 +92,6 @@ export class SyntheticUser {
       conversationContext: context,
     });
 
-    await this.recorder.writeEvent("turn_policy", {
-      decision: result.decision,
-      message: result.message,
-      reasoning: result.reasoning,
-      oracle_model: this.config.oracle_model,
-      oracle_usage: result.usage,
-    });
-
     if (result.decision === "continue") {
       this.userTurnCount++;
     }
@@ -113,6 +99,7 @@ export class SyntheticUser {
     return {
       decision: result.decision,
       message: result.message,
+      reasoning: result.reasoning,
     };
   }
 

@@ -1,6 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { buildConfig } from "../src/cli.js";
-import { parseSessionConfig } from "../src/config.js";
 
 describe("buildConfig", () => {
   it("parses a YAML file into a SessionConfig", async () => {
@@ -47,7 +46,6 @@ max_turns: 10
       effort: "max",
       tools: "Read,Grep,Glob",
       oracleModel: "claude-sonnet-4-6",
-      cwd: "/tmp/custom",
     });
     expect(config.model).toBe("claude-sonnet-4-6");
     expect(config.prompt).toBe("overridden prompt");
@@ -55,12 +53,5 @@ max_turns: 10
     expect(config.effort).toBe("max");
     expect(config.tools).toEqual(["Read", "Grep", "Glob"]);
     expect(config.user.oracle_model).toBe("claude-sonnet-4-6");
-    expect(config.cwd).toBe("/tmp/custom");
-  });
-
-  it("applies output override", async () => {
-    const yaml = `prompt: hi`;
-    const config = await buildConfig([yaml], { output: "custom.jsonl" });
-    expect(config.output.events).toBe("custom.jsonl");
   });
 });

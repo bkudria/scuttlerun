@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { SyntheticUser } from "../src/synthetic-user.js";
 import type { Oracle } from "../src/oracle.js";
-import type { EventRecorder } from "../src/events.js";
 import type { UserConfig } from "../src/config.js";
 
 function createMockOracle(): Oracle {
@@ -12,20 +11,12 @@ function createMockOracle(): Oracle {
   } as unknown as Oracle;
 }
 
-function createMockRecorder(): EventRecorder {
-  return {
-    writeEvent: vi.fn().mockResolvedValue(undefined),
-  } as unknown as EventRecorder;
-}
-
 describe("SyntheticUser", () => {
   let oracle: ReturnType<typeof createMockOracle>;
-  let recorder: ReturnType<typeof createMockRecorder>;
   let userConfig: UserConfig;
 
   beforeEach(() => {
     oracle = createMockOracle();
-    recorder = createMockRecorder();
     userConfig = {
       persona: "A beginner programmer",
       oracle_model: "claude-haiku-4-5",
@@ -35,7 +26,7 @@ describe("SyntheticUser", () => {
   });
 
   describe("handleAskUserQuestion", () => {
-    it("calls oracle and returns allow with updatedInput", async () => {
+    it("calls oracle and returns allow with updatedInput and oracleResponse", async () => {
       const mockAnswerQuestions = oracle.answerQuestions as ReturnType<typeof vi.fn>;
       mockAnswerQuestions.mockResolvedValueOnce({
         answers: { "What format?": "JSON" },
@@ -43,7 +34,7 @@ describe("SyntheticUser", () => {
         usage: { input_tokens: 100, output_tokens: 50 },
       });
 
-      const user = new SyntheticUser(oracle, recorder, userConfig, "test prompt");
+      const user = new SyntheticUser(oracle, userConfig, "test prompt");
 
       const result = await user.handleAskUserQuestion(
         {
@@ -62,52 +53,17 @@ describe("SyntheticUser", () => {
         "tool-use-123",
       );
 
-      expect(result).toEqual({
-        behavior: "allow",
-        updatedInput: {
-          questions: [
-            {
-              question: "What format?",
-              header: "Format",
-              options: [
-                { label: "JSON", description: "JavaScript Object Notation" },
-                { label: "YAML", description: "YAML Ain't Markup Language" },
-              ],
-              multiSelect: false,
-            },
-          ],
-          answers: { "What format?": "JSON" },
-        },
-      });
-    });
-
-    it("records an ask_user_question event", async () => {
-      const mockAnswerQuestions = oracle.answerQuestions as ReturnType<typeof vi.fn>;
-      mockAnswerQuestions.mockResolvedValueOnce({
-        answers: { "Q": "A" },
-        reasoning: "reason",
-        usage: { input_tokens: 50, output_tokens: 30 },
-      });
-
-      const user = new SyntheticUser(oracle, recorder, userConfig, "test prompt");
-      await user.handleAskUserQuestion(
-        { questions: [{ question: "Q", header: "H", options: [{ label: "A", description: "a" }, { label: "B", description: "b" }], multiSelect: false }] },
-        "tool-456",
-      );
-
-      const writeEvent = recorder.writeEvent as ReturnType<typeof vi.fn>;
-      expect(writeEvent).toHaveBeenCalledWith("ask_user_question", {
-        tool_use_id: "tool-456",
-        questions: expect.any(Array),
-        oracle_response: { answers: { Q: "A" }, reasoning: "reason" },
-        oracle_model: "claude-haiku-4-5",
-        oracle_usage: { input_tokens: 50, output_tokens: 30 },
+      expect(result.behavior).toBe("allow");
+      expect(result.updatedInput.answers).toEqual({ "What format?": "JSON" });
+      expect(result.oracleResponse).toEqual({
+        answers: { "What format?": "JSON" },
+        reasoning: "User prefers structured data",
       });
     });
   });
 
   describe("decideTurn", () => {
-    it("returns continue with message for reactive policy", async () => {
+    it("returns continue with message and reasoning for reactive policy", async () => {
       const mockDecide = oracle.decideTurnPolicy as ReturnType<typeof vi.fn>;
       mockDecide.mockResolvedValueOnce({
         decision: "continue",
@@ -116,14 +72,15 @@ describe("SyntheticUser", () => {
         usage: { input_tokens: 200, output_tokens: 80 },
       });
 
-      const user = new SyntheticUser(oracle, recorder, userConfig, "Write a parser");
+      const user = new SyntheticUser(oracle, userConfig, "Write a parser");
       const result = await user.decideTurn();
 
       expect(result.decision).toBe("continue");
       expect(result.message).toBe("Can you also add tests?");
+      expect(result.reasoning).toBe("Task needs testing");
     });
 
-    it("returns end when oracle says end", async () => {
+    it("returns end with reasoning when oracle says end", async () => {
       const mockDecide = oracle.decideTurnPolicy as ReturnType<typeof vi.fn>;
       mockDecide.mockResolvedValueOnce({
         decision: "end",
@@ -131,37 +88,17 @@ describe("SyntheticUser", () => {
         usage: { input_tokens: 150, output_tokens: 40 },
       });
 
-      const user = new SyntheticUser(oracle, recorder, userConfig, "Write a haiku");
+      const user = new SyntheticUser(oracle, userConfig, "Write a haiku");
       const result = await user.decideTurn();
 
       expect(result.decision).toBe("end");
       expect(result.message).toBeUndefined();
-    });
-
-    it("records a turn_policy event", async () => {
-      const mockDecide = oracle.decideTurnPolicy as ReturnType<typeof vi.fn>;
-      mockDecide.mockResolvedValueOnce({
-        decision: "end",
-        reasoning: "done",
-        usage: { input_tokens: 100, output_tokens: 30 },
-      });
-
-      const user = new SyntheticUser(oracle, recorder, userConfig, "test");
-      await user.decideTurn();
-
-      const writeEvent = recorder.writeEvent as ReturnType<typeof vi.fn>;
-      expect(writeEvent).toHaveBeenCalledWith("turn_policy", {
-        decision: "end",
-        message: undefined,
-        reasoning: "done",
-        oracle_model: "claude-haiku-4-5",
-        oracle_usage: { input_tokens: 100, output_tokens: 30 },
-      });
+      expect(result.reasoning).toBe("Task complete");
     });
 
     it("skips oracle for single turn policy", async () => {
       userConfig.turn_policy = "single";
-      const user = new SyntheticUser(oracle, recorder, userConfig, "test");
+      const user = new SyntheticUser(oracle, userConfig, "test");
       const result = await user.decideTurn();
 
       expect(result.decision).toBe("end");
@@ -179,7 +116,7 @@ describe("SyntheticUser", () => {
         usage: { input_tokens: 100, output_tokens: 30 },
       });
 
-      const user = new SyntheticUser(oracle, recorder, userConfig, "test");
+      const user = new SyntheticUser(oracle, userConfig, "test");
 
       // First two calls: continue
       const r1 = await user.decideTurn();
@@ -204,7 +141,7 @@ describe("SyntheticUser", () => {
         usage: { input_tokens: 100, output_tokens: 30 },
       });
 
-      const user = new SyntheticUser(oracle, recorder, userConfig, "Write code");
+      const user = new SyntheticUser(oracle, userConfig, "Write code");
       user.addUserMessage("Write code");
       user.addAssistantMessage("Here is the code...");
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { runSession, type RunResult } from "../src/runner.js";
 import type { SessionConfig } from "../src/config.js";
 
@@ -17,8 +17,15 @@ vi.mock("@anthropic-ai/sdk", () => {
     },
   };
 });
+vi.mock("../src/project.js", () => {
+  return {
+    createProjectDir: vi.fn().mockResolvedValue("/tmp/warren-project-test123"),
+    scaffoldProject: vi.fn().mockResolvedValue({ projectPath: "/tmp/warren-project-scaffold123" }),
+  };
+});
 
 import { query as mockQueryFn } from "@anthropic-ai/claude-agent-sdk";
+import { createProjectDir as mockCreateProjectDir, scaffoldProject as mockScaffoldProject } from "../src/project.js";
 
 function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
   return {
@@ -33,7 +40,6 @@ function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
       max_user_turns: 5,
     },
     sdk: { setting_sources: [] },
-    output: { events: "/tmp/warren-test-events.jsonl" },
     ...overrides,
   };
 }
@@ -51,11 +57,25 @@ function createMockQuery(messages: Array<Record<string, unknown>>) {
   return mockQuery;
 }
 
+// Capture stdout
+let stdoutOutput: string;
+const originalStdoutWrite = process.stdout.write;
+
 describe("runSession", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    // Clear CLAUDECODE env var to avoid nested session errors
+    (mockCreateProjectDir as ReturnType<typeof vi.fn>).mockResolvedValue("/tmp/warren-project-test123");
+    (mockScaffoldProject as ReturnType<typeof vi.fn>).mockResolvedValue({ projectPath: "/tmp/warren-project-scaffold123" });
     delete process.env.CLAUDECODE;
+    stdoutOutput = "";
+    process.stdout.write = ((chunk: string) => {
+      stdoutOutput += chunk;
+      return true;
+    }) as typeof process.stdout.write;
+  });
+
+  afterEach(() => {
+    process.stdout.write = originalStdoutWrite;
   });
 
   it("runs a single-turn session to completion", async () => {
@@ -96,6 +116,112 @@ describe("runSession", () => {
     expect(result.exitCode).toBe(0);
     expect(result.sessionId).toBe("test-session-1");
     expect(mockQuery.close).toHaveBeenCalled();
+  });
+
+  it("always creates a temp dir even without project config", async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "s-noproject",
+        tools: [],
+        model: "claude-haiku-4-5",
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "s-noproject",
+        stop_reason: "end_turn",
+        is_error: false,
+        num_turns: 1,
+        total_cost_usd: 0.001,
+        duration_ms: 1000,
+        usage: { input_tokens: 50, output_tokens: 20 },
+        result: "Done",
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    // No project config
+    await runSession(minConfig());
+
+    expect(mockCreateProjectDir).toHaveBeenCalled();
+  });
+
+  it("scaffolds project when project config is present", async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "s-project",
+        tools: [],
+        model: "claude-haiku-4-5",
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "s-project",
+        stop_reason: "end_turn",
+        is_error: false,
+        num_turns: 1,
+        total_cost_usd: 0.001,
+        duration_ms: 1000,
+        usage: { input_tokens: 50, output_tokens: 20 },
+        result: "Done",
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    await runSession(minConfig({
+      project: { claude_md: "Test", git_init: false },
+    }));
+
+    expect(mockScaffoldProject).toHaveBeenCalled();
+    expect(mockCreateProjectDir).not.toHaveBeenCalled();
+  });
+
+  it("prints transcript to stdout", async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "s-transcript",
+        tools: [],
+        model: "claude-haiku-4-5",
+      },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Here is your haiku." }],
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "s-transcript",
+        stop_reason: "end_turn",
+        is_error: false,
+        num_turns: 1,
+        total_cost_usd: 0.001,
+        duration_ms: 5000,
+        usage: { input_tokens: 100, output_tokens: 50 },
+        result: "Here is your haiku.",
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+    await runSession(minConfig());
+
+    // Should contain preamble, transcript, and summary
+    expect(stdoutOutput).toContain("Warren Session");
+    expect(stdoutOutput).toContain("[User]");
+    expect(stdoutOutput).toContain("Write a haiku");
+    expect(stdoutOutput).toContain("[Assistant]");
+    expect(stdoutOutput).toContain("Here is your haiku.");
+    expect(stdoutOutput).toContain("Summary");
   });
 
   it("handles error_max_turns with exit code 3", async () => {
@@ -280,5 +406,46 @@ describe("runSession", () => {
     });
 
     await runSession(minConfig());
+  });
+
+  it("prints tool use blocks from assistant messages", async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "s-tools",
+        tools: [],
+        model: "claude-haiku-4-5",
+      },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "I'll write a file." },
+            { type: "tool_use", id: "tu-1", name: "Write", input: { file_path: "/tmp/ocean.txt", content: "waves" } },
+          ],
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "s-tools",
+        stop_reason: "end_turn",
+        is_error: false,
+        num_turns: 1,
+        total_cost_usd: 0.001,
+        duration_ms: 3000,
+        usage: { input_tokens: 100, output_tokens: 50 },
+        result: "Done",
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+    await runSession(minConfig());
+
+    expect(stdoutOutput).toContain("⚙ Write /tmp/ocean.txt");
+    // Summary should count the tool call
+    expect(stdoutOutput).toContain("Tool calls: 1");
   });
 });
