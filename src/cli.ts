@@ -205,10 +205,10 @@ async function main() {
     .option("--model <model>", "Agent model (default: claude-haiku-4-5)")
     .option("--oracle-model <model>", "Synthetic user oracle model (default: claude-haiku-4-5)")
     .option("--prompt <text>", "Override the prompt from the YAML config")
-    .option("--max-turns <n>", "Max agent turns (default: 50)", parseInt)
+    .option("--max-turns <n>", "Max agent turns (default: 50)", (v: string) => parseInt(v, 10))
     .option("--tools <tools>", "Tools list, comma-separated (e.g. Read,Write,Grep)")
     .option("--effort <level>", "Thinking effort: low, medium, high, max (default: high)")
-    .option("--timeout <seconds>", "Session timeout in seconds", parseInt, 300)
+    .option("--timeout <seconds>", "Session timeout in seconds", (v: string) => parseInt(v, 10), 300)
     .option("-v, --verbose", "Verbose logging to stderr (includes agent stderr)")
     .action(async (sessionFile: string, overrideFiles: string[], opts) => {
       try {
