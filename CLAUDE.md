@@ -2,9 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What is Warren
+## What is scuttlerun
 
-Warren is a TypeScript CLI that drives multi-turn Claude sessions programmatically using the Claude Agent SDK. It simulates a synthetic user (powered by an LLM oracle) to handle `AskUserQuestion` calls and multi-turn follow-ups, producing fully observable session transcripts.
+scuttlerun is a TypeScript CLI that drives multi-turn Claude sessions programmatically using the Claude Agent SDK. It simulates a synthetic user (powered by an LLM oracle) to handle `AskUserQuestion` calls and multi-turn follow-ups, producing fully observable session transcripts.
 
 Full specification: `SPEC.md`. Usage docs: `README.md`.
 
@@ -25,7 +25,7 @@ npm run dev -- run examples/simple.yml        # Run via tsx (no build step)
 
 **Key coordination pattern:** The runner uses an async generator + Promise/resolver to coordinate multi-turn input. After each SDK `ResultMessage`, the synthetic user's turn policy decides whether to yield another message or return (ending the session). This pattern exists because `streamInput()` fails with `ERR_STREAM_WRITE_AFTER_END`.
 
-**Output:** Warren streams a human-readable transcript to stdout (preamble → messages → summary). The SDK session file (full conversation JSONL) is preserved automatically. The project temp dir is always created and never deleted.
+**Output:** scuttlerun streams a human-readable transcript to stdout (preamble → messages → summary). The SDK session file (full conversation JSONL) is preserved automatically. The project temp dir is always created and never deleted.
 
 ## Agent SDK Reference
 

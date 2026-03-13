@@ -1,10 +1,10 @@
 {
-  "name": "warren",
+  "name": "scuttlerun",
   "version": "0.1.0",
   "description": "Multi-turn Claude session driver",
   "type": "module",
   "bin": {
-    "warren": "./dist/cli.js"
+    "scuttlerun": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

@@ -89,7 +89,7 @@ Session Config (YAML):
 
     # --- Project Scaffolding ---
     # When present, configures the temp project directory.
-    # Warren always creates a temp dir in $TMPDIR as the agent's cwd.
+    # scuttlerun always creates a temp dir in $TMPDIR as the agent's cwd.
     project:
       claude_md: |                      # Written to <tempdir>/CLAUDE.md
         Save all files using relative paths.
@@ -144,27 +144,27 @@ Session Config (YAML):
 
 Config Merging:
   Multiple YAML files are deep-merged (objects merge, arrays/scalars replace):
-    warren run base.yml override.yml
+    scuttlerun run base.yml override.yml
   Later files win. CLI flags override everything.
 
 Examples:
   # Minimal single-turn session
-  warren run session.yml
+  scuttlerun run session.yml
 
   # Override model and timeout
-  warren run session.yml --model claude-sonnet-4-6 --timeout 120
+  scuttlerun run session.yml --model claude-sonnet-4-6 --timeout 120
 
   # Merge a base config with a scenario override
-  warren run base.yml scenario.yml
+  scuttlerun run base.yml scenario.yml
 
   # Quick one-off with prompt override
-  warren run session.yml --prompt "Write hello world in Python"
+  scuttlerun run session.yml --prompt "Write hello world in Python"
 
   # Restrict tools
-  warren run session.yml --tools Read,Glob,Grep
+  scuttlerun run session.yml --tools Read,Glob,Grep
 
 Output:
-  Warren streams a transcript to stdout including user messages, assistant
+  scuttlerun streams a transcript to stdout including user messages, assistant
   responses, tool calls, thinking blocks, and oracle decisions.
 
   Before the transcript: config file paths, project dir, and SDK transcript path.
@@ -187,7 +187,7 @@ async function main() {
   const program = new Command();
 
   program
-    .name("warren")
+    .name("scuttlerun")
     .description(
       "Multi-turn Claude session driver.\n" +
       "Runs headless Claude sessions with a synthetic user powered by an LLM oracle.\n" +
@@ -195,11 +195,11 @@ async function main() {
     )
     .version("0.1.0");
 
-  program.addHelpText("after", "\nRun 'warren run --help' for full documentation.");
+  program.addHelpText("after", "\nRun 'scuttlerun run --help' for full documentation.");
 
   const runCmd = program
     .command("run")
-    .description("Run a warren session from a YAML config file")
+    .description("Run a scuttlerun session from a YAML config file")
     .argument("<session.yml>", "Session config file (YAML). Only 'prompt' is required.")
     .argument("[override.yml...]", "Additional YAML files to deep-merge (last wins)")
     .option("--model <model>", "Agent model (default: claude-haiku-4-5)")
@@ -245,7 +245,7 @@ async function main() {
         process.exit(result.exitCode);
       } catch (err) {
         process.stderr.write(
-          `[warren] Error: ${err instanceof Error ? err.message : String(err)}\n`,
+          `[scuttlerun] Error: ${err instanceof Error ? err.message : String(err)}\n`,
         );
         process.exit(1);
       }
@@ -255,9 +255,9 @@ async function main() {
 
   program
     .command("version")
-    .description("Show warren version")
+    .description("Show scuttlerun version")
     .action(() => {
-      console.log("warren 0.1.0");
+      console.log("scuttlerun 0.1.0");
     });
 
   await program.parseAsync(process.argv);

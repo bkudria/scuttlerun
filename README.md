@@ -1,25 +1,25 @@
-# Warren
+# scuttlerun
 
-> **Unreleased.** Warren is under active development and its API, config format, and behavior may change without notice.
+> **Unreleased.** scuttlerun is under active development and its API, config format, and behavior may change without notice.
 
-A TypeScript CLI that drives multi-turn Claude sessions programmatically using the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk). Warren simulates a synthetic user powered by an LLM oracle, enabling headless, scriptable, fully-observable interactions with Claude — including interactive tools like `AskUserQuestion`.
+A TypeScript CLI that drives multi-turn Claude sessions programmatically using the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk). scuttlerun simulates a synthetic user powered by an LLM oracle, enabling headless, scriptable, fully-observable interactions with Claude — including interactive tools like `AskUserQuestion`.
 
 ## Install
 
 ```bash
-git clone <repo-url> && cd warren
+git clone <repo-url> && cd scuttlerun
 npm install
 npm run build
-npm link          # makes `warren` available globally
+npm link          # makes `scuttlerun` available globally
 ```
 
 ## Quick Start
 
 ```bash
-warren run examples/simple.yml
+scuttlerun run examples/simple.yml
 
 # Run with overrides
-warren run examples/multi-turn.yml --timeout 120 --model claude-sonnet-4-6
+scuttlerun run examples/multi-turn.yml --timeout 120 --model claude-sonnet-4-6
 ```
 
 ## Session Config
@@ -57,7 +57,7 @@ prompt: |
 
 #### `project` (managed project scaffolding)
 
-When present, warren populates the project temp directory.
+When present, scuttlerun populates the project temp directory.
 
 | Field | Type | Default |
 |-------|------|---------|
@@ -81,14 +81,14 @@ When present, warren populates the project temp directory.
 Multiple YAML files are deep-merged (objects merge, arrays/scalars replace):
 
 ```bash
-warren run base.yml scenario-override.yml
+scuttlerun run base.yml scenario-override.yml
 ```
 
 ## CLI
 
 ```
-warren run <session.yml> [override.yml...] [options]
-warren version
+scuttlerun run <session.yml> [override.yml...] [options]
+scuttlerun version
 ```
 
 | Option | Description |
@@ -116,7 +116,7 @@ warren version
 
 ## How It Works
 
-Warren wraps the Claude Agent SDK's `query()` with an async generator for multi-turn input. Two key mechanisms:
+scuttlerun wraps the Claude Agent SDK's `query()` with an async generator for multi-turn input. Two key mechanisms:
 
 1. **`canUseTool` callback** — Intercepts `AskUserQuestion` calls. An LLM oracle (Haiku by default) answers questions consistent with the configured persona.
 
@@ -124,12 +124,12 @@ Warren wraps the Claude Agent SDK's `query()` with an async generator for multi-
 
 ## Output
 
-Warren streams a YAML transcript to stdout as the session runs:
+scuttlerun streams a YAML transcript to stdout as the session runs:
 
 ```yaml
 session: a1b2c3d4-e5f6-7890-abcd-ef1234567890
 config: /path/to/session.yml
-project: /tmp/warren-project-xK3f9m
+project: /tmp/scuttlerun-project-xK3f9m
 transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
 
 conversation:

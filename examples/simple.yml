@@ -1,4 +1,4 @@
-# Minimal warren session — single-turn, no follow-ups
+# Minimal scuttlerun session — single-turn, no follow-ups
 version: "1"
 
 prompt: |

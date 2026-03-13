@@ -1,25 +1,25 @@
-# Warren — Multi-Turn Claude Session Driver
+# scuttlerun — Multi-Turn Claude Session Driver
 
 ## Overview
 
-Warren is a TypeScript CLI tool that uses the Claude Agent SDK to drive multi-turn Claude sessions programmatically. It enables headless, scriptable, fully-observable interactions with Claude — including support for interactive tools like `AskUserQuestion` — by simulating a synthetic user powered by an LLM.
+scuttlerun is a TypeScript CLI tool that uses the Claude Agent SDK to drive multi-turn Claude sessions programmatically. It enables headless, scriptable, fully-observable interactions with Claude — including support for interactive tools like `AskUserQuestion` — by simulating a synthetic user powered by an LLM.
 
-Warren is **general-purpose**. Any use case requiring programmatic, multi-turn, observable Claude sessions is in scope — evaluations, automated testing, CI/CD pipelines, batch processing with interactive steps, reproducible demos, and more.
+scuttlerun is **general-purpose**. Any use case requiring programmatic, multi-turn, observable Claude sessions is in scope — evaluations, automated testing, CI/CD pipelines, batch processing with interactive steps, reproducible demos, and more.
 
 ### Motivating Problem
 
-Claude Code's `claude -p` mode is one-shot and non-interactive. When an agent calls `AskUserQuestion`, the process hangs forever waiting for input that never comes. This makes it impossible to run any scenario that involves clarifying questions, multi-step dialogues, or interactive tool use. Warren solves this by providing a full session driver with a synthetic user that can respond to any interactive prompt.
+Claude Code's `claude -p` mode is one-shot and non-interactive. When an agent calls `AskUserQuestion`, the process hangs forever waiting for input that never comes. This makes it impossible to run any scenario that involves clarifying questions, multi-step dialogues, or interactive tool use. scuttlerun solves this by providing a full session driver with a synthetic user that can respond to any interactive prompt.
 
 ### Non-Goals
 
-Warren is a **session driver**, not an eval framework. It runs one session and produces one transcript. The following are explicitly out of scope:
+scuttlerun is a **session driver**, not an eval framework. It runs one session and produces one transcript. The following are explicitly out of scope:
 
 - **Batch orchestration** — Running multiple sessions in parallel. Callers use `xargs`, `parallel`, or their own loops.
-- **Comparison** — Running the same prompt under different configs and comparing outputs. Callers generate the configs, invoke warren for each, and diff the transcripts.
-- **Grading** — Scoring transcripts against assertions or rubrics. Callers implement their own grading logic (which may itself use warren to drive a grading session).
+- **Comparison** — Running the same prompt under different configs and comparing outputs. Callers generate the configs, invoke scuttlerun for each, and diff the transcripts.
+- **Grading** — Scoring transcripts against assertions or rubrics. Callers implement their own grading logic (which may itself use scuttlerun to drive a grading session).
 - **Aggregation** — Computing pass rates, deltas, benchmarks. Pure data processing done by callers.
 
-This boundary exists because eval logic is inherently opinionated — different callers have different grading criteria, comparison structures, and reporting needs. Warren provides the raw material (transcripts); callers decide what to do with it.
+This boundary exists because eval logic is inherently opinionated — different callers have different grading criteria, comparison structures, and reporting needs. scuttlerun provides the raw material (transcripts); callers decide what to do with it.
 
 ---
 
@@ -29,7 +29,7 @@ This boundary exists because eval logic is inherently opinionated — different 
 |----------|--------|-----------|
 | Language | TypeScript | More complete SDK (hooks, session control, no workarounds); native async/await |
 | Scope | General-purpose session driver | Not coupled to eval; eval is built on top |
-| Interface | CLI-first | `warren run session.yml` as primary invocation |
+| Interface | CLI-first | `scuttlerun run session.yml` as primary invocation |
 | AskUserQuestion | `canUseTool` callback | Official SDK mechanism for intercepting AskUserQuestion; PreToolUse hooks do not work for this |
 | Interactivity | LLM-driven synthetic user | Full simulation via a second LLM call |
 | Synthetic user model | Haiku default + override | Fast and cheap for routine responses; configurable |
@@ -38,7 +38,7 @@ This boundary exists because eval logic is inherently opinionated — different 
 | Output | Streaming transcript to stdout + SDK session file | Human-readable transcript streamed live; SDK session file preserved for programmatic queries |
 | Dependencies | Pragmatic | commander, zod, yaml, etc. as appropriate |
 | User persona | Scenario-defined context | Each session config defines user context/persona |
-| Project location | ~/code/warren | Standalone repo with its own package.json |
+| Project location | ~/code/scuttlerun | Standalone repo with its own package.json |
 
 ---
 
@@ -46,8 +46,8 @@ This boundary exists because eval logic is inherently opinionated — different 
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      warren CLI                          │
-│  warren run session.yml                                  │
+│                      scuttlerun CLI                          │
+│  scuttlerun run session.yml                                  │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
@@ -98,7 +98,7 @@ The core orchestrator. Responsibilities:
 - Handle errors and timeouts gracefully
 - Clean up SDK child process after session ends (project directory is preserved)
 
-**Session initialization:** The SDK emits a `SystemMessage` (subtype: `"init"`) at the start of each query turn, carrying the `session_id`. Warren captures the first one to populate the `session_start` event. Note: subsequent turns also emit `init` messages (same `session_id`).
+**Session initialization:** The SDK emits a `SystemMessage` (subtype: `"init"`) at the start of each query turn, carrying the `session_id`. scuttlerun captures the first one to populate the `session_start` event. Note: subsequent turns also emit `init` messages (same `session_id`).
 
 **Turn completion signal:** The SDK emits a `ResultMessage` when a query turn completes. This message carries `stop_reason`, `session_id`, `usage`, `total_cost_usd`, `num_turns`, `is_error`, and `subtype`:
 - `"success"` — normal completion; triggers the turn policy
@@ -108,7 +108,7 @@ The core orchestrator. Responsibilities:
 
 **Multi-turn coordination:** The async generator and the message consumer (`for await` loop) coordinate via a shared Promise. After each `ResultMessage` with `subtype === "success"`, the consumer consults the turn policy and resolves the Promise — the generator either yields the next `SDKUserMessage` or returns.
 
-**Conversation buffer:** Warren maintains an in-memory array of conversation entries, appending each `SDKAssistantMessage` and `SDKUserMessage` as they stream through the `for await` loop. When building oracle context (for AskUserQuestion or turn-policy prompts), assistant messages are filtered to keep only `TextBlock` content — `ToolUseBlock`, `ThinkingBlock`, and other block types are stripped. Assistant messages with no remaining text blocks after filtering are omitted entirely. The buffer is truncated to the last 10 user/assistant pairs before inclusion in oracle prompts.
+**Conversation buffer:** scuttlerun maintains an in-memory array of conversation entries, appending each `SDKAssistantMessage` and `SDKUserMessage` as they stream through the `for await` loop. When building oracle context (for AskUserQuestion or turn-policy prompts), assistant messages are filtered to keep only `TextBlock` content — `ToolUseBlock`, `ThinkingBlock`, and other block types are stripped. Assistant messages with no remaining text blocks after filtering are omitted entirely. The buffer is truncated to the last 10 user/assistant pairs before inclusion in oracle prompts.
 
 **SDKUserMessage structure:** When yielding messages from the async generator, each message must conform to:
 ```typescript
@@ -123,27 +123,27 @@ The core orchestrator. Responsibilities:
 }
 ```
 
-**Nested sessions:** The Agent SDK spawns a Claude Code child process. Warren must call `delete process.env.CLAUDECODE` before calling `query()`, to avoid "nested session" errors when warren itself runs inside Claude Code.
+**Nested sessions:** The Agent SDK spawns a Claude Code child process. scuttlerun must call `delete process.env.CLAUDECODE` before calling `query()`, to avoid "nested session" errors when scuttlerun itself runs inside Claude Code.
 
-**Timeout implementation:** Warren creates an `AbortController` and passes it via the SDK's `abortController` option. A `setTimeout` triggers `controller.abort()` after `--timeout` seconds. On abort, warren writes a `session_end` event with `stop_reason: "timeout"` and exits with code 5.
+**Timeout implementation:** scuttlerun creates an `AbortController` and passes it via the SDK's `abortController` option. A `setTimeout` triggers `controller.abort()` after `--timeout` seconds. On abort, scuttlerun writes a `session_end` event with `stop_reason: "timeout"` and exits with code 5.
 
-**Implementation note:** The `for await` loop over the SDK's async iterable does not respond to `AbortController` signals mid-iteration. Warren uses a manual async iterator with `Promise.race` — each `iterator.next()` call is raced against a Promise that resolves when the abort signal fires. This ensures the timeout fires within one iteration rather than waiting for the next SDK message.
+**Implementation note:** The `for await` loop over the SDK's async iterable does not respond to `AbortController` signals mid-iteration. scuttlerun uses a manual async iterator with `Promise.race` — each `iterator.next()` call is raced against a Promise that resolves when the abort signal fires. This ensures the timeout fires within one iteration rather than waiting for the next SDK message.
 
-**Cleanup:** On session completion (normal or error), warren calls `query.close()` to terminate the SDK's child process. The project temp directory is never deleted — it is preserved for inspection. The `finally` block ensures the SDK child process is cleaned up even on unhandled errors.
+**Cleanup:** On session completion (normal or error), scuttlerun calls `query.close()` to terminate the SDK's child process. The project temp directory is never deleted — it is preserved for inspection. The `finally` block ensures the SDK child process is cleaned up even on unhandled errors.
 
-**Agent stderr:** The SDK accepts a `stderr: (data: string) => void` callback. Warren accumulates all stderr output in an in-memory buffer and writes a single `agent_stderr` event at session end. Stderr is low-value diagnostic data — losing it on a crash is acceptable. For live stderr during development, `--verbose` tees it to warren's own stderr.
+**Agent stderr:** The SDK accepts a `stderr: (data: string) => void` callback. scuttlerun accumulates all stderr output in an in-memory buffer and writes a single `agent_stderr` event at session end. Stderr is low-value diagnostic data — losing it on a crash is acceptable. For live stderr during development, `--verbose` tees it to scuttlerun's own stderr.
 
 #### 2. Synthetic User
 
 An LLM-powered simulation of a human user. Two roles:
 
-**a) AskUserQuestion responder** — When the agent calls `AskUserQuestion`, Warren intercepts it via the `canUseTool` callback and:
+**a) AskUserQuestion responder** — When the agent calls `AskUserQuestion`, scuttlerun intercepts it via the `canUseTool` callback and:
 1. Extracts the question data (`input.questions` array with options, multiSelect flags)
 2. Sends the questions, conversation context, and user persona to the oracle LLM
 3. The oracle selects an option (or provides free-text) consistent with the persona
 4. Returns `{ behavior: "allow", updatedInput: { questions, answers } }` to the SDK
 
-**b) Turn policy** — After each agent `ResultMessage` (when `subtype === "success"`), Warren consults the oracle to decide:
+**b) Turn policy** — After each agent `ResultMessage` (when `subtype === "success"`), scuttlerun consults the oracle to decide:
 - **Continue**: Send a follow-up message (oracle generates it)
 - **End**: The session is complete; no more messages
 
@@ -159,7 +159,7 @@ A thin wrapper around the Anthropic Messages API (not the Agent SDK) that:
 
 #### 4. Transcript Output
 
-Warren streams a human-readable transcript to stdout as the session runs. The transcript includes:
+scuttlerun streams a human-readable transcript to stdout as the session runs. The transcript includes:
 
 - **Preamble**: config file paths, project temp dir path
 - **Transcript path**: SDK session file path (printed after session ID is known)
@@ -170,16 +170,16 @@ Warren streams a human-readable transcript to stdout as the session runs. The tr
 - **Oracle decisions**: AskUserQuestion answers and turn policy decisions (prefixed `⚡ Oracle`)
 - **Summary**: paths, turn count, tool call count, duration, cost
 
-Warren relies on the Agent SDK's built-in session persistence for the full conversation record (written automatically to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`). This file is queryable with standard jq filters.
+scuttlerun relies on the Agent SDK's built-in session persistence for the full conversation record (written automatically to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`). This file is queryable with standard jq filters.
 
 ---
 
 ## Session Configuration (YAML)
 
-The primary input to Warren is a session YAML file:
+The primary input to scuttlerun is a session YAML file:
 
 ```yaml
-# session.yml — Warren session configuration
+# session.yml — scuttlerun session configuration
 version: "1"
 
 # --- Agent Configuration ---
@@ -204,12 +204,12 @@ tools:                              # Tools available to the agent (maps to SDK 
   - Bash
   - Glob
   - Grep
-  - AskUserQuestion                 # Warren handles this via synthetic user
+  - AskUserQuestion                 # scuttlerun handles this via synthetic user
 disallowed_tools:                   # Tools to always deny, even under bypassPermissions (maps to SDK `disallowedTools`)
   - Agent                           # Example: block subagent spawning
 
 # --- Project Configuration ---
-# When present, warren scaffolds a temporary project directory that becomes
+# When present, scuttlerun scaffolds a temporary project directory that becomes
 # the agent's cwd. Controls what CLAUDE.md, skills, and settings the agent sees.
 # When absent, use `cwd` to point at an existing directory (raw mode).
 project:
@@ -271,22 +271,22 @@ Project-specific validation:
 
 ### Project Directory
 
-Warren always creates a temporary project directory in `$TMPDIR` with prefix `warren-project-`. This directory becomes the agent's working directory (`cwd`).
+scuttlerun always creates a temporary project directory in `$TMPDIR` with prefix `scuttlerun-project-`. This directory becomes the agent's working directory (`cwd`).
 
 - **Always created**: even when `project:` is absent, an empty temp directory is created
-- **Scaffolding**: when `project:` is present, warren populates the temp directory with CLAUDE.md, skill symlinks, settings, and optionally runs `git init`
+- **Scaffolding**: when `project:` is present, scuttlerun populates the temp directory with CLAUDE.md, skill symlinks, settings, and optionally runs `git init`
 - **Skill paths**: tilde (`~`) is expanded; relative paths are resolved from the config file's directory
 - **Symlinks**: each skill directory is symlinked (not copied) into `<tempdir>/.claude/skills/<name>/`
-- **Git init**: when `project.git_init: true`, warren runs `git init` in the directory. Default is `false`.
+- **Git init**: when `project.git_init: true`, scuttlerun runs `git init` in the directory. Default is `false`.
 - **Never cleaned up**: the project directory is preserved after the session ends. Its path is printed in the preamble and summary.
-- **Manual cleanup**: callers can clean up old directories via `rm -rf /tmp/warren-project-*`
+- **Manual cleanup**: callers can clean up old directories via `rm -rf /tmp/scuttlerun-project-*`
 
 ### Config Merging
 
 Multiple YAML files can be merged for composability:
 
 ```bash
-warren run base-config.yml scenario-override.yml
+scuttlerun run base-config.yml scenario-override.yml
 ```
 
 Later files override earlier ones (deep merge on objects, replace on scalars/arrays). For example, `tools: [Grep]` in an override replaces the entire base tools list — it does not append. This enables patterns like:
@@ -303,7 +303,7 @@ Most YAML fields map directly to SDK options (e.g., `model` → `model`, `max_tu
 |------------|-----------|-------|
 | `tools` | `tools` | Restricts which tools are *available* — the agent cannot see unlisted tools. This is NOT `allowedTools` (which pre-approves tools but doesn't restrict). |
 | `disallowed_tools` | `disallowedTools` | Always deny these tools, even under `bypassPermissions`. Overrides everything. |
-| `permission_mode` | `permissionMode` + `allowDangerouslySkipPermissions` | When `permission_mode: bypassPermissions`, warren also sets `allowDangerouslySkipPermissions: true`. |
+| `permission_mode` | `permissionMode` + `allowDangerouslySkipPermissions` | When `permission_mode: bypassPermissions`, scuttlerun also sets `allowDangerouslySkipPermissions: true`. |
 | `sdk.setting_sources` | `settingSources` | Controls which filesystem settings to load. `["project"]` means "load CLAUDE.md from cwd." Auto-set to `["project"]` when `project:` is present (cwd is the scaffolded temp dir). |
 | `sdk.thinking` | `thinking` | Discriminated union: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens?: number }`, or `{ type: "disabled" }`. |
 | `effort` | `effort` | Top-level in both YAML and SDK. Orthogonal to `thinking`. |
@@ -313,11 +313,11 @@ Most YAML fields map directly to SDK options (e.g., `model` → `model`, `max_tu
 ## CLI Interface
 
 ```
-warren — Multi-turn Claude session driver
+scuttlerun — Multi-turn Claude session driver
 
 Usage:
-  warren run <session.yml> [<override.yml>...] [options]
-  warren version
+  scuttlerun run <session.yml> [<override.yml>...] [options]
+  scuttlerun version
 
 Run options:
   --model MODEL            Override agent model
@@ -348,7 +348,7 @@ Run options:
 
 ### canUseTool Routing
 
-Warren passes a `canUseTool` callback in the SDK `query()` options. The full SDK signature is:
+scuttlerun passes a `canUseTool` callback in the SDK `query()` options. The full SDK signature is:
 
 ```typescript
 canUseTool: async (
@@ -365,7 +365,7 @@ canUseTool: async (
 ) => Promise<PermissionResult>
 ```
 
-This callback fires whenever the agent requests permission to use a tool, including `AskUserQuestion`. For AskUserQuestion calls, Warren intercepts and provides synthetic answers; for all other tools, it returns `{ behavior: "allow" }` (the actual permission enforcement is handled by the configured `permissionMode`). Warren records the SDK's `toolUseID` value as `tool_use_id` (snake_case) in the `ask_user_question` event for correlation with the SDK session file.
+This callback fires whenever the agent requests permission to use a tool, including `AskUserQuestion`. For AskUserQuestion calls, scuttlerun intercepts and provides synthetic answers; for all other tools, it returns `{ behavior: "allow" }` (the actual permission enforcement is handled by the configured `permissionMode`). scuttlerun records the SDK's `toolUseID` value as `tool_use_id` (snake_case) in the `ask_user_question` event for correlation with the SDK session file.
 
 **SDK note:** `canUseTool` fires for AskUserQuestion regardless of `permissionMode`. Even with `bypassPermissions`, the callback executes and provides the answers. This is the officially documented mechanism for programmatic AskUserQuestion handling (see [Agent SDK docs](https://platform.claude.com/docs/en/agent-sdk/user-input#handle-clarifying-questions)).
 
@@ -375,7 +375,7 @@ This callback fires whenever the agent requests permission to use a tool, includ
 
 ### AskUserQuestion Handling
 
-When the agent calls `AskUserQuestion`, the `canUseTool` callback fires. Warren:
+When the agent calls `AskUserQuestion`, the `canUseTool` callback fires. scuttlerun:
 
 1. **Extracts the question data** from the `input` argument:
    ```typescript
@@ -422,7 +422,7 @@ The SDK produces a successful tool result: `"User has answered your questions: \
 
 ### Turn Policy (Reactive Multi-Turn)
 
-After each `ResultMessage` where `subtype === "success"`, Warren consults the turn policy. Other subtypes (`"error_max_turns"`, `"error_during_execution"`, `"error_max_budget_usd"`) cause the session to end immediately with the appropriate exit code. Warren:
+After each `ResultMessage` where `subtype === "success"`, scuttlerun consults the turn policy. Other subtypes (`"error_max_turns"`, `"error_during_execution"`, `"error_max_budget_usd"`) cause the session to end immediately with the appropriate exit code. scuttlerun:
 
 1. **Builds a turn-policy prompt** containing:
    - The user persona
@@ -496,22 +496,22 @@ The JSON schema for this call enforces:
 
 ### Single-Turn Mode
 
-When `user.turn_policy: single`, Warren skips the turn policy entirely. One prompt in, agent runs to completion, session ends. This is the simplest mode — equivalent to `claude -p` but with AskUserQuestion handling.
+When `user.turn_policy: single`, scuttlerun skips the turn policy entirely. One prompt in, agent runs to completion, session ends. This is the simplest mode — equivalent to `claude -p` but with AskUserQuestion handling.
 
 ---
 
 ## Output
 
-Warren produces two output artifacts per session:
+scuttlerun produces two output artifacts per session:
 
 ### 1. Streaming Transcript (stdout)
 
-Warren streams a human-readable transcript to stdout as the session runs. The format is:
+scuttlerun streams a human-readable transcript to stdout as the session runs. The format is:
 
 ```
-─── Warren Session ───────────────────
+─── scuttlerun Session ───────────────────
 Config:     /abs/path/to/session.yml
-Project:    /tmp/warren-project-xK3f9m
+Project:    /tmp/scuttlerun-project-xK3f9m
 Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
 ───────────────────────────────────────
 
@@ -524,7 +524,7 @@ I'll write a haiku following the 5-7-5 syllable pattern.
 <<< Assistant
 I'll write a haiku about the ocean and save it to a file.
 
-  ⚙ Write /tmp/warren-project-xK3f9m/ocean.txt
+  ⚙ Write /tmp/scuttlerun-project-xK3f9m/ocean.txt
   ✓ Wrote 3 lines
 
 <<< Assistant
@@ -532,7 +532,7 @@ Done! I saved the haiku to ocean.txt.
 
 ─── Summary ──────────────────────────
 Config:     /abs/path/to/session.yml
-Project:    /tmp/warren-project-xK3f9m
+Project:    /tmp/scuttlerun-project-xK3f9m
 Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
 Turns:      2
 Tool calls: 1
@@ -555,27 +555,27 @@ Queryable with standard jq filters against the native JSONL format.
 
 ## Downstream Usage
 
-Warren streams a human-readable transcript to stdout and preserves the SDK session file for programmatic queries. What happens next is entirely the caller's concern.
+scuttlerun streams a human-readable transcript to stdout and preserves the SDK session file for programmatic queries. What happens next is entirely the caller's concern.
 
 - **Transcript (stdout)** is human-readable — pipe to a file, grep for patterns, or inspect visually
 - **SDK session files** are standard Claude Code JSONL — queryable with jq for conversation, tool calls, errors, etc.
 - **Project directories** are preserved in `$TMPDIR` — inspect agent-created files after the session
-- **Config merging** lets callers generate many session configs from a base template, invoke `warren run` for each, and process the results however they see fit.
+- **Config merging** lets callers generate many session configs from a base template, invoke `scuttlerun run` for each, and process the results however they see fit.
 
-Example caller patterns (implemented *outside* warren):
+Example caller patterns (implemented *outside* scuttlerun):
 
 ```bash
 # Run a session, capture transcript
-warren run session.yml > results/transcript.txt
+scuttlerun run session.yml > results/transcript.txt
 
 # Batch processing
 for config in scenarios/*.yml; do
-    warren run base.yml "$config" > "results/$(basename $config .yml).txt"
+    scuttlerun run base.yml "$config" > "results/$(basename $config .yml).txt"
 done
 
 # Query the SDK session file for tool calls
 jq 'select(.type=="assistant") | .message.content[] | select(.type=="tool_use")' \
-  ~/.claude/projects/-tmp-warren-project-abc123/<session-id>.jsonl
+  ~/.claude/projects/-tmp-scuttlerun-project-abc123/<session-id>.jsonl
 ```
 
 ---
@@ -627,7 +627,7 @@ jq 'select(.type=="assistant") | .message.content[] | select(.type=="tool_use")'
 ## Project Structure
 
 ```
-warren/
+scuttlerun/
 ├── package.json               # Package config, dependencies, scripts
 ├── tsconfig.json              # TypeScript configuration
 ├── vitest.config.ts           # Vitest test configuration
@@ -661,7 +661,7 @@ warren/
 ```json
 {
   "bin": {
-    "warren": "./dist/cli.js"
+    "scuttlerun": "./dist/cli.js"
   }
 }
 ```
@@ -676,7 +676,7 @@ These are explicitly **out of scope for v1** but noted for future work:
 Run multiple sessions concurrently. The current design is single-session; callers orchestrate batches externally.
 
 ### Session Resumption
-The Agent SDK supports session resumption via `session_id`. Warren could support `--resume <session-id>` for continuing interrupted sessions.
+The Agent SDK supports session resumption via `session_id`. scuttlerun could support `--resume <session-id>` for continuing interrupted sessions.
 
 ### Custom Tool Injection
 Allow session configs to define custom MCP tools inline (useful for scenarios that need mock APIs).
@@ -755,4 +755,4 @@ For eval scenarios that need deterministic conversation flows, `turn_policy: sin
 - **Con**: Can't test permission-related behaviors
 - **Con**: Less safe for non-testing use cases
 
-The `permission_mode` field is still configurable in session YAML, so callers can set `"default"` or `"acceptEdits"` for other scenarios. But the default is `bypassPermissions` because warren's primary purpose is headless session driving.
+The `permission_mode` field is still configurable in session YAML, so callers can set `"default"` or `"acceptEdits"` for other scenarios. But the default is `bypassPermissions` because scuttlerun's primary purpose is headless session driving.

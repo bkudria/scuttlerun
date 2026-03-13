@@ -6,10 +6,10 @@ import { scaffoldProject, createProjectDir } from "../src/project.js";
 import type { ProjectConfig } from "../src/config.js";
 
 describe("createProjectDir", () => {
-  it("creates an empty temp directory with warren-project- prefix", async () => {
+  it("creates an empty temp directory with scuttlerun-project- prefix", async () => {
     const projectPath = await createProjectDir();
     try {
-      expect(projectPath).toContain("warren-project-");
+      expect(projectPath).toContain("scuttlerun-project-");
       const stat = await fs.stat(projectPath);
       expect(stat.isDirectory()).toBe(true);
       // Directory should be empty
@@ -27,7 +27,7 @@ describe("scaffoldProject", () => {
 
   beforeEach(async () => {
     // Create a fake skill directory for symlink tests
-    tempDir = await fs.mkdtemp(join(tmpdir(), "warren-project-test-"));
+    tempDir = await fs.mkdtemp(join(tmpdir(), "scuttlerun-project-test-"));
     skillDir = join(tempDir, "fake-skill");
     await fs.mkdir(skillDir, { recursive: true });
     await fs.writeFile(join(skillDir, "SKILL.md"), "# Fake Skill");
@@ -37,11 +37,11 @@ describe("scaffoldProject", () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  it("creates a temp directory with warren-project- prefix", async () => {
+  it("creates a temp directory with scuttlerun-project- prefix", async () => {
     const config: ProjectConfig = {};
     const result = await scaffoldProject(config, tempDir);
     try {
-      expect(result.projectPath).toContain("warren-project-");
+      expect(result.projectPath).toContain("scuttlerun-project-");
       const stat = await fs.stat(result.projectPath);
       expect(stat.isDirectory()).toBe(true);
     } finally {

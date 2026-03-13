@@ -12,14 +12,14 @@ export interface ScaffoldResult {
 }
 
 export async function createProjectDir(): Promise<string> {
-  return fs.mkdtemp(join(tmpdir(), "warren-project-"));
+  return fs.mkdtemp(join(tmpdir(), "scuttlerun-project-"));
 }
 
 export async function scaffoldProject(
   config: ProjectConfig,
   _configDir: string,
 ): Promise<ScaffoldResult> {
-  const projectPath = await fs.mkdtemp(join(tmpdir(), "warren-project-"));
+  const projectPath = await fs.mkdtemp(join(tmpdir(), "scuttlerun-project-"));
 
   // Write CLAUDE.md
   if (config.claude_md) {

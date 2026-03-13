@@ -32,13 +32,13 @@ describe("transcript", () => {
       writeHeader({
         session: "abc-123",
         configPaths: ["/path/to/session.yml"],
-        projectDir: "/tmp/warren-project-abc123",
+        projectDir: "/tmp/scuttlerun-project-abc123",
         transcriptPath: "/home/user/.claude/projects/-tmp-foo/abc123.jsonl",
       });
       const parsed = parseYaml(output + "  - user: |\n      placeholder\n");
       expect(parsed.session).toBe("abc-123");
       expect(parsed.config).toBe("/path/to/session.yml");
-      expect(parsed.project).toBe("/tmp/warren-project-abc123");
+      expect(parsed.project).toBe("/tmp/scuttlerun-project-abc123");
       expect(parsed.transcript).toBe("/home/user/.claude/projects/-tmp-foo/abc123.jsonl");
       expect(output).toContain("conversation:\n");
     });
@@ -47,7 +47,7 @@ describe("transcript", () => {
       writeHeader({
         session: "abc-123",
         configPaths: ["/path/to/base.yml", "/path/to/override.yml"],
-        projectDir: "/tmp/warren-project-abc123",
+        projectDir: "/tmp/scuttlerun-project-abc123",
         transcriptPath: "/home/user/.claude/projects/-tmp-foo/abc123.jsonl",
       });
       const parsed = parseYaml(output + "  - user: |\n      placeholder\n");

@@ -19,8 +19,8 @@ vi.mock("@anthropic-ai/sdk", () => {
 });
 vi.mock("../src/project.js", () => {
   return {
-    createProjectDir: vi.fn().mockResolvedValue("/tmp/warren-project-test123"),
-    scaffoldProject: vi.fn().mockResolvedValue({ projectPath: "/tmp/warren-project-scaffold123" }),
+    createProjectDir: vi.fn().mockResolvedValue("/tmp/scuttlerun-project-test123"),
+    scaffoldProject: vi.fn().mockResolvedValue({ projectPath: "/tmp/scuttlerun-project-scaffold123" }),
   };
 });
 vi.mock("node:fs", async () => {
@@ -83,8 +83,8 @@ const originalStdoutWrite = process.stdout.write;
 describe("runSession", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    (mockCreateProjectDir as ReturnType<typeof vi.fn>).mockResolvedValue("/tmp/warren-project-test123");
-    (mockScaffoldProject as ReturnType<typeof vi.fn>).mockResolvedValue({ projectPath: "/tmp/warren-project-scaffold123" });
+    (mockCreateProjectDir as ReturnType<typeof vi.fn>).mockResolvedValue("/tmp/scuttlerun-project-test123");
+    (mockScaffoldProject as ReturnType<typeof vi.fn>).mockResolvedValue({ projectPath: "/tmp/scuttlerun-project-scaffold123" });
     delete process.env.CLAUDECODE;
     stdoutOutput = "";
     process.stdout.write = ((chunk: string) => {
@@ -460,7 +460,7 @@ describe("runSession", () => {
 
     const env = capturedOptions?.env as Record<string, string>;
     expect(env).toBeDefined();
-    expect(env.HOME).toBe("/tmp/warren-project-test123/.home");
+    expect(env.HOME).toBe("/tmp/scuttlerun-project-test123/.home");
   });
 
   it("does not set env when sandbox is disabled and no sdk.env", async () => {

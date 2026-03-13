@@ -47,7 +47,7 @@ export async function runSession(
     const result = await scaffoldProject(config.project, configDir);
     projectDir = result.projectPath;
     if (verbose) {
-      process.stderr.write(`[warren] Scaffolded project at ${projectDir}\n`);
+      process.stderr.write(`[scuttlerun] Scaffolded project at ${projectDir}\n`);
     }
   } else {
     projectDir = await createProjectDir();
