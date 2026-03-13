@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, basename, resolve } from "node:path";
+import { join, basename, dirname, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ProjectConfig } from "./config.js";
@@ -46,6 +46,15 @@ export async function scaffoldProject(
       join(claudeDir, "settings.json"),
       JSON.stringify(config.settings, null, 2),
     );
+  }
+
+  // Write project files
+  if (config.files) {
+    for (const [filePath, content] of Object.entries(config.files)) {
+      const fullPath = join(projectPath, filePath);
+      await fs.mkdir(dirname(fullPath), { recursive: true });
+      await fs.writeFile(fullPath, content);
+    }
   }
 
   // Git init
