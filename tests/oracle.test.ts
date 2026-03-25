@@ -1,9 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  Oracle,
-  type AskUserQuestionResult,
-  type TurnPolicyResult,
-} from "../src/oracle.js";
+import { Oracle } from "../src/oracle.js";
 
 // Mock the Anthropic SDK
 const mockParse = vi.fn();

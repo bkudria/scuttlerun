@@ -1,7 +1,9 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionConfig } from "./config.js";
+import type { QuestionInput } from "./oracle.js";
 import { Oracle } from "./oracle.js";
 import { SyntheticUser } from "./synthetic-user.js";
 import { scaffoldProject, createProjectDir } from "./project.js";
@@ -171,7 +173,7 @@ export async function runSession(
     ) => {
       if (toolName === "AskUserQuestion" && syntheticUser) {
         const result = await syntheticUser.handleAskUserQuestion(
-          input as { questions: any[] },
+          input as { questions: QuestionInput[] },
         );
         writeOracleAsk(
           result.oracleResponse.answers,
@@ -195,7 +197,7 @@ export async function runSession(
     queryHandle = query({
       prompt: inputGenerator(),
       options: sdkOptions,
-    }) as any;
+    });
 
     let exitCode = 0;
     const startTime = Date.now();
@@ -239,7 +241,7 @@ export async function runSession(
         // Add initial prompt to conversation buffer
         syntheticUser.addUserMessage(config.prompt);
       } else if (message.type === "assistant") {
-        const content = (message as any).message?.content;
+        const content = (message as SDKAssistantMessage).message?.content;
         if (content && Array.isArray(content)) {
           const textParts: string[] = [];
           for (const block of content) {
@@ -314,7 +316,7 @@ export async function runSession(
     });
 
     return { exitCode, sessionId };
-  } catch (err: unknown) {
+  } catch {
     if (timedOut) {
       return { exitCode: 5, sessionId };
     }
@@ -325,8 +327,8 @@ export async function runSession(
     if (timeoutHandle) clearTimeout(timeoutHandle);
 
     // Close query handle
-    if (queryHandle && typeof (queryHandle as any).close === "function") {
-      (queryHandle as any).close();
+    if (queryHandle) {
+      queryHandle.close();
     }
 
     // No cleanup — project dir is preserved

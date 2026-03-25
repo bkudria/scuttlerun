@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { runSession, type RunResult } from "../src/runner.js";
+import { runSession } from "../src/runner.js";
 import type { SessionConfig } from "../src/config.js";
 
 // Mock all dependencies
@@ -332,9 +332,10 @@ describe("runSession", () => {
   });
 
   it("passes canUseTool callback that handles AskUserQuestion", async () => {
-    let capturedCanUseTool: Function | undefined;
+    type CanUseToolFn = (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
+    let capturedCanUseTool: CanUseToolFn | undefined;
 
-    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { options: { canUseTool?: CanUseToolFn } }) => {
       capturedCanUseTool = opts.options.canUseTool;
       return createMockQuery([
         {
@@ -365,7 +366,7 @@ describe("runSession", () => {
     expect(capturedCanUseTool).toBeDefined();
 
     // Non-AskUserQuestion tools should be allowed
-    const allowResult = await capturedCanUseTool!("Read", {});
+    const allowResult = await capturedCanUseTool!("Read", {}) as { behavior: string };
     expect(allowResult.behavior).toBe("allow");
   });
 
@@ -431,7 +432,7 @@ describe("runSession", () => {
   it("sets HOME to sandbox home dir when sandbox is enabled", async () => {
     let capturedOptions: Record<string, unknown> | undefined;
 
-    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: Record<string, Record<string, unknown>>) => {
       capturedOptions = opts.options;
       return createMockQuery([
         {
@@ -466,7 +467,7 @@ describe("runSession", () => {
   it("does not set env when sandbox is disabled and no sdk.env", async () => {
     let capturedOptions: Record<string, unknown> | undefined;
 
-    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: any) => {
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: Record<string, Record<string, unknown>>) => {
       capturedOptions = opts.options;
       return createMockQuery([
         {
