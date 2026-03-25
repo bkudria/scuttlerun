@@ -177,4 +177,5 @@ npm run dev -- run examples/simple.yml   # Run via tsx
 
 ## See Also
 
+- [GOALS.md](GOALS.md) — Project motivation, vision, and non-goals
 - [SPEC.md](SPEC.md) — Full specification and design decisions
