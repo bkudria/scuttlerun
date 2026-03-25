@@ -1,0 +1,9 @@
+name: scuttlerun
+description: Multi-turn Claude session driver
+language: typescript
+profiles: [base]
+
+standards:
+  tests:
+    framework: vitest
+    directory: tests
