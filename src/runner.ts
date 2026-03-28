@@ -7,6 +7,7 @@ import type { QuestionInput } from "./oracle.js";
 import { Oracle } from "./oracle.js";
 import { SyntheticUser } from "./synthetic-user.js";
 import { scaffoldProject, createProjectDir } from "./project.js";
+import { cleanOldProjects } from "./cleanup.js";
 import {
   writeHeader,
   writeUser,
@@ -38,6 +39,9 @@ export async function runSession(
 
   // Prevent nested session errors
   delete process.env.CLAUDECODE;
+
+  // Clean old project directories before creating new ones
+  await cleanOldProjects(7, { verbose });
 
   let sessionId: string | undefined;
   let queryHandle: ReturnType<typeof query> | undefined;
