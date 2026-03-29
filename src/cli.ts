@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { parse as parseYaml } from "yaml";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { readFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { parseSessionConfig, mergeRawConfigs, type SessionConfig } from "./config.js";
@@ -252,6 +252,63 @@ async function main() {
     });
 
   runCmd.addHelpText("after", RUN_HELP_TEXT);
+
+  program
+    .command("list")
+    .description("Validate and display the resolved config without running a session")
+    .argument("<config.yml>", "Session config file (YAML)")
+    .argument("[override.yml...]", "Additional YAML files to deep-merge (last wins)")
+    .action(async (configFile: string, overrideFiles: string[]) => {
+      try {
+        const allFiles = [configFile, ...overrideFiles];
+        const yamlContents: string[] = [];
+
+        for (const file of allFiles) {
+          const resolved = resolve(file);
+          const content = await readFile(resolved, "utf8");
+          yamlContents.push(content);
+        }
+
+        const config = await buildConfig(yamlContents, {});
+
+        // Output resolved config summary as YAML
+        const proj = config.project;
+        const hasProject = proj && (proj.claude_md || (proj.skills && proj.skills.length > 0) || proj.git_init);
+
+        const summary: Record<string, unknown> = {
+          model: config.model,
+          tools: config.tools,
+          effort: config.effort,
+          max_turns: config.max_turns,
+          permission_mode: config.permission_mode,
+          user: {
+            turn_policy: config.user.turn_policy,
+            oracle_model: config.user.oracle_model,
+            max_user_turns: config.user.max_user_turns,
+            ...(config.user.persona ? { persona: config.user.persona } : {}),
+          },
+          ...(hasProject && proj
+            ? {
+                project: {
+                  ...(proj.claude_md ? { claude_md: proj.claude_md } : {}),
+                  ...(proj.skills && proj.skills.length > 0 ? { skills: proj.skills } : {}),
+                  ...(proj.settings ? { settings: proj.settings } : {}),
+                  ...(proj.git_init ? { git_init: proj.git_init } : {}),
+                },
+              }
+            : {}),
+          prompt: config.prompt,
+        };
+
+        process.stdout.write(stringifyYaml(summary));
+        process.exit(0);
+      } catch (err) {
+        process.stderr.write(
+          `[scuttlerun] Validation error: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+        process.exit(1);
+      }
+    });
 
   program
     .command("version")

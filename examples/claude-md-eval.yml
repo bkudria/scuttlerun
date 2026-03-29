@@ -1,0 +1,16 @@
+# Evaluate a CLAUDE.md instruction (no skills involved)
+version: "1"
+
+prompt: |
+  Write a function called isPrime that checks if a number is prime.
+  Save it to prime.js.
+
+project:
+  claude_md: |
+    ## Development Rules
+    Always write tests before production code. Create a test file first,
+    then write the implementation to make the tests pass.
+    Save all files using relative paths.
+
+user:
+  turn_policy: single
