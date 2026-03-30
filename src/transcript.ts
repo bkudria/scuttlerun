@@ -34,18 +34,23 @@ function singleQuote(value: string): string {
   return "'" + value.replace(/'/g, "''") + "'";
 }
 
+/** Escape a scalar value for safe inline YAML output. */
+function yamlScalar(value: string): string {
+  return stringify(value).trim();
+}
+
 export function writeHeader(opts: HeaderOptions): void {
   write(`session: ${opts.session}\n`);
   if (opts.configPaths.length === 1) {
-    write(`config: ${opts.configPaths[0]}\n`);
+    write(`config: ${yamlScalar(opts.configPaths[0])}\n`);
   } else {
     write(`config:\n`);
     for (const p of opts.configPaths) {
-      write(`  - ${p}\n`);
+      write(`  - ${yamlScalar(p)}\n`);
     }
   }
-  write(`project: ${opts.projectDir}\n`);
-  write(`transcript: ${opts.transcriptPath}\n`);
+  write(`project: ${yamlScalar(opts.projectDir)}\n`);
+  write(`transcript: ${yamlScalar(opts.transcriptPath)}\n`);
   write(`\nconversation:\n`);
 }
 
@@ -75,7 +80,7 @@ export function writeTool(name: string, input: unknown): void {
     case "Read":
     case "Write":
     case "Edit":
-      write(`    path: ${inp.file_path ?? ""}\n`);
+      write(`    path: ${yamlScalar(String(inp.file_path ?? ""))}\n`);
       break;
     case "Bash":
       write(`    command: |\n`);
@@ -100,9 +105,9 @@ export function writeOracleAsk(
   write(`  - oracle: ask_user\n`);
   write(`    answers:\n`);
   for (const [q, a] of Object.entries(answers)) {
-    write(`      "${q}": ${a}\n`);
+    write(`      ${yamlScalar(q)}: ${yamlScalar(a)}\n`);
   }
-  write(`    reasoning: ${reasoning}\n`);
+  write(`    reasoning: ${yamlScalar(reasoning)}\n`);
   write("\n");
 }
 
@@ -112,13 +117,13 @@ export function writeOracleTurn(
   reasoning?: string,
 ): void {
   write(`  - oracle: turn_policy\n`);
-  write(`    decision: ${decision}\n`);
+  write(`    decision: ${yamlScalar(decision)}\n`);
   if (message) {
     write(`    message: |\n`);
     write(blockLines(message, 6));
   }
   if (reasoning) {
-    write(`    reasoning: ${reasoning}\n`);
+    write(`    reasoning: ${yamlScalar(reasoning)}\n`);
   }
   write("\n");
 }
@@ -133,14 +138,14 @@ export function writeFooter(stats: FooterStats): void {
   }
   if (stats.filesWritten && stats.filesWritten.length > 0) {
     write(`files_written:\n`);
-    for (const f of stats.filesWritten) write(`  - ${f}\n`);
+    for (const f of stats.filesWritten) write(`  - ${yamlScalar(f)}\n`);
   }
   if (stats.filesEdited && stats.filesEdited.length > 0) {
     write(`files_edited:\n`);
-    for (const f of stats.filesEdited) write(`  - ${f}\n`);
+    for (const f of stats.filesEdited) write(`  - ${yamlScalar(f)}\n`);
   }
   if (stats.filesRead && stats.filesRead.length > 0) {
     write(`files_read:\n`);
-    for (const f of stats.filesRead) write(`  - ${f}\n`);
+    for (const f of stats.filesRead) write(`  - ${yamlScalar(f)}\n`);
   }
 }
