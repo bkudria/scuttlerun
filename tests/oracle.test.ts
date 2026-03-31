@@ -185,6 +185,56 @@ describe("Oracle", () => {
     });
   });
 
+  describe("callWithRetry", () => {
+    it("throws when parsed_output is null", async () => {
+      mockParse.mockResolvedValue({
+        parsed_output: null,
+        usage: { input_tokens: 50, output_tokens: 10 },
+      });
+
+      await expect(
+        oracle.answerQuestions({
+          persona: "test",
+          conversationContext: [],
+          questions: [
+            { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+          ],
+        }),
+      ).rejects.toThrow("Oracle returned no structured output");
+    });
+  });
+
+  describe("message building", () => {
+    it("includes multiSelect label in user message", async () => {
+      mockParse.mockResolvedValueOnce({
+        parsed_output: {
+          answers: [{ question: "Pick", answer: "A, B" }],
+          reasoning: "both needed",
+        },
+        usage: { input_tokens: 100, output_tokens: 50 },
+      });
+
+      await oracle.answerQuestions({
+        persona: "test",
+        conversationContext: [],
+        questions: [
+          {
+            question: "Pick",
+            header: "Multi",
+            options: [
+              { label: "A", description: "a" },
+              { label: "B", description: "b" },
+            ],
+            multiSelect: true,
+          },
+        ],
+      });
+
+      const userMsg = mockParse.mock.calls[0][0].messages[0].content;
+      expect(userMsg).toContain("Multiple selections allowed");
+    });
+  });
+
   describe("usage tracking", () => {
     it("accumulates usage across calls", async () => {
       mockParse

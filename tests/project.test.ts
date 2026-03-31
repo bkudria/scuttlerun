@@ -130,4 +130,90 @@ describe("scaffoldProject", () => {
       await fs.rm(result.projectPath, { recursive: true, force: true });
     }
   });
+
+  it("writes project files from config.files", async () => {
+    const config: ProjectConfig = {
+      files: {
+        "hello.txt": "Hello world",
+        "sub/nested.txt": "Nested content",
+      },
+    };
+    const result = await scaffoldProject(config, tempDir);
+    try {
+      const hello = await fs.readFile(join(result.projectPath, "hello.txt"), "utf8");
+      expect(hello).toBe("Hello world");
+      const nested = await fs.readFile(join(result.projectPath, "sub", "nested.txt"), "utf8");
+      expect(nested).toBe("Nested content");
+    } finally {
+      await fs.rm(result.projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves tilde skill paths relative to HOME", async () => {
+    // Set HOME to our temp dir so ~/fake-skill resolves to tempDir/fake-skill
+    const origHome = process.env.HOME;
+    process.env.HOME = tempDir;
+    try {
+      const config: ProjectConfig = { skills: ["~/fake-skill"] };
+      const result = await scaffoldProject(config, tempDir);
+      try {
+        const linkPath = join(result.projectPath, ".claude", "skills", "fake-skill");
+        const stat = await fs.lstat(linkPath);
+        expect(stat.isSymbolicLink()).toBe(true);
+        const target = await fs.readlink(linkPath);
+        expect(target).toBe(join(tempDir, "fake-skill"));
+      } finally {
+        await fs.rm(result.projectPath, { recursive: true, force: true });
+      }
+    } finally {
+      process.env.HOME = origHome;
+    }
+  });
+
+  it("falls back to USERPROFILE for tilde paths when HOME is unset", async () => {
+    const origHome = process.env.HOME;
+    const origProfile = process.env.USERPROFILE;
+    delete process.env.HOME;
+    process.env.USERPROFILE = tempDir;
+    try {
+      const config: ProjectConfig = { skills: ["~/fake-skill"] };
+      const result = await scaffoldProject(config, tempDir);
+      try {
+        const linkPath = join(result.projectPath, ".claude", "skills", "fake-skill");
+        const stat = await fs.lstat(linkPath);
+        expect(stat.isSymbolicLink()).toBe(true);
+        const target = await fs.readlink(linkPath);
+        expect(target).toBe(join(tempDir, "fake-skill"));
+      } finally {
+        await fs.rm(result.projectPath, { recursive: true, force: true });
+      }
+    } finally {
+      process.env.HOME = origHome;
+      if (origProfile !== undefined) process.env.USERPROFILE = origProfile;
+      else delete process.env.USERPROFILE;
+    }
+  });
+
+  it("uses empty string for tilde when neither HOME nor USERPROFILE is set", async () => {
+    const origHome = process.env.HOME;
+    const origProfile = process.env.USERPROFILE;
+    delete process.env.HOME;
+    delete process.env.USERPROFILE;
+    try {
+      const config: ProjectConfig = { skills: ["~/fake-skill"] };
+      const result = await scaffoldProject(config, tempDir);
+      try {
+        const linkPath = join(result.projectPath, ".claude", "skills", "fake-skill");
+        const target = await fs.readlink(linkPath);
+        // With empty home, join("", "fake-skill") = "fake-skill"
+        expect(target).toBe("fake-skill");
+      } finally {
+        await fs.rm(result.projectPath, { recursive: true, force: true });
+      }
+    } finally {
+      process.env.HOME = origHome;
+      if (origProfile !== undefined) process.env.USERPROFILE = origProfile;
+      else delete process.env.USERPROFILE;
+    }
+  });
 });

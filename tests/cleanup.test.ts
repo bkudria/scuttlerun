@@ -1,7 +1,18 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { tmpdir } from "node:os";
-import { mkdir, rm, stat, utimes } from "node:fs/promises";
 import { join } from "node:path";
+
+// Mock node:fs/promises with passthrough so we can override readdir for one test
+const actualFs = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+const mockReaddir = vi.fn<typeof actualFs.readdir>((...args: Parameters<typeof actualFs.readdir>) =>
+  actualFs.readdir(...args),
+);
+vi.mock("node:fs/promises", async () => {
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+  return { ...actual, readdir: mockReaddir };
+});
+
+const { mkdir, rm, stat, utimes } = actualFs;
 
 describe("cleanOldProjects", () => {
   let tmpDir: string;
@@ -66,6 +77,32 @@ describe("cleanOldProjects", () => {
   it("returns 0 when nothing to clean", async () => {
     const { cleanOldProjects } = await import("../src/cleanup.js");
     const cleaned = await cleanOldProjects(9999);
+    expect(cleaned).toBe(0);
+  });
+
+  it("logs to stderr when verbose is true and dirs are cleaned", async () => {
+    const { cleanOldProjects } = await import("../src/cleanup.js");
+    const oldDir = await createOldDir("scuttlerun-project-test-verbose-" + Date.now(), 10);
+    let stderrOutput = "";
+    const origWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      await cleanOldProjects(7, { verbose: true });
+      expect(stderrOutput).toContain("[scuttlerun] Cleaned");
+    } finally {
+      process.stderr.write = origWrite;
+      await rm(oldDir, { recursive: true }).catch(() => {});
+    }
+  });
+
+  it("returns 0 when readdir throws", async () => {
+    const { cleanOldProjects } = await import("../src/cleanup.js");
+    mockReaddir.mockRejectedValueOnce(new Error("EPERM"));
+    const cleaned = await cleanOldProjects(7);
     expect(cleaned).toBe(0);
   });
 });

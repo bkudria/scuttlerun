@@ -78,6 +78,13 @@ export async function runSession(
 
   // Track stats
   let toolCallCount = 0;
+  let exitCode = 0;
+  const startTime = Date.now();
+  let resultNumTurns = 0;
+  let resultTotalCostUsd = 0;
+  const filesWritten = new Set<string>();
+  const filesEdited = new Set<string>();
+  const filesRead = new Set<string>();
 
   try {
     // Build the async generator for multi-turn input
@@ -203,14 +210,6 @@ export async function runSession(
       options: sdkOptions,
     });
 
-    let exitCode = 0;
-    const startTime = Date.now();
-    let resultNumTurns = 0;
-    let resultTotalCostUsd = 0;
-    const filesWritten = new Set<string>();
-    const filesEdited = new Set<string>();
-    const filesRead = new Set<string>();
-
     // Process messages — race each iteration against the abort signal
     const iterator = (queryHandle as AsyncIterable<Record<string, unknown>>)[Symbol.asyncIterator]();
     while (true) {
@@ -301,14 +300,13 @@ export async function runSession(
       }
     }
 
-    const duration = Date.now() - startTime;
-
     // Check for timeout
     if (timedOut) {
       exitCode = 5;
     }
 
     // Write footer
+    const duration = Date.now() - startTime;
     writeFooter({
       turns: resultNumTurns,
       toolCalls: toolCallCount,
@@ -318,25 +316,15 @@ export async function runSession(
       filesEdited: Array.from(filesEdited),
       filesRead: Array.from(filesRead),
     });
-
-    return { exitCode, sessionId };
   } catch {
-    if (timedOut) {
-      return { exitCode: 5, sessionId };
-    }
-
-    return { exitCode: 2, sessionId };
-  } finally {
-    // Clear timeout
-    if (timeoutHandle) clearTimeout(timeoutHandle);
-
-    // Close query handle
-    if (queryHandle) {
-      queryHandle.close();
-    }
-
-    // No cleanup — project dir is preserved
+    exitCode = timedOut ? 5 : 2;
   }
+
+  // Cleanup
+  if (timeoutHandle) clearTimeout(timeoutHandle);
+  if (queryHandle) queryHandle.close();
+
+  return { exitCode, sessionId };
 }
 
 function buildSdkSessionPath(cwd: string, sessionId: string, sandboxHome?: string): string {

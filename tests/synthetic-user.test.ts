@@ -156,5 +156,29 @@ describe("SyntheticUser", () => {
         ],
       });
     });
+
+    it("truncates to last 20 entries when buffer exceeds limit", async () => {
+      const mockDecide = oracle.decideTurnPolicy as ReturnType<typeof vi.fn>;
+      mockDecide.mockResolvedValueOnce({
+        decision: "end",
+        reasoning: "done",
+        usage: { input_tokens: 100, output_tokens: 30 },
+      });
+
+      const user = new SyntheticUser(oracle, userConfig, "Start");
+      // Add 12 pairs = 24 entries, exceeding the 20-entry limit
+      for (let i = 0; i < 12; i++) {
+        user.addUserMessage(`user-${i}`);
+        user.addAssistantMessage(`assistant-${i}`);
+      }
+
+      await user.decideTurn();
+
+      const call = (mockDecide as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      expect(call.conversationContext).toHaveLength(20);
+      // Should have the last 10 pairs (indices 2-11)
+      expect(call.conversationContext[0]).toEqual({ role: "user", text: "user-2" });
+      expect(call.conversationContext[19]).toEqual({ role: "assistant", text: "assistant-11" });
+    });
   });
 });

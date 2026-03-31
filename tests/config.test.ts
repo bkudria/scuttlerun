@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseSessionConfig,
+  mergeRawConfigs,
 } from "../src/config.js";
 
 describe("parseSessionConfig", () => {
@@ -229,5 +230,66 @@ describe("parseSessionConfig", () => {
       sdk: { thinking: { type: "disabled" } },
     });
     expect(disabled.sdk.thinking).toEqual({ type: "disabled" });
+  });
+});
+
+describe("mergeRawConfigs", () => {
+  it("throws when no configs provided", () => {
+    expect(() => mergeRawConfigs()).toThrow("At least one config is required");
+  });
+
+  it("returns the single config unchanged", () => {
+    const result = mergeRawConfigs({ prompt: "hi", model: "haiku" });
+    expect(result).toEqual({ prompt: "hi", model: "haiku" });
+  });
+
+  it("overrides scalar values from later configs", () => {
+    const result = mergeRawConfigs(
+      { prompt: "base", model: "haiku" },
+      { model: "sonnet" },
+    );
+    expect(result).toEqual({ prompt: "base", model: "sonnet" });
+  });
+
+  it("replaces arrays entirely (no merge)", () => {
+    const result = mergeRawConfigs(
+      { tools: ["Read", "Write"] },
+      { tools: ["Bash"] },
+    );
+    expect(result).toEqual({ tools: ["Bash"] });
+  });
+
+  it("deep-merges nested objects", () => {
+    const result = mergeRawConfigs(
+      { sandbox: { enabled: true, network: { allowed_domains: [] } } },
+      { sandbox: { network: { allow_local_binding: true } } },
+    );
+    expect(result).toEqual({
+      sandbox: {
+        enabled: true,
+        network: { allowed_domains: [], allow_local_binding: true },
+      },
+    });
+  });
+
+  it("overrides object with scalar", () => {
+    const result = mergeRawConfigs(
+      { sandbox: { enabled: true } },
+      { sandbox: false as unknown as Record<string, unknown> },
+    );
+    expect(result).toEqual({ sandbox: false });
+  });
+
+  it("merges three configs in order", () => {
+    const result = mergeRawConfigs(
+      { prompt: "a", model: "haiku", user: { persona: "dev" } },
+      { model: "sonnet" },
+      { user: { turn_policy: "reactive" } },
+    );
+    expect(result).toEqual({
+      prompt: "a",
+      model: "sonnet",
+      user: { persona: "dev", turn_policy: "reactive" },
+    });
   });
 });

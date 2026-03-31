@@ -148,6 +148,21 @@ describe("transcript", () => {
       expect(parsed.conversation[0].tool).toBe("Agent");
       expect(parsed.conversation[0].input.prompt).toBe("do something");
     });
+
+    it("handles missing file_path in Read/Write/Edit", () => {
+      writeTool("Read", {});
+      expect(output).toContain("path:");
+    });
+
+    it("handles missing command in Bash", () => {
+      writeTool("Bash", {});
+      expect(output).toContain("command:");
+    });
+
+    it("handles missing pattern in Glob", () => {
+      writeTool("Glob", {});
+      expect(output).toContain("pattern:");
+    });
   });
 
   describe("writeOracleAsk", () => {
@@ -183,6 +198,15 @@ describe("transcript", () => {
       expect(entry.decision).toBe("end");
       expect(entry.message).toBeUndefined();
       expect(entry.reasoning).toBe("Task complete");
+    });
+
+    it("writes decision without reasoning", () => {
+      writeOracleTurn("end");
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.oracle).toBe("turn_policy");
+      expect(entry.decision).toBe("end");
+      expect(entry.reasoning).toBeUndefined();
     });
   });
 
