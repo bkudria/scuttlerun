@@ -31,13 +31,13 @@ describe("transcript", () => {
     it("writes session, config, project, transcript and conversation header", () => {
       writeHeader({
         session: "abc-123",
-        configPaths: ["/path/to/session.yml"],
+        configPaths: ["/path/to/session.yaml"],
         projectDir: "/tmp/scuttlerun-project-abc123",
         transcriptPath: "/home/user/.claude/projects/-tmp-foo/abc123.jsonl",
       });
       const parsed = parseYaml(output + "  - user: |\n      placeholder\n");
       expect(parsed.session).toBe("abc-123");
-      expect(parsed.config).toBe("/path/to/session.yml");
+      expect(parsed.config).toBe("/path/to/session.yaml");
       expect(parsed.project).toBe("/tmp/scuttlerun-project-abc123");
       expect(parsed.transcript).toBe("/home/user/.claude/projects/-tmp-foo/abc123.jsonl");
       expect(output).toContain("conversation:\n");
@@ -46,7 +46,7 @@ describe("transcript", () => {
     it("starts with YAML document start marker", () => {
       writeHeader({
         session: "abc-123",
-        configPaths: ["/path/to/session.yml"],
+        configPaths: ["/path/to/session.yaml"],
         projectDir: "/tmp/proj",
         transcriptPath: "/tmp/transcript.jsonl",
       });
@@ -56,12 +56,12 @@ describe("transcript", () => {
     it("writes config as list for multiple paths", () => {
       writeHeader({
         session: "abc-123",
-        configPaths: ["/path/to/base.yml", "/path/to/override.yml"],
+        configPaths: ["/path/to/base.yaml", "/path/to/override.yaml"],
         projectDir: "/tmp/scuttlerun-project-abc123",
         transcriptPath: "/home/user/.claude/projects/-tmp-foo/abc123.jsonl",
       });
       const parsed = parseYaml(output + "  - user: |\n      placeholder\n");
-      expect(parsed.config).toEqual(["/path/to/base.yml", "/path/to/override.yml"]);
+      expect(parsed.config).toEqual(["/path/to/base.yaml", "/path/to/override.yaml"]);
     });
   });
 

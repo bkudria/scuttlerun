@@ -29,7 +29,7 @@ This boundary exists because eval logic is inherently opinionated — different 
 |----------|--------|-----------|
 | Language | TypeScript | More complete SDK (hooks, session control, no workarounds); native async/await |
 | Scope | General-purpose session driver | Not coupled to eval; eval is built on top |
-| Interface | CLI-first | `scuttlerun run session.yml` as primary invocation |
+| Interface | CLI-first | `scuttlerun run session.yaml` as primary invocation |
 | AskUserQuestion | `canUseTool` callback | Official SDK mechanism for intercepting AskUserQuestion; PreToolUse hooks do not work for this |
 | Interactivity | LLM-driven synthetic user | Full simulation via a second LLM call |
 | Synthetic user model | Haiku default + override | Fast and cheap for routine responses; configurable |
@@ -46,18 +46,18 @@ This boundary exists because eval logic is inherently opinionated — different 
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                      scuttlerun CLI                          │
-│  scuttlerun run session.yml                                  │
+│                      scuttlerun CLI                     │
+│  scuttlerun run session.yaml                            │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────┐
-│                   Session Runner                         │
-│                                                          │
-│  Loads session.yml → SessionConfig (zod schema)         │
-│  Creates temp project dir, starts Agent SDK query        │
-│  Streams transcript to stdout                            │
-└──────┬──────────────┬──────────────────────────────────┘
+│                   Session Runner                        │
+│                                                         │
+│  Loads session.yaml → SessionConfig (zod schema)       │
+│  Creates temp project dir, starts Agent SDK query       │
+│  Streams transcript to stdout                           │
+└──────┬──────────────┬───────────────────────────────────┘
        │              │
        ▼              ▼
 ┌─────────────┐ ┌──────────────┐
@@ -179,7 +179,7 @@ scuttlerun relies on the Agent SDK's built-in session persistence for the full c
 The primary input to scuttlerun is a session YAML file:
 
 ```yaml
-# session.yml — scuttlerun session configuration
+# session.yaml — scuttlerun session configuration
 version: "1"
 
 # --- Agent Configuration ---
@@ -286,12 +286,12 @@ scuttlerun always creates a temporary project directory in `$TMPDIR` with prefix
 Multiple YAML files can be merged for composability:
 
 ```bash
-scuttlerun run base-config.yml scenario-override.yml
+scuttlerun run base-config.yaml scenario-override.yaml
 ```
 
 Later files override earlier ones (deep merge on objects, replace on scalars/arrays). For example, `tools: [Grep]` in an override replaces the entire base tools list — it does not append. This enables patterns like:
-- `base.yml` defines shared settings (model, tools, permissions)
-- `scenario.yml` overrides prompt, user persona, output paths
+- `base.yaml` defines shared settings (model, tools, permissions)
+- `scenario.yaml` overrides prompt, user persona, output paths
 
 **Implementation note:** Merging happens on raw YAML objects *before* applying Zod schema defaults. This is critical — if defaults were applied first, an override YAML missing a field would get the default value, which would then replace the base's value during merge. The `mergeRawConfigs()` function merges raw objects, and `parseSessionConfig()` is called once on the merged result.
 
@@ -316,7 +316,7 @@ Most YAML fields map directly to SDK options (e.g., `model` → `model`, `max_tu
 scuttlerun — Multi-turn Claude session driver
 
 Usage:
-  scuttlerun run <session.yml> [<override.yml>...] [options]
+  scuttlerun run <session.yaml> [<override.yaml>...] [options]
   scuttlerun version
 
 Run options:
@@ -510,7 +510,7 @@ scuttlerun streams a human-readable transcript to stdout as the session runs. Th
 
 ```
 ─── scuttlerun Session ───────────────────
-Config:     /abs/path/to/session.yml
+Config:     /abs/path/to/session.yaml
 Project:    /tmp/scuttlerun-project-xK3f9m
 Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
 ───────────────────────────────────────
@@ -531,7 +531,7 @@ I'll write a haiku about the ocean and save it to a file.
 Done! I saved the haiku to ocean.txt.
 
 ─── Summary ──────────────────────────
-Config:     /abs/path/to/session.yml
+Config:     /abs/path/to/session.yaml
 Project:    /tmp/scuttlerun-project-xK3f9m
 Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
 Turns:      2
@@ -566,11 +566,11 @@ Example caller patterns (implemented *outside* scuttlerun):
 
 ```bash
 # Run a session, capture transcript
-scuttlerun run session.yml > results/transcript.txt
+scuttlerun run session.yaml > results/transcript.txt
 
 # Batch processing
-for config in scenarios/*.yml; do
-    scuttlerun run base.yml "$config" > "results/$(basename $config .yml).txt"
+for config in scenarios/*.yaml; do
+    scuttlerun run base.yaml "$config" > "results/$(basename $config .yaml).txt"
 done
 
 # Query the SDK session file for tool calls
@@ -650,10 +650,10 @@ scuttlerun/
 │   ├── synthetic-user.test.ts # Synthetic user logic
 │   └── transcript.test.ts    # Transcript formatting
 └── examples/
-    ├── simple.yml             # Minimal session config
-    ├── interactive.yml        # Session with AskUserQuestion handling
-    ├── skill-eval.yml         # Skill evaluation with managed project
-    └── multi-turn.yml         # Reactive multi-turn session
+    ├── simple.yaml             # Minimal session config
+    ├── interactive.yaml        # Session with AskUserQuestion handling
+    ├── skill-eval.yaml         # Skill evaluation with managed project
+    └── multi-turn.yaml         # Reactive multi-turn session
 ```
 
 ### Entry Point

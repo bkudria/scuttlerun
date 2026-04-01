@@ -16,10 +16,10 @@ npm link          # makes `scuttlerun` available globally
 ## Quick Start
 
 ```bash
-scuttlerun run examples/simple.yml
+scuttlerun run examples/simple.yaml
 
 # Run with overrides
-scuttlerun run examples/multi-turn.yml --timeout 120 --model claude-sonnet-4-6
+scuttlerun run examples/multi-turn.yaml --timeout 120 --model claude-sonnet-4-6
 ```
 
 ## Session Config
@@ -81,13 +81,13 @@ When present, scuttlerun populates the project temp directory.
 Multiple YAML files are deep-merged (objects merge, arrays/scalars replace):
 
 ```bash
-scuttlerun run base.yml scenario-override.yml
+scuttlerun run base.yaml scenario-override.yaml
 ```
 
 ## CLI
 
 ```
-scuttlerun run <session.yml> [override.yml...] [options]
+scuttlerun run <session.yaml> [override.yaml...] [options]
 scuttlerun version
 ```
 
@@ -128,7 +128,7 @@ scuttlerun streams a YAML transcript to stdout as the session runs:
 
 ```yaml
 session: a1b2c3d4-e5f6-7890-abcd-ef1234567890
-config: /path/to/session.yml
+config: /path/to/session.yaml
 project: /tmp/scuttlerun-project-xK3f9m
 transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
 
@@ -160,10 +160,10 @@ The output is valid YAML and machine-parseable (e.g. with `yq`).
 
 See [`examples/`](examples/) for complete session configs:
 
-- **[simple.yml](examples/simple.yml)** — Single-turn, no follow-ups
-- **[interactive.yml](examples/interactive.yml)** — AskUserQuestion handling
-- **[multi-turn.yml](examples/multi-turn.yml)** — Reactive multi-turn with a persona
-- **[skill-eval.yml](examples/skill-eval.yml)** — Managed project with skill symlinks
+- **[simple.yaml](examples/simple.yaml)** — Single-turn, no follow-ups
+- **[interactive.yaml](examples/interactive.yaml)** — AskUserQuestion handling
+- **[multi-turn.yaml](examples/multi-turn.yaml)** — Reactive multi-turn with a persona
+- **[skill-eval.yaml](examples/skill-eval.yaml)** — Managed project with skill symlinks
 
 ## Development
 
@@ -172,7 +172,7 @@ npm install
 npm run build        # TypeScript compilation
 npm test             # Run all tests (vitest)
 npm run test:watch   # Watch mode
-npm run dev -- run examples/simple.yml   # Run via tsx
+npm run dev -- run examples/simple.yaml   # Run via tsx
 ```
 
 ## See Also

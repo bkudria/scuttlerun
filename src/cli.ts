@@ -144,24 +144,24 @@ Session Config (YAML):
 
 Config Merging:
   Multiple YAML files are deep-merged (objects merge, arrays/scalars replace):
-    scuttlerun run base.yml override.yml
+    scuttlerun run base.yaml override.yaml
   Later files win. CLI flags override everything.
 
 Examples:
   # Minimal single-turn session
-  scuttlerun run session.yml
+  scuttlerun run session.yaml
 
   # Override model and timeout
-  scuttlerun run session.yml --model claude-sonnet-4-6 --timeout 120
+  scuttlerun run session.yaml --model claude-sonnet-4-6 --timeout 120
 
   # Merge a base config with a scenario override
-  scuttlerun run base.yml scenario.yml
+  scuttlerun run base.yaml scenario.yaml
 
   # Quick one-off with prompt override
-  scuttlerun run session.yml --prompt "Write hello world in Python"
+  scuttlerun run session.yaml --prompt "Write hello world in Python"
 
   # Restrict tools
-  scuttlerun run session.yml --tools Read,Glob,Grep
+  scuttlerun run session.yaml --tools Read,Glob,Grep
 
 Output:
   scuttlerun streams a transcript to stdout including user messages, assistant
@@ -200,8 +200,8 @@ async function main() {
   const runCmd = program
     .command("run")
     .description("Run a scuttlerun session from a YAML config file")
-    .argument("<session.yml>", "Session config file (YAML). Only 'prompt' is required.")
-    .argument("[override.yml...]", "Additional YAML files to deep-merge (last wins)")
+    .argument("<session.yaml>", "Session config file (YAML). Only 'prompt' is required.")
+    .argument("[override.yaml...]", "Additional YAML files to deep-merge (last wins)")
     .option("--model <model>", "Agent model (default: claude-haiku-4-5)")
     .option("--oracle-model <model>", "Synthetic user oracle model (default: claude-haiku-4-5)")
     .option("--prompt <text>", "Override the prompt from the YAML config")
@@ -256,8 +256,8 @@ async function main() {
   program
     .command("list")
     .description("Validate and display the resolved config without running a session")
-    .argument("<config.yml>", "Session config file (YAML)")
-    .argument("[override.yml...]", "Additional YAML files to deep-merge (last wins)")
+    .argument("<config.yaml>", "Session config file (YAML)")
+    .argument("[override.yaml...]", "Additional YAML files to deep-merge (last wins)")
     .action(async (configFile: string, overrideFiles: string[]) => {
       try {
         const allFiles = [configFile, ...overrideFiles];

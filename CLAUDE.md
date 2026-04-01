@@ -16,7 +16,7 @@ npm test             # Run all tests (vitest)
 npm run test:watch   # Watch mode
 npx vitest run tests/config.test.ts           # Single test file
 npx vitest run tests/config.test.ts -t "name" # Single test by name
-npm run dev -- run examples/simple.yml        # Run via tsx (no build step)
+npm run dev -- run examples/simple.yaml        # Run via tsx (no build step)
 ```
 
 ## Architecture
