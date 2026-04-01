@@ -6,4 +6,11 @@ profiles: [base]
 standards:
   tests:
     framework: vitest
+    config: vitest.config.ts
     directory: tests
+  linter:
+    tool: eslint
+    config: eslint.config.js
+  coverage:
+    config: vitest.config.ts
+    ratchet_pattern: thresholds
