@@ -243,9 +243,9 @@ describe("runSession", () => {
     // Should contain YAML header, conversation entries, and footer
     expect(stdoutOutput).toContain("session: s-transcript");
     expect(stdoutOutput).toContain("conversation:");
-    expect(stdoutOutput).toContain("- user: |");
+    expect(stdoutOutput).toContain("- user:");
     expect(stdoutOutput).toContain("Write a haiku");
-    expect(stdoutOutput).toContain("- assistant: |");
+    expect(stdoutOutput).toContain("- assistant:");
     expect(stdoutOutput).toContain("Here is your haiku.");
     expect(stdoutOutput).toContain("turns:");
   });
@@ -652,7 +652,7 @@ describe("runSession", () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
     await runSession(minConfig());
 
-    expect(stdoutOutput).toContain("- thinking: |");
+    expect(stdoutOutput).toContain("- thinking:");
     expect(stdoutOutput).toContain("Let me consider this...");
   });
 

@@ -69,13 +69,13 @@ describe("transcript", () => {
     it("writes user entry as block scalar", () => {
       writeUser("Write a haiku about the ocean");
       const parsed = parseYaml("conversation:\n" + output);
-      expect(parsed.conversation[0].user).toBe("Write a haiku about the ocean\n");
+      expect(parsed.conversation[0].user).toBe("Write a haiku about the ocean");
     });
 
     it("preserves multi-line content", () => {
       writeUser("Line one\nLine two");
       const parsed = parseYaml("conversation:\n" + output);
-      expect(parsed.conversation[0].user).toBe("Line one\nLine two\n");
+      expect(parsed.conversation[0].user).toBe("Line one\nLine two");
     });
   });
 
@@ -83,7 +83,7 @@ describe("transcript", () => {
     it("writes thinking entry as block scalar", () => {
       writeThinking("I should write a 5-7-5 haiku.");
       const parsed = parseYaml("conversation:\n" + output);
-      expect(parsed.conversation[0].thinking).toBe("I should write a 5-7-5 haiku.\n");
+      expect(parsed.conversation[0].thinking).toBe("I should write a 5-7-5 haiku.");
     });
   });
 
@@ -91,7 +91,7 @@ describe("transcript", () => {
     it("writes assistant entry as block scalar", () => {
       writeAssistant("Here is a haiku.");
       const parsed = parseYaml("conversation:\n" + output);
-      expect(parsed.conversation[0].assistant).toBe("Here is a haiku.\n");
+      expect(parsed.conversation[0].assistant).toBe("Here is a haiku.");
     });
 
     it("preserves multi-line content with markdown", () => {
@@ -128,14 +128,14 @@ describe("transcript", () => {
       writeTool("Bash", { command: "echo hello && pwd" });
       const parsed = parseYaml("conversation:\n" + output);
       expect(parsed.conversation[0].tool).toBe("Bash");
-      expect(parsed.conversation[0].command).toBe("echo hello && pwd\n");
+      expect(parsed.conversation[0].command).toBe("echo hello && pwd");
     });
 
     it("does not truncate long Bash commands", () => {
       const longCmd = "a".repeat(200);
       writeTool("Bash", { command: longCmd });
       const parsed = parseYaml("conversation:\n" + output);
-      expect(parsed.conversation[0].command).toBe(longCmd + "\n");
+      expect(parsed.conversation[0].command).toBe(longCmd);
     });
 
     it("writes Glob with single-quoted pattern", () => {

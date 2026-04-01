@@ -1,4 +1,4 @@
-import { stringify } from "yaml";
+import { Document, Scalar, visit } from "yaml";
 
 export interface HeaderOptions {
   session: string;
@@ -21,111 +21,89 @@ function write(text: string): void {
   process.stdout.write(text);
 }
 
-function blockLines(text: string, indent: number): string {
-  const pad = " ".repeat(indent);
-  return text
-    .trimEnd()
-    .split("\n")
-    .map((line) => (line.length > 0 ? `${pad}${line}` : ""))
-    .join("\n") + "\n";
-}
-
-function singleQuote(value: string): string {
-  return "'" + value.replace(/'/g, "''") + "'";
-}
-
-/** Inline scalar — for keys and values that must stay on one line. */
-function inlineScalar(value: string): string {
-  const result = stringify(value, { lineWidth: 0 }).trim();
-  if (result.startsWith("|") || result.startsWith(">")) {
-    return JSON.stringify(value);
-  }
-  return result;
-}
-
-/** Write a scalar value (inline or block) at the given indent level. */
-function writeScalar(value: string, indent: number): void {
-  if (value.includes("\n")) {
-    write("|\n");
-    write(blockLines(value, indent));
-  } else {
-    write(inlineScalar(value) + "\n");
-  }
+/**
+ * Serialize a JS object as a YAML mapping, indent it as a sequence item
+ * under `conversation:`, and write it to stdout.
+ */
+function writeEntry(entry: Record<string, unknown>): void {
+  const doc = new Document(entry);
+  visit(doc, {
+    Scalar(_key, node) {
+      if (typeof node.value === "string" && node.value.includes("\n")) {
+        node.type = Scalar.BLOCK_LITERAL;
+      }
+    },
+  });
+  const raw = doc.toString({ lineWidth: 0 });
+  const lines = raw.replace(/\n$/, "").split("\n");
+  const indented = lines
+    .map((line, i) => {
+      if (i === 0) return `  - ${line}`;
+      if (line === "") return "";
+      return `    ${line}`;
+    })
+    .join("\n");
+  write(indented + "\n\n");
 }
 
 export function writeHeader(opts: HeaderOptions): void {
-  write("---\n");
-  write(`session: ${opts.session}\n`);
-  if (opts.configPaths.length === 1) {
-    write(`config: ${inlineScalar(opts.configPaths[0])}\n`);
-  } else {
-    write(`config:\n`);
-    for (const p of opts.configPaths) {
-      write(`  - ${inlineScalar(p)}\n`);
-    }
-  }
-  write(`project: ${inlineScalar(opts.projectDir)}\n`);
-  write(`transcript: ${inlineScalar(opts.transcriptPath)}\n`);
-  write(`\nconversation:\n`);
+  const header: Record<string, unknown> = {
+    session: opts.session,
+    config:
+      opts.configPaths.length === 1
+        ? opts.configPaths[0]
+        : opts.configPaths,
+    project: opts.projectDir,
+    transcript: opts.transcriptPath,
+  };
+  const doc = new Document(header);
+  doc.directives!.docStart = true;
+  write(doc.toString({ lineWidth: 0 }));
+  write("\nconversation:\n");
 }
 
 export function writeUser(text: string): void {
-  write(`  - user: |\n`);
-  write(blockLines(text, 6));
-  write("\n");
+  writeEntry({ user: text });
 }
 
 export function writeThinking(text: string): void {
-  write(`  - thinking: |\n`);
-  write(blockLines(text, 6));
-  write("\n");
+  writeEntry({ thinking: text });
 }
 
 export function writeAssistant(text: string): void {
-  write(`  - assistant: |\n`);
-  write(blockLines(text, 6));
-  write("\n");
+  writeEntry({ assistant: text });
 }
 
 export function writeTool(name: string, input: unknown): void {
-  write(`  - tool: ${name}\n`);
   const inp = input as Record<string, unknown>;
+  const entry: Record<string, unknown> = { tool: name };
 
   switch (name) {
     case "Read":
     case "Write":
     case "Edit":
-      write(`    path: ${inlineScalar(String(inp.file_path ?? ""))}\n`);
+      entry.path = String(inp.file_path ?? "");
       break;
     case "Bash":
-      write(`    command: |\n`);
-      write(blockLines(String(inp.command ?? ""), 6));
+      entry.command = String(inp.command ?? "");
       break;
     case "Glob":
     case "Grep":
-      write(`    pattern: ${singleQuote(String(inp.pattern ?? ""))}\n`);
+      entry.pattern = String(inp.pattern ?? "");
       break;
     default:
-      write(`    input:\n`);
-      write(blockLines(stringify(inp, { indent: 2 }), 6));
+      entry.input = inp;
       break;
   }
-  write("\n");
+
+  writeEntry(entry);
 }
 
 export function writeOracleAsk(
   answers: Record<string, string>,
   reasoning: string,
 ): void {
-  write(`  - oracle: ask_user\n`);
-  write(`    answers:\n`);
-  for (const [q, a] of Object.entries(answers)) {
-    write(`      ${inlineScalar(q)}: `);
-    writeScalar(a, 8);
-  }
-  write(`    reasoning: `);
-  writeScalar(reasoning, 6);
-  write("\n");
+  writeEntry({ oracle: "ask_user", answers, reasoning });
 }
 
 export function writeOracleTurn(
@@ -133,38 +111,30 @@ export function writeOracleTurn(
   message?: string,
   reasoning?: string,
 ): void {
-  write(`  - oracle: turn_policy\n`);
-  write(`    decision: `);
-  writeScalar(decision, 6);
-  if (message) {
-    write(`    message: |\n`);
-    write(blockLines(message, 6));
-  }
-  if (reasoning) {
-    write(`    reasoning: `);
-    writeScalar(reasoning, 6);
-  }
-  write("\n");
+  const entry: Record<string, unknown> = { oracle: "turn_policy", decision };
+  if (message) entry.message = message;
+  if (reasoning) entry.reasoning = reasoning;
+  writeEntry(entry);
 }
 
 export function writeFooter(stats: FooterStats): void {
-  write(`\nturns: ${stats.turns}\n`);
-  write(`tool_calls: ${stats.toolCalls}\n`);
-  const durationSec = +(stats.durationMs / 1000).toFixed(1);
-  write(`duration_s: ${durationSec}\n`);
+  const footer: Record<string, unknown> = {
+    turns: stats.turns,
+    tool_calls: stats.toolCalls,
+    duration_s: +(stats.durationMs / 1000).toFixed(1),
+  };
   if (stats.totalCostUsd > 0) {
-    write(`cost_usd: ${stats.totalCostUsd.toFixed(2)}\n`);
+    footer.cost_usd = +stats.totalCostUsd.toFixed(2);
   }
   if (stats.filesWritten && stats.filesWritten.length > 0) {
-    write(`files_written:\n`);
-    for (const f of stats.filesWritten) write(`  - ${inlineScalar(f)}\n`);
+    footer.files_written = stats.filesWritten;
   }
   if (stats.filesEdited && stats.filesEdited.length > 0) {
-    write(`files_edited:\n`);
-    for (const f of stats.filesEdited) write(`  - ${inlineScalar(f)}\n`);
+    footer.files_edited = stats.filesEdited;
   }
   if (stats.filesRead && stats.filesRead.length > 0) {
-    write(`files_read:\n`);
-    for (const f of stats.filesRead) write(`  - ${inlineScalar(f)}\n`);
+    footer.files_read = stats.filesRead;
   }
+  const doc = new Document(footer);
+  write("\n" + doc.toString({ lineWidth: 0 }));
 }
