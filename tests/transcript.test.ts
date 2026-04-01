@@ -43,6 +43,16 @@ describe("transcript", () => {
       expect(output).toContain("conversation:\n");
     });
 
+    it("starts with YAML document start marker", () => {
+      writeHeader({
+        session: "abc-123",
+        configPaths: ["/path/to/session.yml"],
+        projectDir: "/tmp/proj",
+        transcriptPath: "/tmp/transcript.jsonl",
+      });
+      expect(output).toMatch(/^---\n/);
+    });
+
     it("writes config as list for multiple paths", () => {
       writeHeader({
         session: "abc-123",
@@ -177,6 +187,63 @@ describe("transcript", () => {
       expect(entry.answers["What language?"]).toBe("Python");
       expect(entry.reasoning).toBe("User prefers Python");
     });
+
+    it("handles multiline question keys", () => {
+      writeOracleAsk(
+        { "Which option do you prefer?\nOption A or Option B": "Option A" },
+        "Clear preference",
+      );
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.oracle).toBe("ask_user");
+      const key = Object.keys(entry.answers)[0];
+      expect(key).toContain("Which option do you prefer?");
+      expect(key).toContain("Option A or Option B");
+      expect(Object.values(entry.answers)[0]).toBe("Option A");
+    });
+
+    it("handles multiline answer values as block scalars", () => {
+      writeOracleAsk(
+        { "What should I do?": "First do X.\nThen do Y.\nFinally do Z." },
+        "Step by step",
+      );
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.answers["What should I do?"]).toContain("First do X.");
+      expect(entry.answers["What should I do?"]).toContain("Then do Y.");
+      expect(entry.answers["What should I do?"]).toContain("Finally do Z.");
+    });
+
+    it("handles YAML-special characters in question keys", () => {
+      writeOracleAsk(
+        { "Use {braces}: yes or #no?": "yes" },
+        "Confirmed",
+      );
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.answers["Use {braces}: yes or #no?"]).toBe("yes");
+    });
+
+    it("handles multiline reasoning as block scalar", () => {
+      writeOracleAsk(
+        { "Language?": "Python" },
+        "The user mentioned Python earlier.\nThey also have a .py file in the project.",
+      );
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.reasoning).toContain("The user mentioned Python earlier.");
+      expect(entry.reasoning).toContain("They also have a .py file in the project.");
+    });
+
+    it("handles long reasoning without line wrapping", () => {
+      writeOracleAsk(
+        { "Language?": "Python" },
+        "As a Python enthusiast who prefers simple, readable code, Python is the natural choice. It aligns perfectly with the stated preference for simplicity.",
+      );
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.reasoning).toContain("Python is the natural choice");
+    });
   });
 
   describe("writeOracleTurn", () => {
@@ -188,6 +255,14 @@ describe("transcript", () => {
       expect(entry.decision).toBe("continue");
       expect(entry.message).toContain("Can you add tests?");
       expect(entry.reasoning).toBe("Task incomplete");
+    });
+
+    it("handles multiline reasoning as block scalar", () => {
+      writeOracleTurn("continue", "Add tests", "Task is incomplete.\nTests are missing.");
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.reasoning).toContain("Task is incomplete.");
+      expect(entry.reasoning).toContain("Tests are missing.");
     });
 
     it("writes end decision without message", () => {

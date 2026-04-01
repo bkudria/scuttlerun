@@ -34,23 +34,38 @@ function singleQuote(value: string): string {
   return "'" + value.replace(/'/g, "''") + "'";
 }
 
-/** Escape a scalar value for safe inline YAML output. */
-function yamlScalar(value: string): string {
-  return stringify(value).trim();
+/** Inline scalar — for keys and values that must stay on one line. */
+function inlineScalar(value: string): string {
+  const result = stringify(value, { lineWidth: 0 }).trim();
+  if (result.startsWith("|") || result.startsWith(">")) {
+    return JSON.stringify(value);
+  }
+  return result;
+}
+
+/** Write a scalar value (inline or block) at the given indent level. */
+function writeScalar(value: string, indent: number): void {
+  if (value.includes("\n")) {
+    write("|\n");
+    write(blockLines(value, indent));
+  } else {
+    write(inlineScalar(value) + "\n");
+  }
 }
 
 export function writeHeader(opts: HeaderOptions): void {
+  write("---\n");
   write(`session: ${opts.session}\n`);
   if (opts.configPaths.length === 1) {
-    write(`config: ${yamlScalar(opts.configPaths[0])}\n`);
+    write(`config: ${inlineScalar(opts.configPaths[0])}\n`);
   } else {
     write(`config:\n`);
     for (const p of opts.configPaths) {
-      write(`  - ${yamlScalar(p)}\n`);
+      write(`  - ${inlineScalar(p)}\n`);
     }
   }
-  write(`project: ${yamlScalar(opts.projectDir)}\n`);
-  write(`transcript: ${yamlScalar(opts.transcriptPath)}\n`);
+  write(`project: ${inlineScalar(opts.projectDir)}\n`);
+  write(`transcript: ${inlineScalar(opts.transcriptPath)}\n`);
   write(`\nconversation:\n`);
 }
 
@@ -80,7 +95,7 @@ export function writeTool(name: string, input: unknown): void {
     case "Read":
     case "Write":
     case "Edit":
-      write(`    path: ${yamlScalar(String(inp.file_path ?? ""))}\n`);
+      write(`    path: ${inlineScalar(String(inp.file_path ?? ""))}\n`);
       break;
     case "Bash":
       write(`    command: |\n`);
@@ -105,9 +120,11 @@ export function writeOracleAsk(
   write(`  - oracle: ask_user\n`);
   write(`    answers:\n`);
   for (const [q, a] of Object.entries(answers)) {
-    write(`      ${yamlScalar(q)}: ${yamlScalar(a)}\n`);
+    write(`      ${inlineScalar(q)}: `);
+    writeScalar(a, 8);
   }
-  write(`    reasoning: ${yamlScalar(reasoning)}\n`);
+  write(`    reasoning: `);
+  writeScalar(reasoning, 6);
   write("\n");
 }
 
@@ -117,13 +134,15 @@ export function writeOracleTurn(
   reasoning?: string,
 ): void {
   write(`  - oracle: turn_policy\n`);
-  write(`    decision: ${yamlScalar(decision)}\n`);
+  write(`    decision: `);
+  writeScalar(decision, 6);
   if (message) {
     write(`    message: |\n`);
     write(blockLines(message, 6));
   }
   if (reasoning) {
-    write(`    reasoning: ${yamlScalar(reasoning)}\n`);
+    write(`    reasoning: `);
+    writeScalar(reasoning, 6);
   }
   write("\n");
 }
@@ -138,14 +157,14 @@ export function writeFooter(stats: FooterStats): void {
   }
   if (stats.filesWritten && stats.filesWritten.length > 0) {
     write(`files_written:\n`);
-    for (const f of stats.filesWritten) write(`  - ${yamlScalar(f)}\n`);
+    for (const f of stats.filesWritten) write(`  - ${inlineScalar(f)}\n`);
   }
   if (stats.filesEdited && stats.filesEdited.length > 0) {
     write(`files_edited:\n`);
-    for (const f of stats.filesEdited) write(`  - ${yamlScalar(f)}\n`);
+    for (const f of stats.filesEdited) write(`  - ${inlineScalar(f)}\n`);
   }
   if (stats.filesRead && stats.filesRead.length > 0) {
     write(`files_read:\n`);
-    for (const f of stats.filesRead) write(`  - ${yamlScalar(f)}\n`);
+    for (const f of stats.filesRead) write(`  - ${inlineScalar(f)}\n`);
   }
 }
