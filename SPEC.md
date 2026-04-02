@@ -188,8 +188,6 @@ prompt: |
 model: claude-haiku-4-5             # Agent model (default: system default)
 max_turns: 20                       # Max agent turns (default: 50)
 max_budget_usd: 1.00                # Max spend for this session (optional)
-system_prompt: |                    # Optional system prompt override
-  You are a helpful assistant.
 effort: high                        # Thinking effort: low, medium, high, max (default: high)
                                     # Note: `effort` and `sdk.thinking` are orthogonal.
                                     # `effort` maps to SDK `effort` (controls depth/token spend).
@@ -235,6 +233,12 @@ user:
 
 # --- Agent SDK Options ---
 sdk:
+  system_prompt:                    # System prompt (default: claude_code preset)
+    preset: claude_code             #   Uses Claude Code's full system prompt
+    append: |                       #   Append extra instructions (optional)
+      Additional instructions here.
+  # Or override with a custom string:
+  # system_prompt: "You are a helpful assistant."
   # setting_sources: auto-set to ["project"] when project: is present;
   #                  defaults to [] when project: is absent
   # persist_session: true by default — SDK session file is the conversation record

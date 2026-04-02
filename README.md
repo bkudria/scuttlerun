@@ -40,7 +40,6 @@ prompt: |
 | `model` | string | system default |
 | `max_turns` | number | `50` |
 | `max_budget_usd` | number | — |
-| `system_prompt` | string | — |
 | `effort` | `low` \| `medium` \| `high` \| `max` | `high` |
 | `tools` | string[] | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion]` |
 | `disallowed_tools` | string[] | — |
@@ -70,6 +69,7 @@ When present, scuttlerun populates the project temp directory.
 
 | Field | Type | Default |
 |-------|------|---------|
+| `sdk.system_prompt` | string \| `{preset: "claude_code", append?: string}` | `{preset: "claude_code"}` |
 | `sdk.thinking` | `{type: "adaptive"}` \| `{type: "enabled"}` \| `{type: "disabled"}` | — |
 | `sdk.mcp_servers` | object | — |
 | `sdk.agents` | object | — |

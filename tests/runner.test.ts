@@ -52,7 +52,7 @@ function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
       turn_policy: "single",
       max_user_turns: 5,
     },
-    sdk: { setting_sources: [] },
+    sdk: { system_prompt: { preset: "claude_code" as const }, setting_sources: [] },
     sandbox: {
       enabled: true,
       network: {
@@ -627,7 +627,7 @@ describe("runSession", () => {
         network: { allowed_domains: [], allow_local_binding: false },
         filesystem: { deny_read: [], allow_write: [], deny_write: [] },
       },
-      sdk: { env: { FOO: "bar" }, setting_sources: [] },
+      sdk: { system_prompt: { preset: "claude_code" as const }, env: { FOO: "bar" }, setting_sources: [] },
     }));
 
     expect(capturedOptions?.env).toEqual({ FOO: "bar" });
@@ -935,9 +935,9 @@ describe("runSession", () => {
 
     await runSession(minConfig({
       max_budget_usd: 5.0,
-      system_prompt: "Be concise",
       disallowed_tools: ["Agent"],
       sdk: {
+        system_prompt: "Be concise",
         thinking: { type: "adaptive" },
         mcp_servers: { test: {} },
         agents: { helper: {} },
@@ -951,5 +951,47 @@ describe("runSession", () => {
     expect(capturedOptions?.thinking).toEqual({ type: "adaptive" });
     expect(capturedOptions?.mcpServers).toEqual({ test: {} });
     expect(capturedOptions?.agents).toEqual({ helper: {} });
+  });
+
+  it("passes claude_code preset as default systemPrompt", async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: Record<string, Record<string, unknown>>) => {
+      capturedOptions = opts.options;
+      return createMockQuery([
+        { type: "system", subtype: "init", session_id: "s-preset", tools: [], model: "claude-haiku-4-5" },
+        { type: "result", subtype: "success", session_id: "s-preset", num_turns: 1, total_cost_usd: 0 },
+      ]);
+    });
+
+    await runSession(minConfig());
+
+    expect(capturedOptions?.systemPrompt).toEqual({
+      type: "preset",
+      preset: "claude_code",
+    });
+  });
+
+  it("passes preset with append when configured", async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: Record<string, Record<string, unknown>>) => {
+      capturedOptions = opts.options;
+      return createMockQuery([
+        { type: "system", subtype: "init", session_id: "s-append", tools: [], model: "claude-haiku-4-5" },
+        { type: "result", subtype: "success", session_id: "s-append", num_turns: 1, total_cost_usd: 0 },
+      ]);
+    });
+
+    await runSession(minConfig({
+      sdk: {
+        system_prompt: { preset: "claude_code" as const, append: "Be brief." },
+        setting_sources: [],
+      },
+    }));
+
+    expect(capturedOptions?.systemPrompt).toEqual({
+      type: "preset",
+      preset: "claude_code",
+      append: "Be brief.",
+    });
   });
 });

@@ -45,7 +45,15 @@ const SandboxConfigSchema = z.object({
 
 const SettingSourceSchema = z.enum(["user", "project", "local"]);
 
+const SystemPromptPresetSchema = z.object({
+  preset: z.literal("claude_code"),
+  append: z.string().optional(),
+});
+
+const SystemPromptSchema = z.union([z.string(), SystemPromptPresetSchema]);
+
 const SdkConfigSchema = z.object({
+  system_prompt: SystemPromptSchema.default({ preset: "claude_code" }),
   thinking: ThinkingConfigSchema.optional(),
   mcp_servers: z.record(z.string(), z.unknown()).optional(),
   agents: z.record(z.string(), z.unknown()).optional(),
@@ -62,7 +70,6 @@ const SessionConfigRawSchema = z.object({
   model: z.string().default("claude-haiku-4-5"),
   max_turns: z.number().int().min(1).default(50),
   max_budget_usd: z.number().positive().optional(),
-  system_prompt: z.string().optional(),
   effort: z.enum(["low", "medium", "high", "max"]).default("high"),
   tools: z
     .array(z.string())
@@ -78,6 +85,7 @@ const SessionConfigRawSchema = z.object({
 });
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
+export type SystemPromptConfig = z.infer<typeof SystemPromptSchema>;
 export type SdkConfig = z.infer<typeof SdkConfigSchema> & {
   setting_sources: z.infer<typeof SettingSourceSchema>[];
 };
@@ -98,7 +106,6 @@ export interface SessionConfig {
   model: string;
   max_turns: number;
   max_budget_usd?: number;
-  system_prompt?: string;
   effort: "low" | "medium" | "high" | "max";
   tools: string[];
   disallowed_tools?: string[];
@@ -135,7 +142,6 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
     model: parsed.model,
     max_turns: parsed.max_turns,
     max_budget_usd: parsed.max_budget_usd,
-    system_prompt: parsed.system_prompt,
     effort: parsed.effort,
     tools: parsed.tools,
     disallowed_tools: parsed.disallowed_tools,

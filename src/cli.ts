@@ -66,8 +66,6 @@ Session Config (YAML):
     model: claude-sonnet-4-6            # Agent model (default: claude-haiku-4-5)
     max_turns: 50                       # Max agent turns (default: 50)
     max_budget_usd: 1.00                # Max spend in USD (optional)
-    system_prompt: |                    # Custom system prompt (optional)
-      You are a helpful assistant.
     effort: high                        # low | medium | high | max (default: high)
 
     # --- Tools ---
@@ -92,9 +90,7 @@ Session Config (YAML):
     # scuttlerun always creates a temp dir in $TMPDIR as the agent's cwd.
     project:
       claude_md: |                      # Written to <tempdir>/CLAUDE.md
-        Save all files using relative paths.
-                                        # ↑ Recommended when the agent writes files,
-                                        #   otherwise it guesses absolute paths.
+        Use clear, descriptive variable names.
       skills:                           # Symlinked into <tempdir>/.claude/skills/
         - ~/.claude/skills/my-skill     #   Supports ~ and relative paths
       settings: {}                      # Written to <tempdir>/.claude/settings.json
@@ -134,6 +130,12 @@ Session Config (YAML):
 
     # --- Agent SDK Passthrough ---
     sdk:
+      system_prompt:                    # System prompt (default: claude_code preset)
+        preset: claude_code             #   Uses Claude Code's full system prompt
+        append: |                       #   Append extra instructions (optional)
+          Additional instructions here.
+      # Or override with a custom string:
+      # system_prompt: "You are a helpful assistant."
       thinking:                         # Thinking config (optional)
         type: adaptive                  #   adaptive | enabled | disabled
       mcp_servers: {}                   # MCP server definitions (optional)

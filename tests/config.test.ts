@@ -38,7 +38,6 @@ describe("parseSessionConfig", () => {
       model: "claude-haiku-4-5",
       max_turns: 20,
       max_budget_usd: 1.0,
-      system_prompt: "You are helpful.",
       effort: "max" as const,
       tools: ["Read", "Write", "AskUserQuestion"],
       disallowed_tools: ["Agent"],
@@ -56,6 +55,7 @@ describe("parseSessionConfig", () => {
         max_user_turns: 5,
       },
       sdk: {
+        system_prompt: "You are helpful.",
         thinking: { type: "adaptive" as const },
         mcp_servers: {},
         agents: {},
@@ -75,8 +75,35 @@ describe("parseSessionConfig", () => {
     expect(config.project?.git_init).toBe(true);
     expect(config.user.turn_policy).toBe("reactive");
     expect(config.user.max_user_turns).toBe(5);
+    expect(config.sdk.system_prompt).toBe("You are helpful.");
     expect(config.sdk.thinking).toEqual({ type: "adaptive" });
     expect(config.sdk.setting_sources).toEqual(["project"]);
+  });
+
+  it("defaults sdk.system_prompt to claude_code preset", () => {
+    const config = parseSessionConfig({ prompt: "hi" });
+    expect(config.sdk.system_prompt).toEqual({ preset: "claude_code" });
+  });
+
+  it("parses sdk.system_prompt as a string", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: { system_prompt: "Custom prompt" },
+    });
+    expect(config.sdk.system_prompt).toBe("Custom prompt");
+  });
+
+  it("parses sdk.system_prompt preset with append", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: {
+        system_prompt: { preset: "claude_code", append: "Be concise." },
+      },
+    });
+    expect(config.sdk.system_prompt).toEqual({
+      preset: "claude_code",
+      append: "Be concise.",
+    });
   });
 
   it("rejects config without prompt", () => {

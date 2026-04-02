@@ -7,10 +7,6 @@ prompt: |
 
 max_turns: 30
 
-project:
-  claude_md: |
-    Save all files to the current working directory using relative paths.
-
 sandbox:
   network:
     allowed_domains:

@@ -5,8 +5,6 @@ prompt: |
   Write a haiku for the user
 
 project:
-  claude_md: |
-    Save all files to the current working directory using relative paths.
   skills:
     - ~/.claude/skills/haiku-writer
   git_init: false

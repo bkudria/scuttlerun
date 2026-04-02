@@ -136,7 +136,16 @@ export async function runSession(
 
     sdkOptions.model = config.model;
     if (config.max_budget_usd) sdkOptions.maxBudgetUsd = config.max_budget_usd;
-    if (config.system_prompt) sdkOptions.systemPrompt = config.system_prompt;
+    const sp = config.sdk.system_prompt;
+    if (typeof sp === "string") {
+      sdkOptions.systemPrompt = sp;
+    } else {
+      sdkOptions.systemPrompt = {
+        type: "preset" as const,
+        preset: sp.preset,
+        ...(sp.append && { append: sp.append }),
+      };
+    }
     if (config.disallowed_tools) sdkOptions.disallowedTools = config.disallowed_tools;
     if (config.sdk.thinking) sdkOptions.thinking = config.sdk.thinking;
     if (config.sdk.mcp_servers) sdkOptions.mcpServers = config.sdk.mcp_servers;
