@@ -51,7 +51,7 @@ export async function buildConfig(
   return config;
 }
 
-const RUN_HELP_TEXT = `
+const HELP_TEXT = `
 Session Config (YAML):
   Only 'prompt' is required. All other fields have defaults.
   Complete reference with all fields and defaults:
@@ -146,24 +146,27 @@ Session Config (YAML):
 
 Config Merging:
   Multiple YAML files are deep-merged (objects merge, arrays/scalars replace):
-    scuttlerun run base.yaml override.yaml
+    scuttlerun base.yaml override.yaml
   Later files win. CLI flags override everything.
 
 Examples:
   # Minimal single-turn session
-  scuttlerun run session.yaml
+  scuttlerun session.yaml
 
   # Override model and timeout
-  scuttlerun run session.yaml --model claude-sonnet-4-6 --timeout 120
+  scuttlerun session.yaml --model claude-sonnet-4-6 --timeout 120
 
   # Merge a base config with a scenario override
-  scuttlerun run base.yaml scenario.yaml
+  scuttlerun base.yaml scenario.yaml
 
   # Quick one-off with prompt override
-  scuttlerun run session.yaml --prompt "Write hello world in Python"
+  scuttlerun session.yaml --prompt "Write hello world in Python"
 
   # Restrict tools
-  scuttlerun run session.yaml --tools Read,Glob,Grep
+  scuttlerun session.yaml --tools Read,Glob,Grep
+
+  # Validate config without running
+  scuttlerun session.yaml --dry-run
 
 Output:
   scuttlerun streams a transcript to stdout including user messages, assistant
@@ -195,13 +198,7 @@ async function main() {
       "Runs headless Claude sessions with a synthetic user powered by an LLM oracle.\n" +
       "Handles AskUserQuestion, multi-turn follow-ups, and project scaffolding.",
     )
-    .version("0.1.0");
-
-  program.addHelpText("after", "\nRun 'scuttlerun run --help' for full documentation.");
-
-  const runCmd = program
-    .command("run")
-    .description("Run a scuttlerun session from a YAML config file")
+    .version("0.1.0")
     .argument("<session.yaml>", "Session config file (YAML). Only 'prompt' is required.")
     .argument("[override.yaml...]", "Additional YAML files to deep-merge (last wins)")
     .option("--model <model>", "Agent model (default: claude-haiku-4-5)")
@@ -212,6 +209,7 @@ async function main() {
     .option("--effort <level>", "Thinking effort: low, medium, high, max (default: high)")
     .option("--timeout <seconds>", "Session timeout in seconds", (v: string) => parseInt(v, 10), 300)
     .option("-v, --verbose", "Verbose logging to stderr (includes agent stderr)")
+    .option("-n, --dry-run", "Validate and display the resolved config without running")
     .action(async (sessionFile: string, overrideFiles: string[], opts) => {
       try {
         // Read all YAML files
@@ -237,6 +235,40 @@ async function main() {
           effort: opts.effort,
         });
 
+        if (opts.dryRun) {
+          // Output resolved config summary as YAML
+          const proj = config.project;
+          const hasProject = proj && (proj.claude_md || (proj.skills && proj.skills.length > 0) || proj.git_init);
+
+          const summary: Record<string, unknown> = {
+            model: config.model,
+            tools: config.tools,
+            effort: config.effort,
+            max_turns: config.max_turns,
+            permission_mode: config.permission_mode,
+            user: {
+              turn_policy: config.user.turn_policy,
+              oracle_model: config.user.oracle_model,
+              max_user_turns: config.user.max_user_turns,
+              ...(config.user.persona ? { persona: config.user.persona } : {}),
+            },
+            ...(hasProject && proj
+              ? {
+                  project: {
+                    ...(proj.claude_md ? { claude_md: proj.claude_md } : {}),
+                    ...(proj.skills && proj.skills.length > 0 ? { skills: proj.skills } : {}),
+                    ...(proj.settings ? { settings: proj.settings } : {}),
+                    ...(proj.git_init ? { git_init: proj.git_init } : {}),
+                  },
+                }
+              : {}),
+            prompt: config.prompt,
+          };
+
+          process.stdout.write(stringifyYaml(summary));
+          process.exit(0);
+        }
+
         const result = await runSession(config, {
           timeoutSeconds: opts.timeout,
           verbose: opts.verbose,
@@ -253,71 +285,12 @@ async function main() {
       }
     });
 
-  runCmd.addHelpText("after", RUN_HELP_TEXT);
+  program.addHelpText("after", HELP_TEXT);
 
-  program
-    .command("list")
-    .description("Validate and display the resolved config without running a session")
-    .argument("<config.yaml>", "Session config file (YAML)")
-    .argument("[override.yaml...]", "Additional YAML files to deep-merge (last wins)")
-    .action(async (configFile: string, overrideFiles: string[]) => {
-      try {
-        const allFiles = [configFile, ...overrideFiles];
-        const yamlContents: string[] = [];
-
-        for (const file of allFiles) {
-          const resolved = resolve(file);
-          const content = await readFile(resolved, "utf8");
-          yamlContents.push(content);
-        }
-
-        const config = await buildConfig(yamlContents, {});
-
-        // Output resolved config summary as YAML
-        const proj = config.project;
-        const hasProject = proj && (proj.claude_md || (proj.skills && proj.skills.length > 0) || proj.git_init);
-
-        const summary: Record<string, unknown> = {
-          model: config.model,
-          tools: config.tools,
-          effort: config.effort,
-          max_turns: config.max_turns,
-          permission_mode: config.permission_mode,
-          user: {
-            turn_policy: config.user.turn_policy,
-            oracle_model: config.user.oracle_model,
-            max_user_turns: config.user.max_user_turns,
-            ...(config.user.persona ? { persona: config.user.persona } : {}),
-          },
-          ...(hasProject && proj
-            ? {
-                project: {
-                  ...(proj.claude_md ? { claude_md: proj.claude_md } : {}),
-                  ...(proj.skills && proj.skills.length > 0 ? { skills: proj.skills } : {}),
-                  ...(proj.settings ? { settings: proj.settings } : {}),
-                  ...(proj.git_init ? { git_init: proj.git_init } : {}),
-                },
-              }
-            : {}),
-          prompt: config.prompt,
-        };
-
-        process.stdout.write(stringifyYaml(summary));
-        process.exit(0);
-      } catch (err) {
-        process.stderr.write(
-          `[scuttlerun] Validation error: ${err instanceof Error ? err.message : String(err)}\n`,
-        );
-        process.exit(1);
-      }
-    });
-
-  program
-    .command("version")
-    .description("Show scuttlerun version")
-    .action(() => {
-      console.log("scuttlerun 0.1.0");
-    });
+  // Show help when no arguments are provided
+  if (process.argv.length <= 2) {
+    program.help();
+  }
 
   await program.parseAsync(process.argv);
 }

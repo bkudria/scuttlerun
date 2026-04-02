@@ -16,10 +16,10 @@ npm link          # makes `scuttlerun` available globally
 ## Quick Start
 
 ```bash
-scuttlerun run examples/simple.yaml
+scuttlerun examples/simple.yaml
 
 # Run with overrides
-scuttlerun run examples/multi-turn.yaml --timeout 120 --model claude-sonnet-4-6
+scuttlerun examples/multi-turn.yaml --timeout 120 --model claude-sonnet-4-6
 ```
 
 ## Session Config
@@ -81,14 +81,15 @@ When present, scuttlerun populates the project temp directory.
 Multiple YAML files are deep-merged (objects merge, arrays/scalars replace):
 
 ```bash
-scuttlerun run base.yaml scenario-override.yaml
+scuttlerun base.yaml scenario-override.yaml
 ```
 
 ## CLI
 
 ```
-scuttlerun run <session.yaml> [override.yaml...] [options]
-scuttlerun version
+scuttlerun <session.yaml> [override.yaml...] [options]
+scuttlerun --version
+scuttlerun --help
 ```
 
 | Option | Description |
@@ -101,7 +102,7 @@ scuttlerun version
 | `--effort <level>` | Override effort level |
 | `--timeout <seconds>` | Session timeout (default: 300) |
 | `-v, --verbose` | Verbose logging to stderr |
-| `-q, --quiet` | Suppress progress output |
+| `-n, --dry-run` | Validate and display resolved config |
 
 ### Exit Codes
 
@@ -172,7 +173,7 @@ npm install
 npm run build        # TypeScript compilation
 npm test             # Run all tests (vitest)
 npm run test:watch   # Watch mode
-npm run dev -- run examples/simple.yaml   # Run via tsx
+npm run dev -- examples/simple.yaml   # Run via tsx
 ```
 
 ## See Also

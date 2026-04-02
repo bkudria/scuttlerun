@@ -16,7 +16,7 @@ scuttlerun is a **session driver**, not an eval framework. It runs one session a
 
 - **Batch orchestration** — Running multiple sessions in parallel. Callers use `xargs`, `parallel`, or their own loops.
 - **Comparison** — Running the same prompt under different configs and comparing outputs. Callers generate the configs, invoke scuttlerun for each, and diff the transcripts.
-- **Grading** — Scoring transcripts against assertions or rubrics. Callers implement their own grading logic (which may itself use scuttlerun to drive a grading session).
+- **Grading** — Scoring transcripts against checks. Callers implement their own grading logic (which may itself use scuttlerun to drive a grading session).
 - **Aggregation** — Computing pass rates, deltas, benchmarks. Pure data processing done by callers.
 
 This boundary exists because eval logic is inherently opinionated — different callers have different grading criteria, comparison structures, and reporting needs. scuttlerun provides the raw material (transcripts); callers decide what to do with it.
@@ -29,7 +29,7 @@ This boundary exists because eval logic is inherently opinionated — different 
 |----------|--------|-----------|
 | Language | TypeScript | More complete SDK (hooks, session control, no workarounds); native async/await |
 | Scope | General-purpose session driver | Not coupled to eval; eval is built on top |
-| Interface | CLI-first | `scuttlerun run session.yaml` as primary invocation |
+| Interface | CLI-first | `scuttlerun session.yaml` as primary invocation |
 | AskUserQuestion | `canUseTool` callback | Official SDK mechanism for intercepting AskUserQuestion; PreToolUse hooks do not work for this |
 | Interactivity | LLM-driven synthetic user | Full simulation via a second LLM call |
 | Synthetic user model | Haiku default + override | Fast and cheap for routine responses; configurable |
@@ -47,7 +47,7 @@ This boundary exists because eval logic is inherently opinionated — different 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      scuttlerun CLI                     │
-│  scuttlerun run session.yaml                            │
+│  scuttlerun session.yaml                                │
 └──────────────────────┬──────────────────────────────────┘
                        │
                        ▼
@@ -290,7 +290,7 @@ scuttlerun always creates a temporary project directory in `$TMPDIR` with prefix
 Multiple YAML files can be merged for composability:
 
 ```bash
-scuttlerun run base-config.yaml scenario-override.yaml
+scuttlerun base-config.yaml scenario-override.yaml
 ```
 
 Later files override earlier ones (deep merge on objects, replace on scalars/arrays). For example, `tools: [Grep]` in an override replaces the entire base tools list — it does not append. This enables patterns like:
@@ -320,10 +320,11 @@ Most YAML fields map directly to SDK options (e.g., `model` → `model`, `max_tu
 scuttlerun — Multi-turn Claude session driver
 
 Usage:
-  scuttlerun run <session.yaml> [<override.yaml>...] [options]
-  scuttlerun version
+  scuttlerun <session.yaml> [<override.yaml>...] [options]
+  scuttlerun --version
+  scuttlerun --help
 
-Run options:
+Options:
   --model MODEL            Override agent model
   --oracle-model MODEL     Override synthetic user model
   --prompt TEXT             Override prompt (for quick one-offs)
@@ -332,7 +333,7 @@ Run options:
   --effort LEVEL           Override effort (low, medium, high, max)
   --timeout SECONDS        Overall session timeout (default: 300)
   --verbose, -v            Verbose logging to stderr
-  --quiet, -q              Suppress progress output
+  --dry-run, -n            Validate and display resolved config without running
 ```
 
 ### Exit Codes
@@ -564,17 +565,17 @@ scuttlerun streams a human-readable transcript to stdout and preserves the SDK s
 - **Transcript (stdout)** is human-readable — pipe to a file, grep for patterns, or inspect visually
 - **SDK session files** are standard Claude Code JSONL — queryable with jq for conversation, tool calls, errors, etc.
 - **Project directories** are preserved in `$TMPDIR` — inspect agent-created files after the session
-- **Config merging** lets callers generate many session configs from a base template, invoke `scuttlerun run` for each, and process the results however they see fit.
+- **Config merging** lets callers generate many session configs from a base template, invoke `scuttlerun` for each, and process the results however they see fit.
 
 Example caller patterns (implemented *outside* scuttlerun):
 
 ```bash
 # Run a session, capture transcript
-scuttlerun run session.yaml > results/transcript.txt
+scuttlerun session.yaml > results/transcript.txt
 
 # Batch processing
 for config in scenarios/*.yaml; do
-    scuttlerun run base.yaml "$config" > "results/$(basename $config .yaml).txt"
+    scuttlerun base.yaml "$config" > "results/$(basename $config .yaml).txt"
 done
 
 # Query the SDK session file for tool calls
@@ -722,7 +723,7 @@ The built-in tool execution alone justifies the SDK choice — reimplementing fi
 - **Con**: Additional API cost for oracle calls (mitigated by using Haiku)
 - **Con**: Harder to debug when the oracle gives unexpected answers
 
-Mitigation for non-determinism: transcript records oracle responses, so every run is fully reproducible for debugging. For strict determinism, users can examine the transcript and write assertions about oracle behavior.
+Mitigation for non-determinism: transcript records oracle responses, so every run is fully reproducible for debugging. For strict determinism, users can examine the transcript and write checks about oracle behavior.
 
 ### Reactive Multi-Turn vs. Scripted Multi-Turn
 
@@ -733,7 +734,7 @@ Mitigation for non-determinism: transcript records oracle responses, so every ru
 - **Pro**: Discovers emergent behaviors (the agent may do something unexpected that a real user would respond to)
 - **Con**: Session length is less predictable (mitigated by `max_user_turns`)
 - **Con**: Oracle turn-policy calls add latency and cost
-- **Con**: Harder to write deterministic assertions about conversation flow
+- **Con**: Harder to write deterministic checks about conversation flow
 
 For eval scenarios that need deterministic conversation flows, `turn_policy: single` provides that escape hatch.
 
