@@ -26,13 +26,19 @@ export async function scaffoldProject(
     await fs.writeFile(join(projectPath, "CLAUDE.md"), config.claude_md);
   }
 
-  // Symlink skills
+  // Symlink skills (validate all paths before creating anything)
   if (config.skills && config.skills.length > 0) {
+    const resolvedSkills: Array<{ original: string; resolved: string }> = [];
+    for (const skillPath of config.skills) {
+      const resolved = resolveSkillPath(skillPath, _configDir);
+      await validateSkillPath(skillPath, resolved);
+      resolvedSkills.push({ original: skillPath, resolved });
+    }
+
     const skillsDir = join(projectPath, ".claude", "skills");
     await fs.mkdir(skillsDir, { recursive: true });
 
-    for (const skillPath of config.skills) {
-      const resolved = resolveSkillPath(skillPath, _configDir);
+    for (const { resolved } of resolvedSkills) {
       const name = basename(resolved);
       await fs.symlink(resolved, join(skillsDir, name));
     }
@@ -63,6 +69,34 @@ export async function scaffoldProject(
   }
 
   return { projectPath };
+}
+
+async function validateSkillPath(
+  originalPath: string,
+  resolvedPath: string,
+): Promise<void> {
+  let stat;
+  try {
+    stat = await fs.stat(resolvedPath);
+  } catch {
+    throw new Error(
+      `Skill path does not exist: "${originalPath}" (resolved to ${resolvedPath})`,
+    );
+  }
+
+  if (!stat.isDirectory()) {
+    throw new Error(
+      `Skill path is not a directory: "${originalPath}" (resolved to ${resolvedPath})`,
+    );
+  }
+
+  try {
+    await fs.access(join(resolvedPath, "SKILL.md"));
+  } catch {
+    throw new Error(
+      `Skill directory is missing SKILL.md: "${originalPath}" (resolved to ${resolvedPath})`,
+    );
+  }
 }
 
 function resolveSkillPath(skillPath: string, configDir: string): string {

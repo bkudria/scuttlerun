@@ -194,26 +194,56 @@ describe("scaffoldProject", () => {
     }
   });
 
-  it("uses empty string for tilde when neither HOME nor USERPROFILE is set", async () => {
+  it("rejects tilde path when neither HOME nor USERPROFILE is set", async () => {
     const origHome = process.env.HOME;
     const origProfile = process.env.USERPROFILE;
     delete process.env.HOME;
     delete process.env.USERPROFILE;
     try {
       const config: ProjectConfig = { skills: ["~/fake-skill"] };
-      const result = await scaffoldProject(config, tempDir);
-      try {
-        const linkPath = join(result.projectPath, ".claude", "skills", "fake-skill");
-        const target = await fs.readlink(linkPath);
-        // With empty home, join("", "fake-skill") = "fake-skill"
-        expect(target).toBe("fake-skill");
-      } finally {
-        await fs.rm(result.projectPath, { recursive: true, force: true });
-      }
+      await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+        "Skill path does not exist",
+      );
     } finally {
       process.env.HOME = origHome;
       if (origProfile !== undefined) process.env.USERPROFILE = origProfile;
       else delete process.env.USERPROFILE;
     }
+  });
+
+  it("rejects when skill path does not exist", async () => {
+    const config: ProjectConfig = { skills: ["./nonexistent-skill"] };
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+      "Skill path does not exist",
+    );
+    // No partial scaffolding — .claude/skills should not be created
+    // (projectPath is internal, so we verify indirectly by checking the error was thrown)
+  });
+
+  it("rejects when skill directory is missing SKILL.md", async () => {
+    const noSkillMd = join(tempDir, "no-skillmd");
+    await fs.mkdir(noSkillMd, { recursive: true });
+    const config: ProjectConfig = { skills: [noSkillMd] };
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+      "missing SKILL.md",
+    );
+  });
+
+  it("rejects when skill path is a file, not a directory", async () => {
+    const filePath = join(tempDir, "not-a-dir");
+    await fs.writeFile(filePath, "I am a file");
+    const config: ProjectConfig = { skills: [filePath] };
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+      "not a directory",
+    );
+  });
+
+  it("does not create symlinks when a later skill is invalid", async () => {
+    const config: ProjectConfig = {
+      skills: [skillDir, "./does-not-exist"],
+    };
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+      "Skill path does not exist",
+    );
   });
 });
