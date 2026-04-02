@@ -1,17 +1,18 @@
-# Skill evaluation with managed project scaffolding
 version: "1"
 
 prompt: |
   Write a haiku for the user
 
 project:
-  skills:
-    - ~/.claude/skills/haiku-writer
   git_init: false
 
+  # Inject skills
+  skills:
+    - ./haiku-writer
+
 user:
+  turn_policy: reactive
+  max_user_turns: 2
   persona: |
     You appreciate well-crafted haiku. If the haiku doesn't follow
     the 5-7-5 syllable pattern, ask for a revision.
-  turn_policy: reactive
-  max_user_turns: 2

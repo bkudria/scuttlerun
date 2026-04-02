@@ -1,15 +1,16 @@
-# Session with AskUserQuestion handling via synthetic user
 version: "1"
 
 prompt: |
   Ask the user what programming language they prefer, then write
   a hello world program in that language and save it to hello.txt
 
+# Allow tool use
 tools:
   - Read
   - Write
   - AskUserQuestion
 
+# Simulate a user
 user:
   persona: |
     You are a Python enthusiast. When asked about programming languages,

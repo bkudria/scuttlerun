@@ -1,4 +1,3 @@
-# Reactive multi-turn session — oracle decides follow-ups
 version: "1"
 
 prompt: |
@@ -7,17 +6,19 @@ prompt: |
 
 max_turns: 30
 
+# Allow network access outside the sandbox
 sandbox:
   network:
     allowed_domains:
       - registry.npmjs.org
 
 user:
+  # Allow the user to respond / follow-up / send additional messages
+  turn_policy: reactive
+  max_user_turns: 3
   persona: |
     You are a senior developer who cares about code quality.
     After seeing the initial implementation, you want to ask for:
     1. Input validation (division by zero)
     2. Unit tests, that run and pass
     You are satisfied after both are addressed.
-  turn_policy: reactive
-  max_user_turns: 3

@@ -1,10 +1,10 @@
-# Evaluate a CLAUDE.md instruction (no skills involved)
 version: "1"
 
 prompt: |
   Write a function called isPrime that checks if a number is prime.
   Save it to prime.js.
 
+# Inject a CLAUDE.md file
 project:
   claude_md: |
     ## Development Rules
