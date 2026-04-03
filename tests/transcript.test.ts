@@ -251,7 +251,7 @@ describe("transcript", () => {
       writeOracleTurn("continue", "Can you add tests?", "Task incomplete");
       const parsed = parseYaml("conversation:\n" + output);
       const entry = parsed.conversation[0];
-      expect(entry.oracle).toBe("turn_policy");
+      expect(entry.oracle).toBe("turn");
       expect(entry.decision).toBe("continue");
       expect(entry.message).toContain("Can you add tests?");
       expect(entry.reasoning).toBe("Task incomplete");
@@ -269,7 +269,7 @@ describe("transcript", () => {
       writeOracleTurn("end", undefined, "Task complete");
       const parsed = parseYaml("conversation:\n" + output);
       const entry = parsed.conversation[0];
-      expect(entry.oracle).toBe("turn_policy");
+      expect(entry.oracle).toBe("turn");
       expect(entry.decision).toBe("end");
       expect(entry.message).toBeUndefined();
       expect(entry.reasoning).toBe("Task complete");
@@ -279,7 +279,7 @@ describe("transcript", () => {
       writeOracleTurn("end");
       const parsed = parseYaml("conversation:\n" + output);
       const entry = parsed.conversation[0];
-      expect(entry.oracle).toBe("turn_policy");
+      expect(entry.oracle).toBe("turn");
       expect(entry.decision).toBe("end");
       expect(entry.reasoning).toBeUndefined();
     });

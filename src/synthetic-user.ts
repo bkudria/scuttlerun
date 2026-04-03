@@ -73,13 +73,13 @@ export class SyntheticUser {
   }
 
   async decideTurn(): Promise<TurnDecision> {
-    // Single-turn mode: always end
-    if (this.config.turn_policy === "single") {
+    // No follow-ups when max_turns is 0
+    if (this.config.max_turns === 0) {
       return { decision: "end" };
     }
 
-    // Check max user turns
-    if (this.userTurnCount >= this.config.max_user_turns) {
+    // Check max turns
+    if (this.userTurnCount >= this.config.max_turns) {
       return { decision: "end" };
     }
 

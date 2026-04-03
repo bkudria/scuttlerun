@@ -227,8 +227,7 @@ user:
     You prefer simple, accessible language over complex metaphors.
     If asked to choose a topic, pick "ocean" or "sea".
   oracle_model: claude-haiku-4-5    # Model for synthetic user (default: claude-haiku-4-5)
-  turn_policy: reactive             # "reactive" (LLM decides) or "single" (no follow-ups)
-  max_user_turns: 5                 # Max follow-up messages (not counting initial prompt)
+  max_turns: 5                      # Max follow-up turns (0 = no follow-ups, 1+ = oracle decides)
 
 # --- Agent SDK Options ---
 sdk:
@@ -260,7 +259,7 @@ Everything else has sensible defaults:
 - `effort`: `"high"`
 - `tools`: `["Read", "Write", "Edit", "Bash", "Glob", "Grep", "AskUserQuestion"]`
 - `permission_mode`: `"bypassPermissions"` (with `allowDangerouslySkipPermissions: true`)
-- `user.turn_policy`: `"single"` (no follow-ups unless configured)
+- `user.max_turns`: `0` (no follow-ups unless configured)
 - `user.oracle_model`: `"claude-haiku-4-5"`
 - `sdk.setting_sources`: `["project"]` when `project:` is present, `[]` otherwise (explicit `sdk.setting_sources` in YAML always overrides the auto-set)
 
@@ -500,7 +499,7 @@ The JSON schema for this call enforces:
 
 ### Single-Turn Mode
 
-When `user.turn_policy: single`, scuttlerun skips the turn policy entirely. One prompt in, agent runs to completion, session ends. This is the simplest mode — equivalent to `claude -p` but with AskUserQuestion handling.
+When `user.max_turns: 0` (the default), scuttlerun skips the oracle turn decision entirely. One prompt in, agent runs to completion, session ends. This is the simplest mode — equivalent to `claude -p` but with AskUserQuestion handling.
 
 ---
 
@@ -731,11 +730,11 @@ Mitigation for non-determinism: transcript records oracle responses, so every ru
 - **Pro**: Simulates realistic user behavior — follows up when it makes sense
 - **Pro**: No need to pre-script a conversation flow
 - **Pro**: Discovers emergent behaviors (the agent may do something unexpected that a real user would respond to)
-- **Con**: Session length is less predictable (mitigated by `max_user_turns`)
-- **Con**: Oracle turn-policy calls add latency and cost
+- **Con**: Session length is less predictable (mitigated by `max_turns`)
+- **Con**: Oracle turn calls add latency and cost
 - **Con**: Harder to write deterministic checks about conversation flow
 
-For eval scenarios that need deterministic conversation flows, `turn_policy: single` provides that escape hatch.
+For eval scenarios that need deterministic conversation flows, `user.max_turns: 0` provides that escape hatch.
 
 ### Streaming Transcript + SDK Session File vs. Events Sidecar
 

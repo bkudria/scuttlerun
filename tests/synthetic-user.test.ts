@@ -20,8 +20,7 @@ describe("SyntheticUser", () => {
     userConfig = {
       persona: "A beginner programmer",
       oracle_model: "claude-haiku-4-5",
-      turn_policy: "reactive",
-      max_user_turns: 5,
+      max_turns: 5,
     };
   });
 
@@ -95,8 +94,8 @@ describe("SyntheticUser", () => {
       expect(result.reasoning).toBe("Task complete");
     });
 
-    it("skips oracle for single turn policy", async () => {
-      userConfig.turn_policy = "single";
+    it("skips oracle when max_turns is 0", async () => {
+      userConfig.max_turns = 0;
       const user = new SyntheticUser(oracle, userConfig, "test");
       const result = await user.decideTurn();
 
@@ -105,8 +104,8 @@ describe("SyntheticUser", () => {
       expect(mockDecide).not.toHaveBeenCalled();
     });
 
-    it("ends session when max_user_turns is reached", async () => {
-      userConfig.max_user_turns = 2;
+    it("ends session when max_turns is reached", async () => {
+      userConfig.max_turns = 2;
       const mockDecide = oracle.decideTurnPolicy as ReturnType<typeof vi.fn>;
       mockDecide.mockResolvedValue({
         decision: "continue",
@@ -123,7 +122,7 @@ describe("SyntheticUser", () => {
       const r2 = await user.decideTurn();
       expect(r2.decision).toBe("continue");
 
-      // Third call: forced end due to max_user_turns
+      // Third call: forced end due to max_turns
       const r3 = await user.decideTurn();
       expect(r3.decision).toBe("end");
       // Oracle should NOT have been called a third time

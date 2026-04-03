@@ -20,8 +20,7 @@ const ProjectConfigSchema = z.object({
 const UserConfigSchema = z.object({
   persona: z.string().optional(),
   oracle_model: z.string().default("claude-haiku-4-5"),
-  turn_policy: z.enum(["reactive", "single"]).default("single"),
-  max_user_turns: z.number().int().min(1).default(5),
+  max_turns: z.number().int().min(0).default(0),
 });
 
 const SandboxNetworkConfigSchema = z.object({

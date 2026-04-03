@@ -111,7 +111,7 @@ export function writeOracleTurn(
   message?: string,
   reasoning?: string,
 ): void {
-  const entry: Record<string, unknown> = { oracle: "turn_policy", decision };
+  const entry: Record<string, unknown> = { oracle: "turn", decision };
   if (message) entry.message = message;
   if (reasoning) entry.reasoning = reasoning;
   writeEntry(entry);

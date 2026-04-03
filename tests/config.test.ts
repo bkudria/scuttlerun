@@ -27,7 +27,7 @@ describe("parseSessionConfig", () => {
     ]);
     expect(config.model).toBe("claude-haiku-4-5");
     expect(config.permission_mode).toBe("bypassPermissions");
-    expect(config.user.turn_policy).toBe("single");
+    expect(config.user.max_turns).toBe(0);
     expect(config.user.oracle_model).toBe("claude-haiku-4-5");
   });
 
@@ -51,8 +51,7 @@ describe("parseSessionConfig", () => {
       user: {
         persona: "You are a beginner programmer.",
         oracle_model: "claude-sonnet-4-6",
-        turn_policy: "reactive" as const,
-        max_user_turns: 5,
+        max_turns: 5,
       },
       sdk: {
         system_prompt: "You are helpful.",
@@ -73,8 +72,7 @@ describe("parseSessionConfig", () => {
     expect(config.disallowed_tools).toEqual(["Agent"]);
     expect(config.project?.claude_md).toBe("Use clear language.");
     expect(config.project?.git_init).toBe(true);
-    expect(config.user.turn_policy).toBe("reactive");
-    expect(config.user.max_user_turns).toBe(5);
+    expect(config.user.max_turns).toBe(5);
     expect(config.sdk.system_prompt).toBe("You are helpful.");
     expect(config.sdk.thinking).toEqual({ type: "adaptive" });
     expect(config.sdk.setting_sources).toEqual(["project"]);
@@ -122,9 +120,9 @@ describe("parseSessionConfig", () => {
     ).toThrow();
   });
 
-  it("rejects invalid turn policy", () => {
+  it("rejects negative max_turns", () => {
     expect(() =>
-      parseSessionConfig({ prompt: "hi", user: { turn_policy: "scripted" } })
+      parseSessionConfig({ prompt: "hi", user: { max_turns: -1 } })
     ).toThrow();
   });
 
@@ -311,12 +309,12 @@ describe("mergeRawConfigs", () => {
     const result = mergeRawConfigs(
       { prompt: "a", model: "haiku", user: { persona: "dev" } },
       { model: "sonnet" },
-      { user: { turn_policy: "reactive" } },
+      { user: { max_turns: 3 } },
     );
     expect(result).toEqual({
       prompt: "a",
       model: "sonnet",
-      user: { persona: "dev", turn_policy: "reactive" },
+      user: { persona: "dev", max_turns: 3 },
     });
   });
 });

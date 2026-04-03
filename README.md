@@ -51,8 +51,7 @@ prompt: |
 |-------|------|---------|
 | `user.persona` | string | — |
 | `user.oracle_model` | string | `claude-haiku-4-5` |
-| `user.turn_policy` | `single` \| `reactive` | `single` |
-| `user.max_user_turns` | number | `5` |
+| `user.max_turns` | number | `0` |
 
 #### `project` (managed project scaffolding)
 

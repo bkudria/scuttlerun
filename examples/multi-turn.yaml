@@ -14,8 +14,7 @@ sandbox:
 
 user:
   # Allow the user to respond / follow-up / send additional messages
-  turn_policy: reactive
-  max_user_turns: 3
+  max_turns: 3
   persona: |
     You are a senior developer who cares about code quality.
     After seeing the initial implementation, you want to ask for:

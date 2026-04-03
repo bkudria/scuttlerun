@@ -49,8 +49,7 @@ function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
     permission_mode: "bypassPermissions",
     user: {
       oracle_model: "claude-haiku-4-5",
-      turn_policy: "single",
-      max_user_turns: 5,
+      max_turns: 0,
     },
     sdk: { system_prompt: { preset: "claude_code" as const }, setting_sources: [] },
     sandbox: {
@@ -707,11 +706,11 @@ describe("runSession", () => {
     );
 
     const result = await runSession(minConfig({
-      user: { oracle_model: "claude-haiku-4-5", turn_policy: "reactive", max_user_turns: 5 },
+      user: { oracle_model: "claude-haiku-4-5", max_turns: 5 },
     }));
 
     expect(result.exitCode).toBe(0);
-    expect(stdoutOutput).toContain("oracle: turn_policy");
+    expect(stdoutOutput).toContain("oracle: turn");
     expect(stdoutOutput).toContain("Please add tests");
   });
 
@@ -798,7 +797,7 @@ describe("runSession", () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
 
     const result = await runSession(
-      minConfig({ user: { oracle_model: "claude-haiku-4-5", turn_policy: "reactive", max_user_turns: 5 } }),
+      minConfig({ user: { oracle_model: "claude-haiku-4-5", max_turns: 5 } }),
       { timeoutSeconds: 0.05 },
     );
     // Timeout fires during oracle call, oracle then throws → catch with timedOut=true
@@ -827,7 +826,7 @@ describe("runSession", () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
 
     const result = await runSession(
-      minConfig({ user: { oracle_model: "claude-haiku-4-5", turn_policy: "reactive", max_user_turns: 5 } }),
+      minConfig({ user: { oracle_model: "claude-haiku-4-5", max_turns: 5 } }),
       { timeoutSeconds: 0.05 },
     );
     // Timeout fires during oracle call. Oracle completes with "continue".

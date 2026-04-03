@@ -123,10 +123,9 @@ Session Config (YAML):
       persona: |                        # Persona guiding oracle responses (optional)
         You are a beginner programmer who prefers simple code.
       oracle_model: claude-haiku-4-5    # Model for synthetic user (default: claude-haiku-4-5)
-      turn_policy: single               # single | reactive (default: single)
-                                        #   single:   one prompt, no follow-ups
-                                        #   reactive: oracle decides follow-ups
-      max_user_turns: 5                 # Max follow-up messages (default: 5)
+      max_turns: 0                      # Max follow-up turns (default: 0)
+                                        #   0: no follow-ups
+                                        #   1+: oracle decides, capped at max_turns
 
     # --- Agent SDK Passthrough ---
     sdk:
@@ -247,9 +246,8 @@ async function main() {
             max_turns: config.max_turns,
             permission_mode: config.permission_mode,
             user: {
-              turn_policy: config.user.turn_policy,
               oracle_model: config.user.oracle_model,
-              max_user_turns: config.user.max_user_turns,
+              max_turns: config.user.max_turns,
               ...(config.user.persona ? { persona: config.user.persona } : {}),
             },
             ...(hasProject && proj

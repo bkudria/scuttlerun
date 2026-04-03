@@ -287,7 +287,7 @@ export async function runSession(
           const decision = await syntheticUser.decideTurn();
 
           // Write oracle turn policy decision
-          if (config.user.turn_policy === "reactive") {
+          if (config.user.max_turns > 0) {
             writeOracleTurn(decision.decision, decision.message, decision.reasoning);
           }
 
