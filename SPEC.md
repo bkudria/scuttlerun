@@ -15,11 +15,10 @@ Claude Code's `claude -p` mode is one-shot and non-interactive. When an agent ca
 scuttlerun is a **session driver**, not an eval framework. It runs one session and produces one transcript. The following are explicitly out of scope:
 
 - **Batch orchestration** — Running multiple sessions in parallel. Callers use `xargs`, `parallel`, or their own loops.
-- **Comparison** — Running the same prompt under different configs and comparing outputs. Callers generate the configs, invoke scuttlerun for each, and diff the transcripts.
 - **Grading** — Scoring transcripts against checks. Callers implement their own grading logic (which may itself use scuttlerun to drive a grading session).
-- **Aggregation** — Computing pass rates, deltas, benchmarks. Pure data processing done by callers.
+- **Aggregation** — Computing pass rates, benchmarks. Pure data processing done by callers.
 
-This boundary exists because eval logic is inherently opinionated — different callers have different grading criteria, comparison structures, and reporting needs. scuttlerun provides the raw material (transcripts); callers decide what to do with it.
+This boundary exists because eval logic is inherently opinionated — different callers have different grading criteria and reporting needs. scuttlerun provides the raw material (transcripts); callers decide what to do with it.
 
 ---
 
@@ -687,7 +686,7 @@ The Agent SDK supports session resumption via `session_id`. scuttlerun could sup
 Allow session configs to define custom MCP tools inline (useful for scenarios that need mock APIs).
 
 ### Conversation Branching
-Fork a session at a specific turn to explore different paths (useful for A/B testing responses).
+Fork a session at a specific turn to explore different paths.
 
 ### Token Budget Optimization
 Context summarization for the oracle LLM when conversations get long, rather than sending the full transcript every time.

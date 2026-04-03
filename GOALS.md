@@ -6,7 +6,7 @@ scuttlerun exists because Claude Code's `-p` mode is one-shot and cannot handle 
 
 ## Session Driver, Not Eval Framework
 
-scuttlerun is a **session driver**: it runs sessions and produces transcripts. It is not an evaluation framework. This is primarily about **reusability** — a pure session driver is useful for evals, but also for demos, CI testing, regression checks, and anything else that needs programmatic multi-turn Claude sessions. Eval concerns (scoring, comparison, grading) are separate tools that compose with scuttlerun's output. One tool, one job.
+scuttlerun is a **session driver**: it runs sessions and produces transcripts. It is not an evaluation framework. This is primarily about **reusability** — a pure session driver is useful for evals, but also for demos, CI testing, regression checks, and anything else that needs programmatic multi-turn Claude sessions. Eval concerns (scoring, grading) are separate tools that compose with scuttlerun's output. One tool, one job.
 
 ## Minimalism and Good Defaults
 
