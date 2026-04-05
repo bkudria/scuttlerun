@@ -230,6 +230,7 @@ function deepMergeObjects(
   const result: Record<string, unknown> = { ...base };
 
   for (const [key, value] of Object.entries(override)) {
+    if (key === "__proto__" || key === "constructor") continue;
     const baseValue = base[key];
 
     if (Array.isArray(value)) {

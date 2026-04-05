@@ -429,6 +429,24 @@ describe("mergeRawConfigs", () => {
     expect(result).toEqual({ sandbox: false });
   });
 
+  it("skips __proto__ keys during merge", () => {
+    const base = { prompt: "hi" };
+    const override = JSON.parse('{"__proto__": {"polluted": true}, "model": "sonnet"}');
+    const result = mergeRawConfigs(base, override);
+    expect(result.model).toBe("sonnet");
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect("__proto__" in result && typeof result.__proto__ === "object" && result.__proto__ !== null && "polluted" in (result.__proto__ as Record<string, unknown>)).toBe(false);
+  });
+
+  it("skips constructor keys during merge", () => {
+    const base = { prompt: "hi" };
+    const override = { constructor: { prototype: { polluted: true } }, model: "sonnet" } as Record<string, unknown>;
+    const result = mergeRawConfigs(base, override);
+    expect(result.model).toBe("sonnet");
+    // constructor should not be an own property on the result
+    expect(Object.hasOwn(result, "constructor")).toBe(false);
+  });
+
   it("merges three configs in order", () => {
     const result = mergeRawConfigs(
       { prompt: "a", model: "haiku", user: { persona: "dev" } },
