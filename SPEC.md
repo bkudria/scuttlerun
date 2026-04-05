@@ -759,3 +759,32 @@ For eval scenarios that need deterministic conversation flows, `user.max_turns: 
 - **Con**: Less safe for non-testing use cases
 
 The `permission_mode` field is still configurable in session YAML, so callers can set `"default"` or `"acceptEdits"` for other scenarios. But the default is `bypassPermissions` because scuttlerun's primary purpose is headless session driving.
+
+---
+
+## Security Considerations
+
+### Trust Model
+
+**YAML config files are a trust boundary.** A session config has the same power as a shell script: it can specify arbitrary tools, environment variables, MCP server commands, system prompts, and project files. Only run configs you trust, just as you would only run shell scripts you trust.
+
+The primary threat scuttlerun defends against is an **agent that deviates from its prompt** (due to prompt injection via files it reads, MCP server responses, or adversarial content in the working directory). The config itself is assumed trusted.
+
+### Default Permissions
+
+`bypassPermissions` is the default `permission_mode`, giving the agent unrestricted access to all configured tools — including Bash for arbitrary shell execution. This is intentional for headless operation (permission prompts would hang forever). The sandbox provides the actual security boundary.
+
+### Sandbox Mitigations
+
+When `sandbox.enabled: true` (the default):
+
+- **Filesystem**: Write access restricted to the project temp dir and `/tmp`. Read access denied for `~/.ssh`, `~/.aws`, `~/.config/gcloud` by default. Configurable via `sandbox.filesystem`.
+- **Network**: No network access by default. Domains must be explicitly allowed via `sandbox.network.allowed_domains`.
+- **Environment variables**: `process.env` is filtered through an allowlist of known-safe vars (PATH, LANG, TMPDIR, ANTHROPIC_API_KEY, etc.). Secrets like `AWS_SECRET_ACCESS_KEY` or `GITHUB_TOKEN` are not passed to the agent. Users can explicitly add vars via `sdk.env`.
+- **HOME isolation**: HOME is redirected to `<projectDir>/.home` so tools write caches inside the sandbox.
+
+### Known Limitations
+
+- **Indirect prompt injection**: Agent output (which may include adversarial text from files) is forwarded to the LLM oracle as conversation context. A crafted file could influence oracle decisions (question answers, turn policy). Impact is limited: the oracle uses structured output schemas, and its decisions only affect session flow.
+- **MCP servers and agents**: `sdk.mcp_servers` and `sdk.agents` are validated against the Agent SDK's type definitions but can still configure arbitrary subprocess commands. The sandbox network/filesystem restrictions apply to the agent, not to MCP server processes.
+- **Config-supplied project files**: `project.files` can write arbitrary content within the project directory. Combined with `git_init`, care should be taken not to create files in `.git/hooks/`.
