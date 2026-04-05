@@ -3,8 +3,7 @@ import type { SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionConfig } from "./config.js";
-import type { QuestionInput } from "./oracle.js";
-import { Oracle } from "./oracle.js";
+import { Oracle, AskUserQuestionInputSchema } from "./oracle.js";
 import { SyntheticUser } from "./synthetic-user.js";
 import { scaffoldProject, createProjectDir } from "./project.js";
 import { cleanOldProjects } from "./cleanup.js";
@@ -192,9 +191,11 @@ export async function runSession(
       input: Record<string, unknown>,
     ) => {
       if (toolName === "AskUserQuestion" && syntheticUser) {
-        const result = await syntheticUser.handleAskUserQuestion(
-          input as { questions: QuestionInput[] },
-        );
+        const parsed = AskUserQuestionInputSchema.safeParse(input);
+        if (!parsed.success) {
+          return { behavior: "deny" };
+        }
+        const result = await syntheticUser.handleAskUserQuestion(parsed.data);
         writeOracleAsk(
           result.oracleResponse.answers,
           result.oracleResponse.reasoning,

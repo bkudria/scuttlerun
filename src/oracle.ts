@@ -36,6 +36,17 @@ export interface QuestionInput {
   multiSelect: boolean;
 }
 
+export const QuestionInputSchema = z.object({
+  question: z.string(),
+  header: z.string(),
+  options: z.array(z.object({ label: z.string(), description: z.string() })),
+  multiSelect: z.boolean(),
+});
+
+export const AskUserQuestionInputSchema = z.object({
+  questions: z.array(QuestionInputSchema),
+});
+
 export interface AskUserQuestionParams {
   persona: string | undefined;
   conversationContext: ConversationEntry[];

@@ -374,6 +374,43 @@ describe("runSession", () => {
     expect(allowResult.behavior).toBe("allow");
   });
 
+  it("denies AskUserQuestion with malformed input", async () => {
+    type CanUseToolFn = (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
+    let capturedCanUseTool: CanUseToolFn | undefined;
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { options: { canUseTool?: CanUseToolFn } }) => {
+      capturedCanUseTool = opts.options.canUseTool;
+      return createMockQuery([
+        {
+          type: "system",
+          subtype: "init",
+          session_id: "s6",
+          tools: ["AskUserQuestion"],
+          model: "claude-haiku-4-5",
+        },
+        {
+          type: "result",
+          subtype: "success",
+          session_id: "s6",
+          stop_reason: "end_turn",
+          is_error: false,
+          num_turns: 1,
+          total_cost_usd: 0.001,
+          duration_ms: 3000,
+          usage: { input_tokens: 100, output_tokens: 50 },
+          result: "Done",
+        },
+      ]);
+    });
+
+    await runSession(minConfig());
+    expect(capturedCanUseTool).toBeDefined();
+
+    // Malformed AskUserQuestion input should be denied
+    const denyResult = await capturedCanUseTool!("AskUserQuestion", { garbage: true }) as { behavior: string };
+    expect(denyResult.behavior).toBe("deny");
+  });
+
   it("handles timeout with exit code 5", async () => {
     // Create a query that never finishes
     const neverEndingQuery = {
