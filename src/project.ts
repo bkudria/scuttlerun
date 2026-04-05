@@ -58,6 +58,14 @@ export async function scaffoldProject(
   if (config.files) {
     for (const [filePath, content] of Object.entries(config.files)) {
       const fullPath = join(projectPath, filePath);
+      const realFullPath = resolve(fullPath);
+      const realProjectPath = resolve(projectPath);
+      if (
+        !realFullPath.startsWith(realProjectPath + "/") &&
+        realFullPath !== realProjectPath
+      ) {
+        throw new Error(`File path escapes project directory: "${filePath}"`);
+      }
       await fs.mkdir(dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, content);
     }

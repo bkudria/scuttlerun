@@ -149,6 +149,24 @@ describe("scaffoldProject", () => {
     }
   });
 
+  it("rejects file paths that traverse outside project directory", async () => {
+    const config: ProjectConfig = {
+      files: { "../escape.txt": "bad" },
+    };
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+      "escapes project directory",
+    );
+  });
+
+  it("rejects nested traversal that escapes project directory", async () => {
+    const config: ProjectConfig = {
+      files: { "foo/../../escape.txt": "bad" },
+    };
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+      "escapes project directory",
+    );
+  });
+
   it("resolves tilde skill paths relative to HOME", async () => {
     // Set HOME to our temp dir so ~/fake-skill resolves to tempDir/fake-skill
     const origHome = process.env.HOME;
