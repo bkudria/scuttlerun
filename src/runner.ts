@@ -149,10 +149,10 @@ export async function runSession(
     if (config.sdk.thinking) sdkOptions.thinking = config.sdk.thinking;
     if (config.sdk.mcp_servers) sdkOptions.mcpServers = config.sdk.mcp_servers;
     if (config.sdk.agents) sdkOptions.agents = config.sdk.agents;
-    // Subprocess environment: when sandbox is enabled, inherit full env and
-    // override HOME to the isolated dir inside the project
+    // Subprocess environment: when sandbox is enabled, filter process.env
+    // through an allowlist to prevent leaking secrets (API keys, tokens, etc.)
     if (sandboxHome) {
-      sdkOptions.env = { ...process.env, ...config.sdk.env, HOME: sandboxHome };
+      sdkOptions.env = buildSandboxEnv(process.env as Record<string, string | undefined>, config.sdk.env, sandboxHome);
     } else if (config.sdk.env) {
       sdkOptions.env = config.sdk.env;
     }
@@ -335,6 +335,63 @@ export async function runSession(
   if (queryHandle) queryHandle.close();
 
   return { exitCode, sessionId };
+}
+
+export const SAFE_ENV_VARS: ReadonlySet<string> = new Set([
+  // Required for the agent subprocess to make API calls
+  "ANTHROPIC_API_KEY",
+  // Paths and execution
+  "PATH", "HOME", "SHELL", "USER", "LOGNAME",
+  // Temp directories
+  "TMPDIR", "TEMP", "TMP",
+  // Locale and encoding
+  "LANG", "LANGUAGE", "LC_ALL", "LC_COLLATE", "LC_CTYPE",
+  "LC_MESSAGES", "LC_MONETARY", "LC_NUMERIC", "LC_TIME",
+  // Terminal
+  "TERM", "COLORTERM", "TERM_PROGRAM", "FORCE_COLOR", "NO_COLOR",
+  // Editor
+  "EDITOR", "VISUAL",
+  // Node.js runtime
+  "NODE_PATH", "NODE_ENV", "NODE_OPTIONS", "NODE_EXTRA_CA_CERTS",
+  "NODE_NO_WARNINGS", "UV_THREADPOOL_SIZE",
+  // SSL/TLS certificates
+  "SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+  // XDG base directories
+  "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+  "XDG_RUNTIME_DIR", "XDG_STATE_HOME",
+  // macOS
+  "COMMAND_MODE", "__CF_USER_TEXT_ENCODING",
+  // SDK identification
+  "CLAUDE_AGENT_SDK_CLIENT_APP",
+]);
+
+export const SAFE_ENV_PREFIXES: readonly string[] = [
+  "LC_",
+  "npm_config_",
+];
+
+export function buildSandboxEnv(
+  processEnv: Record<string, string | undefined>,
+  userEnv: Record<string, string> | undefined,
+  sandboxHome: string,
+): Record<string, string> {
+  const filtered: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(processEnv)) {
+    if (value === undefined) continue;
+    if (SAFE_ENV_VARS.has(key) || SAFE_ENV_PREFIXES.some((p) => key.startsWith(p))) {
+      filtered[key] = value;
+    }
+  }
+
+  if (userEnv) {
+    Object.assign(filtered, userEnv);
+  }
+
+  // HOME is always the sandbox home, regardless of process.env or userEnv
+  filtered.HOME = sandboxHome;
+
+  return filtered;
 }
 
 function buildSdkSessionPath(cwd: string, sessionId: string, sandboxHome?: string): string {
