@@ -56,10 +56,12 @@ export async function scaffoldProject(
 
   // Write project files
   if (config.files) {
+    // Resolve the project path once via realpath (handles symlinks in tmpdir, e.g. macOS /tmp → /private/tmp)
+    const realProjectPath = await fs.realpath(projectPath);
     for (const [filePath, content] of Object.entries(config.files)) {
       const fullPath = join(projectPath, filePath);
-      const realFullPath = resolve(fullPath);
-      const realProjectPath = resolve(projectPath);
+      // Use resolve() for the file path since it may not exist yet (realpath requires existence)
+      const realFullPath = resolve(realProjectPath, filePath);
       if (
         !realFullPath.startsWith(realProjectPath + "/") &&
         realFullPath !== realProjectPath

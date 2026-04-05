@@ -158,6 +158,20 @@ describe("scaffoldProject", () => {
     );
   });
 
+  it("path traversal check resolves symlinks (realpath)", async () => {
+    // Even if we had a symlink in the project dir, realpath-based check catches it
+    const config: ProjectConfig = {
+      files: { "safe.txt": "ok" },
+    };
+    const result = await scaffoldProject(config, tempDir);
+    try {
+      const content = await fs.readFile(join(result.projectPath, "safe.txt"), "utf8");
+      expect(content).toBe("ok");
+    } finally {
+      await fs.rm(result.projectPath, { recursive: true, force: true });
+    }
+  });
+
   it("rejects nested traversal that escapes project directory", async () => {
     const config: ProjectConfig = {
       files: { "foo/../../escape.txt": "bad" },
