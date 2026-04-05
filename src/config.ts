@@ -51,11 +51,62 @@ const SystemPromptPresetSchema = z.object({
 
 const SystemPromptSchema = z.union([z.string(), SystemPromptPresetSchema]);
 
+// MCP Server Config schemas matching Agent SDK types (v0.2.72)
+// .passthrough() allows unknown fields for forward compatibility
+const McpStdioServerConfigSchema = z.object({
+  type: z.literal("stdio").optional(),
+  command: z.string(),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+}).passthrough();
+
+const McpSSEServerConfigSchema = z.object({
+  type: z.literal("sse"),
+  url: z.string(),
+  headers: z.record(z.string(), z.string()).optional(),
+}).passthrough();
+
+const McpHttpServerConfigSchema = z.object({
+  type: z.literal("http"),
+  url: z.string(),
+  headers: z.record(z.string(), z.string()).optional(),
+}).passthrough();
+
+const McpSdkServerConfigSchema = z.object({
+  type: z.literal("sdk"),
+  name: z.string(),
+}).passthrough();
+
+// Union: try SSE/HTTP/SDK first (they require type), fall back to stdio (type optional)
+const McpServerConfigSchema = z.union([
+  McpSSEServerConfigSchema,
+  McpHttpServerConfigSchema,
+  McpSdkServerConfigSchema,
+  McpStdioServerConfigSchema,
+]);
+
+const AgentMcpServerSpecSchema = z.union([
+  z.string(),
+  z.record(z.string(), McpServerConfigSchema),
+]);
+
+const AgentDefinitionSchema = z.object({
+  description: z.string(),
+  prompt: z.string(),
+  tools: z.array(z.string()).optional(),
+  disallowedTools: z.array(z.string()).optional(),
+  model: z.enum(["sonnet", "opus", "haiku", "inherit"]).optional(),
+  mcpServers: z.array(AgentMcpServerSpecSchema).optional(),
+  criticalSystemReminder_EXPERIMENTAL: z.string().optional(),
+  skills: z.array(z.string()).optional(),
+  maxTurns: z.number().int().min(1).optional(),
+}).passthrough();
+
 const SdkConfigSchema = z.object({
   system_prompt: SystemPromptSchema.default({ preset: "claude_code" }),
   thinking: ThinkingConfigSchema.optional(),
-  mcp_servers: z.record(z.string(), z.unknown()).optional(),
-  agents: z.record(z.string(), z.unknown()).optional(),
+  mcp_servers: z.record(z.string(), McpServerConfigSchema).optional(),
+  agents: z.record(z.string(), AgentDefinitionSchema).optional(),
   env: z.record(z.string(), z.string()).optional(),
   setting_sources: z.array(SettingSourceSchema).optional(),
 });

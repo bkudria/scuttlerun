@@ -256,6 +256,130 @@ describe("parseSessionConfig", () => {
     });
     expect(disabled.sdk.thinking).toEqual({ type: "disabled" });
   });
+
+  it("parses valid stdio MCP server config (with type)", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: { mcp_servers: { myserver: { type: "stdio", command: "npx", args: ["-y", "server"] } } },
+    });
+    expect(config.sdk.mcp_servers).toEqual({
+      myserver: { type: "stdio", command: "npx", args: ["-y", "server"] },
+    });
+  });
+
+  it("parses valid stdio MCP server config (without type, defaults to stdio)", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: { mcp_servers: { myserver: { command: "npx" } } },
+    });
+    expect(config.sdk.mcp_servers).toEqual({
+      myserver: { command: "npx" },
+    });
+  });
+
+  it("parses valid SSE MCP server config", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: { mcp_servers: { remote: { type: "sse", url: "https://example.com/sse" } } },
+    });
+    expect(config.sdk.mcp_servers).toEqual({
+      remote: { type: "sse", url: "https://example.com/sse" },
+    });
+  });
+
+  it("parses valid HTTP MCP server config", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: { mcp_servers: { remote: { type: "http", url: "https://example.com/mcp", headers: { Authorization: "Bearer tok" } } } },
+    });
+    expect(config.sdk.mcp_servers).toEqual({
+      remote: { type: "http", url: "https://example.com/mcp", headers: { Authorization: "Bearer tok" } },
+    });
+  });
+
+  it("parses valid SDK MCP server config", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: { mcp_servers: { builtin: { type: "sdk", name: "my-sdk-server" } } },
+    });
+    expect(config.sdk.mcp_servers).toEqual({
+      builtin: { type: "sdk", name: "my-sdk-server" },
+    });
+  });
+
+  it("rejects MCP server config with invalid type", () => {
+    expect(() => parseSessionConfig({
+      prompt: "hi",
+      sdk: { mcp_servers: { bad: { type: "invalid", command: "foo" } } },
+    })).toThrow();
+  });
+
+  it("rejects stdio MCP server config missing command", () => {
+    expect(() => parseSessionConfig({
+      prompt: "hi",
+      sdk: { mcp_servers: { bad: { type: "stdio" } } },
+    })).toThrow();
+  });
+
+  it("parses valid agent definition", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: {
+        agents: {
+          reviewer: {
+            description: "Reviews code",
+            prompt: "Review the code for issues",
+            tools: ["Read", "Grep"],
+            model: "haiku",
+            maxTurns: 5,
+          },
+        },
+      },
+    });
+    expect(config.sdk.agents).toEqual({
+      reviewer: {
+        description: "Reviews code",
+        prompt: "Review the code for issues",
+        tools: ["Read", "Grep"],
+        model: "haiku",
+        maxTurns: 5,
+      },
+    });
+  });
+
+  it("rejects agent definition missing required description", () => {
+    expect(() => parseSessionConfig({
+      prompt: "hi",
+      sdk: { agents: { bad: { prompt: "do stuff" } } },
+    })).toThrow();
+  });
+
+  it("rejects agent definition missing required prompt", () => {
+    expect(() => parseSessionConfig({
+      prompt: "hi",
+      sdk: { agents: { bad: { description: "does stuff" } } },
+    })).toThrow();
+  });
+
+  it("passes through unknown fields in MCP server config (forward compat)", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: { mcp_servers: { myserver: { command: "npx", futureField: true } } },
+    });
+    const server = (config.sdk.mcp_servers as Record<string, Record<string, unknown>>)?.myserver;
+    expect(server.command).toBe("npx");
+    expect(server.futureField).toBe(true);
+  });
+
+  it("passes through unknown fields in agent definition (forward compat)", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: { agents: { a: { description: "d", prompt: "p", futureField: 42 } } },
+    });
+    const agent = (config.sdk.agents as Record<string, Record<string, unknown>>)?.a;
+    expect(agent.description).toBe("d");
+    expect(agent.futureField).toBe(42);
+  });
 });
 
 describe("mergeRawConfigs", () => {
