@@ -149,6 +149,54 @@ describe("scaffoldProject", () => {
     }
   });
 
+  it("rejects file paths targeting .git/ directory", async () => {
+    const config: ProjectConfig = {
+      files: { ".git/hooks/pre-commit": "#!/bin/sh\necho pwned" },
+    };
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+      ".git/",
+    );
+  });
+
+  it("rejects file paths targeting .git subdirectories", async () => {
+    const config: ProjectConfig = {
+      files: { ".git/config": "[core]\nautocrlf = true" },
+    };
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+      ".git/",
+    );
+  });
+
+  it("allows files named .gitignore (not inside .git/)", async () => {
+    const config: ProjectConfig = {
+      files: { ".gitignore": "node_modules/" },
+    };
+    const result = await scaffoldProject(config, tempDir);
+    try {
+      const content = await fs.readFile(join(result.projectPath, ".gitignore"), "utf8");
+      expect(content).toBe("node_modules/");
+    } finally {
+      await fs.rm(result.projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it("git init runs before file writes", async () => {
+    const config: ProjectConfig = {
+      git_init: true,
+      files: { "README.md": "hello" },
+    };
+    const result = await scaffoldProject(config, tempDir);
+    try {
+      // Both .git and README.md should exist
+      const gitStat = await fs.stat(join(result.projectPath, ".git"));
+      expect(gitStat.isDirectory()).toBe(true);
+      const readme = await fs.readFile(join(result.projectPath, "README.md"), "utf8");
+      expect(readme).toBe("hello");
+    } finally {
+      await fs.rm(result.projectPath, { recursive: true, force: true });
+    }
+  });
+
   it("rejects file paths that traverse outside project directory", async () => {
     const config: ProjectConfig = {
       files: { "../escape.txt": "bad" },

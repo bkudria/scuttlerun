@@ -2,17 +2,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// Mock node:fs/promises with passthrough so we can override readdir for one test
+// Mock node:fs/promises with passthrough so we can override readdir/rm for specific tests
 const actualFs = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
 const mockReaddir = vi.fn<typeof actualFs.readdir>((...args: Parameters<typeof actualFs.readdir>) =>
   actualFs.readdir(...args),
 );
+const mockRm = vi.fn<typeof actualFs.rm>((...args: Parameters<typeof actualFs.rm>) =>
+  actualFs.rm(...args),
+);
 vi.mock("node:fs/promises", async () => {
   const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
-  return { ...actual, readdir: mockReaddir };
+  return { ...actual, readdir: mockReaddir, rm: mockRm };
 });
 
-const { mkdir, rm, stat, utimes } = actualFs;
+const { mkdir, rm: actualRm, stat, utimes } = actualFs;
 
 describe("cleanOldProjects", () => {
   let tmpDir: string;
@@ -44,7 +47,7 @@ describe("cleanOldProjects", () => {
       expect(cleaned).toBeGreaterThanOrEqual(1);
       await expect(stat(oldDir)).rejects.toThrow();
     } finally {
-      await rm(oldDir, { recursive: true }).catch(() => {});
+      await actualRm(oldDir, { recursive: true }).catch(() => {});
     }
   });
 
@@ -57,7 +60,7 @@ describe("cleanOldProjects", () => {
       const info = await stat(freshDir);
       expect(info.isDirectory()).toBe(true);
     } finally {
-      await rm(freshDir, { recursive: true }).catch(() => {});
+      await actualRm(freshDir, { recursive: true }).catch(() => {});
     }
   });
 
@@ -70,7 +73,7 @@ describe("cleanOldProjects", () => {
       const info = await stat(otherDir);
       expect(info.isDirectory()).toBe(true);
     } finally {
-      await rm(otherDir, { recursive: true }).catch(() => {});
+      await actualRm(otherDir, { recursive: true }).catch(() => {});
     }
   });
 
@@ -95,7 +98,33 @@ describe("cleanOldProjects", () => {
       expect(stderrOutput).toContain("[scuttlerun] Cleaned");
     } finally {
       process.stderr.write = origWrite;
-      await rm(oldDir, { recursive: true }).catch(() => {});
+      await actualRm(oldDir, { recursive: true }).catch(() => {});
+    }
+  });
+
+  it("logs per-directory errors to stderr when verbose is true", async () => {
+    const { cleanOldProjects } = await import("../src/cleanup.js");
+    const oldDir = await createOldDir("scuttlerun-project-test-rmerr-" + Date.now(), 10);
+
+    // Make rm throw for this directory
+    mockRm.mockRejectedValueOnce(new Error("EBUSY: resource busy"));
+
+    let stderrOutput = "";
+    const origWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const cleaned = await cleanOldProjects(7, { verbose: true });
+      // rm failed so the dir wasn't cleaned
+      expect(cleaned).toBe(0);
+      expect(stderrOutput).toContain("[scuttlerun] Failed to clean");
+      expect(stderrOutput).toContain("EBUSY");
+    } finally {
+      process.stderr.write = origWrite;
+      await actualRm(oldDir, { recursive: true }).catch(() => {});
     }
   });
 

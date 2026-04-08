@@ -352,5 +352,30 @@ describe("transcript", () => {
       expect(output).not.toContain("files_edited");
       expect(output).not.toContain("files_read");
     });
+
+    it("includes oracle_usage when provided", () => {
+      writeFooter({
+        turns: 3,
+        toolCalls: 5,
+        durationMs: 12000,
+        totalCostUsd: 0.05,
+        oracleUsage: { input_tokens: 1500, output_tokens: 200, calls: 4 },
+      });
+      expect(output).toContain("oracle_usage:");
+      expect(output).toContain("input_tokens: 1500");
+      expect(output).toContain("output_tokens: 200");
+      expect(output).toContain("calls: 4");
+    });
+
+    it("omits oracle_usage when calls is 0", () => {
+      writeFooter({
+        turns: 1,
+        toolCalls: 0,
+        durationMs: 5000,
+        totalCostUsd: 0,
+        oracleUsage: { input_tokens: 0, output_tokens: 0, calls: 0 },
+      });
+      expect(output).not.toContain("oracle_usage");
+    });
   });
 });

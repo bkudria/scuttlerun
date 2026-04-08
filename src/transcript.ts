@@ -15,6 +15,7 @@ export interface FooterStats {
   filesWritten?: string[];
   filesEdited?: string[];
   filesRead?: string[];
+  oracleUsage?: { input_tokens: number; output_tokens: number; calls: number };
 }
 
 function write(text: string): void {
@@ -134,6 +135,9 @@ export function writeFooter(stats: FooterStats): void {
   }
   if (stats.filesRead && stats.filesRead.length > 0) {
     footer.files_read = stats.filesRead;
+  }
+  if (stats.oracleUsage && stats.oracleUsage.calls > 0) {
+    footer.oracle_usage = stats.oracleUsage;
   }
   const doc = new Document(footer);
   write("\n" + doc.toString({ lineWidth: 0 }));

@@ -325,6 +325,7 @@ export async function runSession(
       filesWritten: Array.from(filesWritten),
       filesEdited: Array.from(filesEdited),
       filesRead: Array.from(filesRead),
+      oracleUsage: oracle.getTotalUsage(),
     });
   } catch {
     exitCode = timedOut ? 5 : 2;

@@ -219,7 +219,8 @@ async function main() {
 
         for (const file of allFiles) {
           const resolved = resolve(file);
-          configDir = dirname(resolved);
+          // Use the first file's directory for resolving relative paths (e.g. skill paths)
+          if (configPaths.length === 0) configDir = dirname(resolved);
           configPaths.push(resolved);
           const content = await readFile(resolved, "utf8");
           yamlContents.push(content);

@@ -31,8 +31,10 @@ export async function cleanOldProjects(
           await rm(dirPath, { recursive: true });
           cleaned++;
         }
-      } catch {
-        // Ignore per-directory errors (in use, already deleted, etc.)
+      } catch (err) {
+        if (options.verbose) {
+          process.stderr.write(`[scuttlerun] Failed to clean ${entry.name}: ${String(err)}\n`);
+        }
       }
     }
   } catch {

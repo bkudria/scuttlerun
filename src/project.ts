@@ -54,11 +54,20 @@ export async function scaffoldProject(
     );
   }
 
+  // Git init before file writes so that files cannot create malicious .git/hooks/
+  if (config.git_init) {
+    await execFileAsync("git", ["init"], { cwd: projectPath });
+  }
+
   // Write project files
   if (config.files) {
     // Resolve the project path once via realpath (handles symlinks in tmpdir, e.g. macOS /tmp → /private/tmp)
     const realProjectPath = await fs.realpath(projectPath);
     for (const [filePath, content] of Object.entries(config.files)) {
+      // Reject writes into .git/ to prevent malicious git hooks
+      if (filePath === ".git" || filePath.startsWith(".git/")) {
+        throw new Error(`File path targets .git/ directory: "${filePath}"`);
+      }
       const fullPath = join(projectPath, filePath);
       // Use resolve() for the file path since it may not exist yet (realpath requires existence)
       const realFullPath = resolve(realProjectPath, filePath);
@@ -71,11 +80,6 @@ export async function scaffoldProject(
       await fs.mkdir(dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, content);
     }
-  }
-
-  // Git init
-  if (config.git_init) {
-    await execFileAsync("git", ["init"], { cwd: projectPath });
   }
 
   return { projectPath };
