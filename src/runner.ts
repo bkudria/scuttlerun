@@ -332,6 +332,7 @@ export async function runSession(
   }
 
   // Cleanup
+  /* v8 ignore next -- timeoutHandle is always set; defensive guard */
   if (timeoutHandle) clearTimeout(timeoutHandle);
   if (queryHandle) queryHandle.close();
 

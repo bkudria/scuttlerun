@@ -599,6 +599,97 @@ describe("runSession", () => {
     expect(stdoutOutput).toContain("  - /tmp/sky.txt");
   });
 
+  it("handles assistant message with no content", async () => {
+    const mockQuery = createMockQuery([
+      { type: "system", subtype: "init", session_id: "s-no-content", tools: [], model: "claude-haiku-4-5" },
+      {
+        type: "assistant",
+        message: { role: "assistant", content: undefined },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "s-no-content",
+        num_turns: 1,
+        total_cost_usd: 0,
+      },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+    const result = await runSession(minConfig());
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("counts non-tracked tools without recording file paths", async () => {
+    const mockQuery = createMockQuery([
+      { type: "system", subtype: "init", session_id: "s-bash", tools: [], model: "claude-haiku-4-5" },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "tu-1", name: "Bash", input: { command: "echo hi" } },
+          ],
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "s-bash",
+        num_turns: 1,
+        total_cost_usd: 0,
+      },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+    await runSession(minConfig());
+    expect(stdoutOutput).toContain("tool_calls: 1");
+    expect(stdoutOutput).not.toContain("files_written:");
+    expect(stdoutOutput).not.toContain("files_read:");
+  });
+
+  it("ignores unknown message types gracefully", async () => {
+    const mockQuery = createMockQuery([
+      { type: "system", subtype: "init", session_id: "s-unknown", tools: [], model: "claude-haiku-4-5" },
+      { type: "tool_result", tool_use_id: "tu-1", content: "ok" },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "s-unknown",
+        num_turns: 1,
+        total_cost_usd: 0,
+      },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+    const result = await runSession(minConfig());
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("skips tool_use blocks with no name", async () => {
+    const mockQuery = createMockQuery([
+      { type: "system", subtype: "init", session_id: "s-noname", tools: [], model: "claude-haiku-4-5" },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "tu-1", name: "", input: {} },
+            { type: "text", text: "Done." },
+          ],
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "s-noname",
+        num_turns: 1,
+        total_cost_usd: 0,
+      },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+    await runSession(minConfig());
+    expect(stdoutOutput).toContain("Done.");
+    expect(stdoutOutput).toContain("tool_calls: 0");
+  });
+
   it("logs verbose output when scaffolding a project", async () => {
     const mockQuery = createMockQuery([
       { type: "system", subtype: "init", session_id: "s-verbose-project", tools: [], model: "claude-haiku-4-5" },

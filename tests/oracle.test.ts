@@ -205,6 +205,33 @@ describe("Oracle", () => {
   });
 
   describe("message building", () => {
+    it("handles questions with no options", async () => {
+      mockParse.mockResolvedValueOnce({
+        parsed_output: {
+          answers: [{ question: "What name?", answer: "Ocean" }],
+          reasoning: "user chose a name",
+        },
+        usage: { input_tokens: 80, output_tokens: 40 },
+      });
+
+      await oracle.answerQuestions({
+        persona: "test",
+        conversationContext: [],
+        questions: [
+          {
+            question: "What name?",
+            header: "Name",
+            options: [],
+            multiSelect: false,
+          },
+        ],
+      });
+
+      const userMsg = mockParse.mock.calls[0][0].messages[0].content;
+      expect(userMsg).toContain("What name?");
+      expect(userMsg).not.toContain("Options:");
+    });
+
     it("includes multiSelect label in user message", async () => {
       mockParse.mockResolvedValueOnce({
         parsed_output: {
