@@ -2,10 +2,18 @@
   "name": "scuttlerun",
   "version": "0.1.0",
   "description": "Multi-turn Claude session driver",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bkudria/scuttlerun.git"
+  },
   "type": "module",
   "bin": {
     "scuttlerun": "./dist/cli.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

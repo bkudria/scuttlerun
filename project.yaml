@@ -1,7 +1,7 @@
 name: scuttlerun
 description: Multi-turn Claude session driver
 language: typescript
-profiles: [base]
+profiles: [base, public]
 
 standards:
   tests:

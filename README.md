@@ -1,5 +1,8 @@
 # scuttlerun
 
+[![npm version](https://img.shields.io/npm/v/scuttlerun.svg)](https://www.npmjs.com/package/scuttlerun)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > **Unreleased.** scuttlerun is under active development and its API, config format, and behavior may change without notice.
 
 A TypeScript CLI that drives multi-turn Claude sessions programmatically using the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk). scuttlerun simulates a synthetic user powered by an LLM oracle, enabling headless, scriptable, fully-observable interactions with Claude — including interactive tools like `AskUserQuestion`.
@@ -83,7 +86,7 @@ Multiple YAML files are deep-merged (objects merge, arrays/scalars replace):
 scuttlerun base.yaml scenario-override.yaml
 ```
 
-## CLI
+## Usage
 
 ```
 scuttlerun <session.yaml> [override.yaml...] [options]
