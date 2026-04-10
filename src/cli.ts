@@ -94,6 +94,9 @@ Session Config (YAML):
       skills:                           # Symlinked into <tempdir>/.claude/skills/
         - ~/.claude/skills/my-skill     #   Supports ~ and relative paths
       settings: {}                      # Written to <tempdir>/.claude/settings.json
+      files:                            # Written to <tempdir>/<path> (key=path, value=content)
+        app.py: |
+          print("hello")
       git_init: false                   # Run 'git init' in temp dir (default: false)
 
     # --- Sandbox ---
@@ -238,7 +241,7 @@ async function main() {
         if (opts.dryRun) {
           // Output resolved config summary as YAML
           const proj = config.project;
-          const hasProject = proj && (proj.claude_md || (proj.skills && proj.skills.length > 0) || proj.git_init);
+          const hasProject = proj && (proj.claude_md || (proj.skills && proj.skills.length > 0) || proj.files || proj.git_init);
 
           const summary: Record<string, unknown> = {
             model: config.model,
@@ -257,6 +260,7 @@ async function main() {
                     ...(proj.claude_md ? { claude_md: proj.claude_md } : {}),
                     ...(proj.skills && proj.skills.length > 0 ? { skills: proj.skills } : {}),
                     ...(proj.settings ? { settings: proj.settings } : {}),
+                    ...(proj.files ? { files: proj.files } : {}),
                     ...(proj.git_init ? { git_init: proj.git_init } : {}),
                   },
                 }
