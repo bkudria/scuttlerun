@@ -380,6 +380,49 @@ describe("parseSessionConfig", () => {
     expect(agent.description).toBe("d");
     expect(agent.futureField).toBe(42);
   });
+
+  it("parses valid sdk.plugins array", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: {
+        plugins: [
+          { type: "local", path: "/absolute/path/to/plugin" },
+          { type: "local", path: "~/my-plugin" },
+        ],
+      },
+    });
+    expect(config.sdk.plugins).toEqual([
+      { type: "local", path: "/absolute/path/to/plugin" },
+      { type: "local", path: "~/my-plugin" },
+    ]);
+  });
+
+  it("defaults sdk.plugins to undefined when not specified", () => {
+    const config = parseSessionConfig({ prompt: "hi" });
+    expect(config.sdk.plugins).toBeUndefined();
+  });
+
+  it("accepts empty sdk.plugins array", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: { plugins: [] },
+    });
+    expect(config.sdk.plugins).toEqual([]);
+  });
+
+  it("rejects sdk.plugins entry missing path", () => {
+    expect(() => parseSessionConfig({
+      prompt: "hi",
+      sdk: { plugins: [{ type: "local" }] },
+    })).toThrow();
+  });
+
+  it("rejects sdk.plugins entry with invalid type", () => {
+    expect(() => parseSessionConfig({
+      prompt: "hi",
+      sdk: { plugins: [{ type: "remote", path: "/foo" }] },
+    })).toThrow();
+  });
 });
 
 describe("mergeRawConfigs", () => {

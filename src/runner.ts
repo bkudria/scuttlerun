@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { SessionConfig } from "./config.js";
 import { Oracle, AskUserQuestionInputSchema } from "./oracle.js";
 import { SyntheticUser } from "./synthetic-user.js";
-import { scaffoldProject, createProjectDir } from "./project.js";
+import { scaffoldProject, createProjectDir, resolveSkillPath } from "./project.js";
 import { cleanOldProjects } from "./cleanup.js";
 import {
   writeHeader,
@@ -149,6 +149,13 @@ export async function runSession(
     if (config.sdk.thinking) sdkOptions.thinking = config.sdk.thinking;
     if (config.sdk.mcp_servers) sdkOptions.mcpServers = config.sdk.mcp_servers;
     if (config.sdk.agents) sdkOptions.agents = config.sdk.agents;
+    if (config.sdk.plugins) {
+      const configDir = options.configDir || process.cwd();
+      sdkOptions.plugins = config.sdk.plugins.map(p => ({
+        ...p,
+        path: resolveSkillPath(p.path, configDir),
+      }));
+    }
     // Subprocess environment: when sandbox is enabled, filter process.env
     // through an allowlist to prevent leaking secrets (API keys, tokens, etc.)
     if (sandboxHome) {

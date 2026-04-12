@@ -244,6 +244,9 @@ sdk:
     type: adaptive
   mcp_servers: {}                   # Optional MCP servers
   agents: {}                        # Optional subagent definitions
+  plugins:                          # Optional plugins to load
+    - type: local                   #   Currently only 'local' is supported
+      path: ~/code/my-plugin        #   Absolute, ~-relative, or config-relative path
   env: {}                           # Optional environment variables
 
 ```
@@ -308,6 +311,7 @@ Most YAML fields map directly to SDK options (e.g., `model` → `model`, `max_tu
 | `permission_mode` | `permissionMode` + `allowDangerouslySkipPermissions` | When `permission_mode: bypassPermissions`, scuttlerun also sets `allowDangerouslySkipPermissions: true`. |
 | `sdk.setting_sources` | `settingSources` | Controls which filesystem settings to load. `["project"]` means "load CLAUDE.md from cwd." Auto-set to `["project"]` when `project:` is present (cwd is the scaffolded temp dir). |
 | `sdk.thinking` | `thinking` | Discriminated union: `{ type: "adaptive" }`, `{ type: "enabled", budgetTokens?: number }`, or `{ type: "disabled" }`. |
+| `sdk.plugins` | `plugins` | Array of `{ type: "local", path: string }`. Paths are resolved (tilde-expanded, relative from config dir) before passing to the SDK. Loads plugins with their skills, agents, hooks, and MCP servers. |
 | `effort` | `effort` | Top-level in both YAML and SDK. Orthogonal to `thinking`. |
 
 ---

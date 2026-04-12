@@ -102,11 +102,17 @@ const AgentDefinitionSchema = z.object({
   maxTurns: z.number().int().min(1).optional(),
 }).passthrough();
 
+const SdkPluginConfigSchema = z.object({
+  type: z.literal("local"),
+  path: z.string(),
+});
+
 const SdkConfigSchema = z.object({
   system_prompt: SystemPromptSchema.default({ preset: "claude_code" }),
   thinking: ThinkingConfigSchema.optional(),
   mcp_servers: z.record(z.string(), McpServerConfigSchema).optional(),
   agents: z.record(z.string(), AgentDefinitionSchema).optional(),
+  plugins: z.array(SdkPluginConfigSchema).optional(),
   env: z.record(z.string(), z.string()).optional(),
   setting_sources: z.array(SettingSourceSchema).optional(),
 });

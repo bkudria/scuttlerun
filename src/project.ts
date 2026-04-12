@@ -113,7 +113,7 @@ async function validateSkillPath(
   }
 }
 
-function resolveSkillPath(skillPath: string, configDir: string): string {
+export function resolveSkillPath(skillPath: string, configDir: string): string {
   // Expand tilde
   if (skillPath.startsWith("~/")) {
     const home = process.env.HOME || process.env.USERPROFILE || "";

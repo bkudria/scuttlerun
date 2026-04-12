@@ -142,6 +142,9 @@ Session Config (YAML):
         type: adaptive                  #   adaptive | enabled | disabled
       mcp_servers: {}                   # MCP server definitions (optional)
       agents: {}                        # Subagent definitions (optional)
+      plugins:                          # Plugins to load (optional)
+        - type: local                   #   Local plugin directory
+          path: ~/code/my-plugin        #   Supports ~ and relative paths
       env: {}                           # Environment variables (optional)
       setting_sources:                  # Settings to load (optional)
         - project                       #   Auto-set to [project] when project: present
@@ -265,6 +268,7 @@ async function main() {
                   },
                 }
               : {}),
+            ...(config.sdk.plugins ? { sdk: { plugins: config.sdk.plugins } } : {}),
             prompt: config.prompt,
           };
 
