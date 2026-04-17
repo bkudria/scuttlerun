@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "npm run clean && tsc",
+    "build": "npm run clean && tsc && chmod +x dist/cli.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
