@@ -97,7 +97,7 @@ The core orchestrator. Responsibilities:
 - Handle errors and timeouts gracefully
 - Clean up SDK child process after session ends (project directory is preserved)
 
-**Session initialization:** The SDK emits a `SystemMessage` (subtype: `"init"`) at the start of each query turn, carrying the `session_id`. scuttlerun captures the first one to populate the `session_start` event. Note: subsequent turns also emit `init` messages (same `session_id`).
+**Session initialization:** The SDK emits a `SystemMessage` (subtype: `"init"`) at the start of each query turn, carrying the `session_id`. scuttlerun captures the first one and emits the preamble YAML mapping (`session:`, `config:`, `project:`, `transcript:`) before the `conversation:` sequence begins. Note: subsequent turns also emit `init` messages (same `session_id`); they are ignored.
 
 **Turn completion signal:** The SDK emits a `ResultMessage` when a query turn completes. This message carries `stop_reason`, `session_id`, `usage`, `total_cost_usd`, `num_turns`, `is_error`, and `subtype`:
 - `"success"` — normal completion; triggers the turn policy
@@ -124,13 +124,13 @@ The core orchestrator. Responsibilities:
 
 **Nested sessions:** The Agent SDK spawns a Claude Code child process. scuttlerun must call `delete process.env.CLAUDECODE` before calling `query()`, to avoid "nested session" errors when scuttlerun itself runs inside Claude Code.
 
-**Timeout implementation:** scuttlerun creates an `AbortController` and passes it via the SDK's `abortController` option. A `setTimeout` triggers `controller.abort()` after `--timeout` seconds. On abort, scuttlerun writes a `session_end` event with `stop_reason: "timeout"` and exits with code 5.
+**Timeout implementation:** scuttlerun creates an `AbortController` and passes it via the SDK's `abortController` option. A `setTimeout` triggers `controller.abort()` after `--timeout` seconds. On abort, the SDK iterator throws, scuttlerun finalizes the transcript with a `writeFooter()` call (partial stats based on what completed before abort), and exits with code 5.
 
 **Implementation note:** The `for await` loop over the SDK's async iterable does not respond to `AbortController` signals mid-iteration. scuttlerun uses a manual async iterator with `Promise.race` — each `iterator.next()` call is raced against a Promise that resolves when the abort signal fires. This ensures the timeout fires within one iteration rather than waiting for the next SDK message.
 
 **Cleanup:** On session completion (normal or error), scuttlerun calls `query.close()` to terminate the SDK's child process. The project temp directory is never deleted — it is preserved for inspection. The `finally` block ensures the SDK child process is cleaned up even on unhandled errors.
 
-**Agent stderr:** The SDK accepts a `stderr: (data: string) => void` callback. scuttlerun accumulates all stderr output in an in-memory buffer and writes a single `agent_stderr` event at session end. Stderr is low-value diagnostic data — losing it on a crash is acceptable. For live stderr during development, `--verbose` tees it to scuttlerun's own stderr.
+**Agent stderr:** The SDK accepts a `stderr: (data: string) => void` callback. scuttlerun wires this callback only when `--verbose` is set, forwarding each chunk directly to scuttlerun's own stderr; the transcript YAML on stdout does not include agent stderr. Without `--verbose`, agent stderr is silently discarded. Stderr is low-value diagnostic data — losing it on a non-verbose run is acceptable.
 
 #### 2. Synthetic User
 
@@ -158,18 +158,19 @@ A thin wrapper around the Anthropic Messages API (not the Agent SDK) that:
 
 #### 4. Transcript Output
 
-scuttlerun streams a human-readable transcript to stdout as the session runs. The transcript includes:
+scuttlerun streams a single YAML document to stdout as the session runs. The shape is:
 
-- **Preamble**: config file paths, project temp dir path
-- **Transcript path**: SDK session file path (printed after session ID is known)
-- **User messages**: initial prompt and follow-ups (prefixed `>>> User`)
-- **Assistant text**: full response text (prefixed `<<< Assistant`)
-- **Thinking blocks**: extended thinking content (prefixed `<<< Thinking`)
-- **Tool calls**: abbreviated summaries (e.g., `⚙ Write /tmp/ocean.txt`)
-- **Oracle decisions**: AskUserQuestion answers and turn policy decisions (prefixed `⚡ Oracle`)
-- **Summary**: paths, turn count, tool call count, duration, cost
+- **Preamble mapping** (emitted once, after the SDK init message): `session:` (session_id), `config:` (one path or an array of paths), `project:` (temp dir), `transcript:` (SDK session JSONL path).
+- **`conversation:` sequence** (streamed entries, one per agent event):
+  - `user:` — initial prompt and synthetic-user follow-ups.
+  - `thinking:` — extended-thinking blocks.
+  - `assistant:` — agent text response.
+  - `tool:` — tool invocation; the shape depends on the tool (`path:` for Read/Write/Edit, `command:` for Bash, `pattern:` for Glob/Grep, `input:` for other tools).
+  - `oracle: ask_user` — oracle-answered AskUserQuestion, with `answers:` and `reasoning:`.
+  - `oracle: turn` — oracle turn-policy decision, with `decision:` plus optional `message:` and `reasoning:`.
+- **Footer mapping** (emitted after the `conversation:` sequence): `turns:`, `tool_calls:`, `duration_s:`, optional `cost_usd:`, `files_written:`, `files_edited:`, `files_read:`, `oracle_usage:`.
 
-scuttlerun relies on the Agent SDK's built-in session persistence for the full conversation record (written automatically to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`). This file is queryable with standard jq filters.
+The output is valid YAML parseable with `yq` or any YAML library. Multi-line string values use block-literal style (`|`). scuttlerun relies on the Agent SDK's built-in session persistence for the full native conversation record (written automatically to `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`). That file is queryable with standard jq filters.
 
 ---
 
@@ -283,8 +284,9 @@ scuttlerun always creates a temporary project directory in `$TMPDIR` with prefix
 - **Skill paths**: tilde (`~`) is expanded; relative paths are resolved from the config file's directory
 - **Symlinks**: each skill directory is symlinked (not copied) into `<tempdir>/.claude/skills/<name>/`
 - **Git init**: when `project.git_init: true`, scuttlerun runs `git init` in the directory. Default is `false`.
-- **Never cleaned up**: the project directory is preserved after the session ends. Its path is printed in the preamble and summary.
-- **Manual cleanup**: callers can clean up old directories via `rm -rf /tmp/scuttlerun-project-*`
+- **Preserved after the session**: the project directory is not deleted when the session ends. Its path is printed in the preamble and summary.
+- **7-day background cleanup**: at the start of each session, scuttlerun removes `$TMPDIR/scuttlerun-project-*` entries whose mtime is older than 7 days. This is a scuttlerun-internal garbage collector — it never touches dirs from the current or recent sessions and never touches non-scuttlerun entries. Failures are silently ignored.
+- **Manual cleanup**: callers can force-clean sooner with `rm -rf /tmp/scuttlerun-project-*`. The threshold is not currently configurable.
 
 ### Config Merging
 
@@ -372,7 +374,7 @@ canUseTool: async (
 ) => Promise<PermissionResult>
 ```
 
-This callback fires whenever the agent requests permission to use a tool, including `AskUserQuestion`. For AskUserQuestion calls, scuttlerun intercepts and provides synthetic answers; for all other tools, it returns `{ behavior: "allow" }` (the actual permission enforcement is handled by the configured `permissionMode`). scuttlerun records the SDK's `toolUseID` value as `tool_use_id` (snake_case) in the `ask_user_question` event for correlation with the SDK session file.
+This callback fires whenever the agent requests permission to use a tool, including `AskUserQuestion`. For AskUserQuestion calls, scuttlerun intercepts and provides synthetic answers; for all other tools, it returns `{ behavior: "allow" }` (the actual permission enforcement is handled by the configured `permissionMode`). The oracle's answers are emitted to the transcript as an `oracle: ask_user` entry with `answers:` and `reasoning:` fields; the SDK's native JSONL session file records the underlying `toolUseID` for correlation.
 
 **SDK note:** `canUseTool` fires for AskUserQuestion regardless of `permissionMode`. Even with `bypassPermissions`, the callback executes and provides the answers. This is the officially documented mechanism for programmatic AskUserQuestion handling (see [Agent SDK docs](https://platform.claude.com/docs/en/agent-sdk/user-input#handle-clarifying-questions)).
 
@@ -513,44 +515,51 @@ scuttlerun produces two output artifacts per session:
 
 ### 1. Streaming Transcript (stdout)
 
-scuttlerun streams a human-readable transcript to stdout as the session runs. The format is:
+scuttlerun streams a single YAML document to stdout as the session runs. The document is machine-parseable (valid YAML, consumable with `yq` or any YAML library) and human-readable. The shape is:
 
-```
-─── scuttlerun Session ───────────────────
-Config:     /abs/path/to/session.yaml
-Project:    /tmp/scuttlerun-project-xK3f9m
-Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
-───────────────────────────────────────
+```yaml
+---
+session: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+config: /abs/path/to/session.yaml
+project: /tmp/scuttlerun-project-xK3f9m
+transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
+conversation:
+  - user: |
+      Write a haiku about the ocean and save it to ocean.txt
 
->>> User
-Write a haiku about the ocean and save it to ocean.txt
+  - thinking: |
+      I'll follow the 5-7-5 syllable pattern.
 
-<<< Thinking
-I'll write a haiku following the 5-7-5 syllable pattern.
+  - assistant: |
+      I'll write a haiku about the ocean and save it to a file.
 
-<<< Assistant
-I'll write a haiku about the ocean and save it to a file.
+  - tool: Write
+    path: /tmp/scuttlerun-project-xK3f9m/ocean.txt
 
-  ⚙ Write /tmp/scuttlerun-project-xK3f9m/ocean.txt
-  ✓ Wrote 3 lines
+  - assistant: |
+      Done! I saved the haiku to ocean.txt.
 
-<<< Assistant
-Done! I saved the haiku to ocean.txt.
-
-─── Summary ──────────────────────────
-Config:     /abs/path/to/session.yaml
-Project:    /tmp/scuttlerun-project-xK3f9m
-Transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
-Turns:      2
-Tool calls: 1
-Duration:   12.3s
-Cost:       $0.05
-───────────────────────────────────────
+turns: 2
+tool_calls: 1
+duration_s: 12.3
+cost_usd: 0.05
 ```
 
-Oracle decisions are shown inline:
-- `⚡ Oracle answered: What language? → Python` (AskUserQuestion)
-- `⚡ Oracle: continue — "Can you add tests?"` (turn policy)
+Oracle decisions appear as dedicated entries rather than inline annotations:
+
+```yaml
+  - oracle: ask_user
+    answers:
+      "What language?": Python
+    reasoning: The persona prefers Python.
+
+  - oracle: turn
+    decision: continue
+    message: Can you add tests?
+    reasoning: The prompt implied wanting verification.
+```
+
+Tool entries vary by tool: `tool: Read|Write|Edit` carries `path:`, `tool: Bash` carries `command:`, `tool: Glob|Grep` carries `pattern:`, any other tool carries a generic `input:`. The footer mapping (`turns:`, `tool_calls:`, `duration_s:`, and the optional `cost_usd:`, `files_written:`, `files_edited:`, `files_read:`, `oracle_usage:`) is emitted once after the final `conversation:` entry. Multi-line string values use YAML block-literal style (`|`).
 
 ### 2. SDK Session File (conversation record)
 
@@ -593,11 +602,11 @@ jq 'select(.type=="assistant") | .message.content[] | select(.type=="tool_use")'
 
 | Error | Recovery |
 |-------|----------|
-| Oracle LLM call fails | Retry once; if still fails, write `error` event and end session (exit 2) |
-| Oracle returns refusal (`stop_reason: "refusal"`) | Write `error` event with refusal detail and end session (exit 2). Rare — the oracle prompts are benign. |
-| Agent SDK connection drops | Retry with exponential backoff (max 3 attempts) |
+| Oracle LLM call fails | Retry once; if still fails, write the failure to scuttlerun's stderr and end the session (exit 2). The transcript on stdout stops at whatever was streamed before the failure. |
+| Oracle returns refusal (`stop_reason: "refusal"`) | Write refusal detail to scuttlerun's stderr and end the session (exit 2). Rare — the oracle prompts are benign. |
+| Agent SDK connection drops | No retry. The thrown error sets exit code 2 and ends the session. See Future Considerations for automatic retry. |
 | Tool execution fails | Let the agent handle it (tool errors are normal agent flow) |
-| AskUserQuestion in subagent | Log warning; Agent SDK doesn't support this — deny gracefully |
+| AskUserQuestion in subagent | Answered by the oracle exactly like main-agent AUQ. scuttlerun's `canUseTool` callback does not discriminate by `agentID`, so subagent-origin AUQ calls are indistinguishable from main-agent calls in the transcript. |
 
 ### Fatal Errors
 
@@ -606,7 +615,7 @@ jq 'select(.type=="assistant") | .message.content[] | select(.type=="tool_use")'
 | Invalid session config | Exit 1 with validation error |
 | Invalid skill path in `project.skills` | Exit 1 (path doesn't exist or missing SKILL.md) |
 | API key missing/invalid | Exit 2 with auth error |
-| Session timeout | Write `session_end` with `stop_reason: "timeout"`, exit 5 |
+| Session timeout | Emit the footer mapping (partial stats) and exit 5. No distinguished timeout marker is written to the transcript; exit code 5 is the signal. |
 
 ---
 
@@ -696,6 +705,12 @@ Context summarization for the oracle LLM when conversations get long, rather tha
 
 ### Agent SDK V2 Migration
 The TypeScript SDK has a preview V2 API (`unstable_v2_createSession()` / `unstable_v2_resumeSession()`) with explicit `send()`/`stream()` cycles. When V2 stabilizes, it would replace the async generator + Promise coordination with a simpler per-turn call pattern.
+
+### Automatic SDK Retry on Transient Connection Drops
+Wrap the SDK `query()` call with exponential backoff retry (e.g. max 3 attempts). Non-trivial because `query()` returns an async iterator — a mid-iteration failure cannot be resumed in place, so retrying would restart the whole session (re-billing and losing any partial transcript output). Deferred until the semantics are clear (re-run from scratch vs. resume via `session_id`).
+
+### Subagent-origin AskUserQuestion Discrimination
+Thread the `canUseTool` `options` parameter (which carries `agentID` and `toolUseID`) through scuttlerun, then differentiate subagent-origin AUQ calls from main-agent calls. This would let the oracle apply a different persona/turn policy to subagents, or deny them outright with a warning. Currently both are treated identically.
 
 ---
 

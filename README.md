@@ -40,11 +40,11 @@ prompt: |
 | Field | Type | Default |
 |-------|------|---------|
 | `prompt` | string | *(required)* |
-| `model` | string | system default |
+| `model` | string | `claude-haiku-4-5` |
 | `max_turns` | number | `50` |
 | `max_budget_usd` | number | — |
 | `effort` | `low` \| `medium` \| `high` \| `max` | `high` |
-| `tools` | string[] | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion]` |
+| `tools` | string[] | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill]` |
 | `disallowed_tools` | string[] | — |
 | `permission_mode` | string | `bypassPermissions` |
 
@@ -65,7 +65,10 @@ When present, scuttlerun populates the project temp directory.
 | `project.claude_md` | string | — |
 | `project.skills` | string[] | — |
 | `project.settings` | object | — |
+| `project.files` | Record\<string, string\> | — |
 | `project.git_init` | boolean | `false` |
+
+`project.files` keys are relative paths written inside the temp project dir; values are the file contents. Useful for materializing fixtures, test data, or example source files alongside scaffolded CLAUDE.md/skills/settings.
 
 #### `sdk` (Agent SDK passthrough)
 
@@ -75,8 +78,22 @@ When present, scuttlerun populates the project temp directory.
 | `sdk.thinking` | `{type: "adaptive"}` \| `{type: "enabled"}` \| `{type: "disabled"}` | — |
 | `sdk.mcp_servers` | object | — |
 | `sdk.agents` | object | — |
+| `sdk.plugins` | `{type: "local", path: string}[]` | — |
 | `sdk.env` | Record\<string, string\> | — |
 | `sdk.setting_sources` | string[] | `["project"]` if `project:` present, else `[]` |
+
+#### `sandbox` (OS-level isolation)
+
+Enabled by default. Restricts the agent's filesystem and network access. When the sandbox is enabled, `$HOME` is redirected to `<projectDir>/.home` so tools (npm, pip, cargo) write caches inside the sandbox rather than your real home directory.
+
+| Field | Type | Default |
+|-------|------|---------|
+| `sandbox.enabled` | boolean | `true` |
+| `sandbox.network.allowed_domains` | string[] | `[]` (no network access) |
+| `sandbox.network.allow_local_binding` | boolean | `false` |
+| `sandbox.filesystem.deny_read` | string[] | `[~/.ssh, ~/.aws, ~/.config/gcloud]` |
+| `sandbox.filesystem.allow_write` | string[] | `[]` (cwd and `/tmp` are always writable) |
+| `sandbox.filesystem.deny_write` | string[] | `[.env]` |
 
 ### Config Merging
 

@@ -1,4 +1,24 @@
 import { z } from "zod";
+import { getKnownSdkToolNames } from "./sdk-tool-names.js";
+
+function warnUnknownTools(
+  names: string[] | undefined,
+  field: string,
+): void {
+  if (!names) return;
+  const known = getKnownSdkToolNames();
+  if (known.size === 0) return;
+  const seen = new Set<string>();
+  for (const name of names) {
+    if (known.has(name) || seen.has(name)) continue;
+    seen.add(name);
+    process.stderr.write(
+      `[scuttlerun] WARNING: Unknown tool name "${name}" in ${field}: list. ` +
+        `The SDK will silently ignore it. Known SDK tool names: ` +
+        `${[...known].sort().join(", ")}\n`,
+    );
+  }
+}
 
 const ThinkingConfigSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("adaptive") }),
@@ -174,6 +194,9 @@ export interface SessionConfig {
 
 export function parseSessionConfig(raw: unknown): SessionConfig {
   const parsed = SessionConfigRawSchema.parse(raw);
+
+  warnUnknownTools(parsed.tools, "tools");
+  warnUnknownTools(parsed.disallowed_tools, "disallowed_tools");
 
   // Re-parse nested objects through their schemas to apply inner defaults
   const user = UserConfigSchema.parse(parsed.user ?? {});

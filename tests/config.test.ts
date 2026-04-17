@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   parseSessionConfig,
   mergeRawConfigs,
@@ -501,5 +501,66 @@ describe("mergeRawConfigs", () => {
       model: "sonnet",
       user: { persona: "dev", max_turns: 3 },
     });
+  });
+});
+
+describe("parseSessionConfig tool validation", () => {
+  it("warns on unknown tool names to stderr", () => {
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    parseSessionConfig({ prompt: "hi", tools: ["Read", "TaskCreate"] });
+    const out = spy.mock.calls.map((c) => String(c[0])).join("");
+    expect(out).toContain("[scuttlerun] WARNING");
+    expect(out).toContain("TaskCreate");
+    spy.mockRestore();
+  });
+
+  it("does not warn on recognized SDK tool names", () => {
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    parseSessionConfig({
+      prompt: "hi",
+      tools: [
+        "Read",
+        "Write",
+        "Bash",
+        "TodoWrite",
+        "Task",
+        "Skill",
+        "EnterPlanMode",
+      ],
+    });
+    const out = spy.mock.calls.map((c) => String(c[0])).join("");
+    expect(out).not.toContain("WARNING");
+    spy.mockRestore();
+  });
+
+  it("warns on unknown tool names in disallowed_tools", () => {
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    parseSessionConfig({ prompt: "hi", disallowed_tools: ["TaskUpdate"] });
+    const out = spy.mock.calls.map((c) => String(c[0])).join("");
+    expect(out).toContain("[scuttlerun] WARNING");
+    expect(out).toContain("TaskUpdate");
+    expect(out).toContain("disallowed_tools");
+    spy.mockRestore();
+  });
+
+  it("emits one warning per unique unknown name", () => {
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    parseSessionConfig({
+      prompt: "hi",
+      tools: ["TaskCreate", "TaskCreate"],
+    });
+    const warnings = spy.mock.calls
+      .map((c) => String(c[0]))
+      .filter((s) => s.includes("WARNING"));
+    expect(warnings.length).toBe(1);
+    spy.mockRestore();
   });
 });

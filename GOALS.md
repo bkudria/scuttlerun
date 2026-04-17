@@ -26,7 +26,7 @@ A YAML file describes **intent, not reproduction**. Given LLM non-determinism, e
 
 scuttlerun is fully headless — no human intervention required during a session. This is equally about **enabling automation** (batch runs, CI) and **protecting the host system** (the agent operates in an isolated temp directory, not your real filesystem).
 
-Project directories are never cleaned up automatically. This preserves artifacts for inspection and leaves cleanup to the caller, who knows best when the output is no longer needed.
+Project directories are preserved after each session so artifacts remain available for inspection. At the start of each session, scuttlerun garbage-collects its own project directories in `$TMPDIR` that are older than 7 days (matching the `scuttlerun-project-` prefix); recent artifacts are never touched.
 
 The sandbox (redirecting `$HOME`, constraining network/filesystem access) exists for **safety** — preventing the agent from affecting the real system.
 
