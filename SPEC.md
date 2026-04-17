@@ -425,7 +425,7 @@ When the agent calls `AskUserQuestion`, the `canUseTool` callback fires. scuttle
      }
    };
    ```
-   For multi-select questions, multiple labels are joined with `", "`. Free-text answers are used directly as the value.
+   The oracle returns a single string per question. For multi-select questions, the LLM is expected to produce a human-readable combined answer (e.g., comma-joined labels), but the format is not enforced by scuttlerun.
 
 The SDK produces a successful tool result: `"User has answered your questions: \"<question>\"=\"<answer>\". You can now continue with the user's answers in mind."`
 
