@@ -22,6 +22,7 @@ vi.mock("../src/project.js", () => {
   return {
     createProjectDir: vi.fn().mockResolvedValue("/tmp/scuttlerun-project-test123"),
     scaffoldProject: vi.fn().mockResolvedValue({ projectPath: "/tmp/scuttlerun-project-scaffold123" }),
+    resolveSkillPath: vi.fn((p: string, _configDir: string) => p),
   };
 });
 vi.mock("../src/cleanup.js", () => {
@@ -38,7 +39,11 @@ vi.mock("node:fs", async () => {
 });
 
 import { query as mockQueryFn } from "@anthropic-ai/claude-agent-sdk";
-import { createProjectDir as mockCreateProjectDir, scaffoldProject as mockScaffoldProject } from "../src/project.js";
+import {
+  createProjectDir as mockCreateProjectDir,
+  scaffoldProject as mockScaffoldProject,
+  resolveSkillPath as mockResolveSkillPath,
+} from "../src/project.js";
 
 function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
   return {
@@ -1078,6 +1083,57 @@ describe("runSession", () => {
     expect(capturedOptions?.thinking).toEqual({ type: "adaptive" });
     expect(capturedOptions?.mcpServers).toEqual({ test: {} });
     expect(capturedOptions?.agents).toEqual({ helper: {} });
+  });
+
+  it("resolves sdk.plugins paths and forwards them to query", async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
+      (opts: Record<string, Record<string, unknown>>) => {
+        capturedOptions = opts.options;
+        return createMockQuery([
+          { type: "system", subtype: "init", session_id: "s-plugins", tools: [], model: "claude-haiku-4-5" },
+          { type: "result", subtype: "success", session_id: "s-plugins", num_turns: 1, total_cost_usd: 0 },
+        ]);
+      },
+    );
+
+    await runSession(
+      minConfig({
+        sdk: {
+          system_prompt: { preset: "claude_code" as const },
+          plugins: [{ type: "local", path: "~/my-plugin" }],
+          setting_sources: [],
+        },
+      }),
+      { configDir: "/tmp/cfg" },
+    );
+
+    expect(mockResolveSkillPath).toHaveBeenCalledWith("~/my-plugin", "/tmp/cfg");
+    expect(capturedOptions?.plugins).toEqual([
+      { type: "local", path: "~/my-plugin" },
+    ]);
+  });
+
+  it("falls back to process.cwd() for plugin resolution when configDir is omitted", async () => {
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      return createMockQuery([
+        { type: "system", subtype: "init", session_id: "s-plugins-cwd", tools: [], model: "claude-haiku-4-5" },
+        { type: "result", subtype: "success", session_id: "s-plugins-cwd", num_turns: 1, total_cost_usd: 0 },
+      ]);
+    });
+
+    await runSession(
+      minConfig({
+        sdk: {
+          system_prompt: { preset: "claude_code" as const },
+          plugins: [{ type: "local", path: "./rel" }],
+          setting_sources: [],
+        },
+      }),
+      // no configDir — forces options.configDir || process.cwd() to take the right side
+    );
+
+    expect(mockResolveSkillPath).toHaveBeenCalledWith("./rel", process.cwd());
   });
 
   it("passes claude_code preset as default systemPrompt", async () => {
