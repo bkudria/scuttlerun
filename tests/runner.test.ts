@@ -449,6 +449,35 @@ describe("runSession", () => {
     expect(neverEndingQuery.close).toHaveBeenCalled();
   });
 
+  it("swallows interrupt() rejection on timeout", async () => {
+    let resolveHang: (() => void) | undefined;
+    const mockQuery = {
+      close: vi.fn(),
+      interrupt: vi.fn(async () => {
+        resolveHang?.();
+        throw new Error("interrupt failed");
+      }),
+      [Symbol.asyncIterator]: async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "s-int-reject",
+          tools: [],
+          model: "claude-haiku-4-5",
+        };
+        await new Promise<void>((resolve) => {
+          resolveHang = resolve;
+        });
+      },
+    };
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    const result = await runSession(minConfig(), { timeoutSeconds: 0.1 });
+    expect(result.exitCode).toBe(5);
+    expect(mockQuery.interrupt).toHaveBeenCalled();
+  });
+
   it("deletes process.env.CLAUDECODE before calling query", async () => {
     process.env.CLAUDECODE = "1";
 
