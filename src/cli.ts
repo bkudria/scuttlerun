@@ -66,7 +66,7 @@ Session Config (YAML):
     model: claude-sonnet-4-6            # Agent model (default: claude-haiku-4-5)
     max_turns: 50                       # Max agent turns (default: 50)
     max_budget_usd: 1.00                # Max spend in USD (optional)
-    effort: high                        # low | medium | high | max (default: high)
+    effort: high                        # low | medium | high | xhigh | max (default: high)
 
     # --- Tools ---
     tools:                              # Tools the agent can use (default: below)
@@ -211,7 +211,7 @@ async function main() {
     .option("--prompt <text>", "Override the prompt from the YAML config")
     .option("--max-turns <n>", "Max agent turns (default: 50)", (v: string) => parseInt(v, 10))
     .option("--tools <tools>", "Tools list, comma-separated (e.g. Read,Write,Grep)")
-    .option("--effort <level>", "Thinking effort: low, medium, high, max (default: high)")
+    .option("--effort <level>", "Thinking effort: low, medium, high, xhigh, max (default: high)")
     .option("--timeout <seconds>", "Session timeout in seconds", (v: string) => parseInt(v, 10), 300)
     .option("-v, --verbose", "Verbose logging to stderr (includes agent stderr)")
     .option("-n, --dry-run", "Validate and display the resolved config without running")

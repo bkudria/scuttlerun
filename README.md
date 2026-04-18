@@ -43,7 +43,7 @@ prompt: |
 | `model` | string | `claude-haiku-4-5` |
 | `max_turns` | number | `50` |
 | `max_budget_usd` | number | — |
-| `effort` | `low` \| `medium` \| `high` \| `max` | `high` |
+| `effort` | `low` \| `medium` \| `high` \| `xhigh` \| `max` | `high` |
 | `tools` | string[] | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill]` |
 | `disallowed_tools` | string[] | — |
 | `permission_mode` | string | `bypassPermissions` |

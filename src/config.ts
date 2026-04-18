@@ -154,7 +154,7 @@ const SessionConfigRawSchema = z.object({
   model: z.string().default("claude-haiku-4-5"),
   max_turns: z.number().int().min(1).default(50),
   max_budget_usd: z.number().positive().optional(),
-  effort: z.enum(["low", "medium", "high", "max"]).default("high"),
+  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).default("high"),
   tools: z
     .array(z.string())
     .default(["Read", "Write", "Edit", "Bash", "Glob", "Grep", "AskUserQuestion", "Skill"]),
@@ -190,7 +190,7 @@ export interface SessionConfig {
   model: string;
   max_turns: number;
   max_budget_usd?: number;
-  effort: "low" | "medium" | "high" | "max";
+  effort: "low" | "medium" | "high" | "xhigh" | "max";
   tools: string[];
   disallowed_tools?: string[];
   project?: ProjectConfig;

@@ -114,6 +114,11 @@ describe("parseSessionConfig", () => {
     ).toThrow();
   });
 
+  it("accepts xhigh effort level", () => {
+    const config = parseSessionConfig({ prompt: "hi", effort: "xhigh" });
+    expect(config.effort).toBe("xhigh");
+  });
+
   it("rejects invalid permission mode", () => {
     expect(() =>
       parseSessionConfig({ prompt: "hi", permission_mode: "yolo" })

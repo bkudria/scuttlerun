@@ -188,7 +188,7 @@ prompt: |
 model: claude-haiku-4-5             # Agent model (default: system default)
 max_turns: 20                       # Max agent turns (default: 50)
 max_budget_usd: 1.00                # Max spend for this session (optional)
-effort: high                        # Thinking effort: low, medium, high, max (default: high)
+effort: high                        # Thinking effort: low, medium, high, xhigh, max (default: high)
                                     # Note: `effort` and `sdk.thinking` are orthogonal.
                                     # `effort` maps to SDK `effort` (controls depth/token spend).
                                     # `sdk.thinking` maps to SDK `thinking` (controls mechanism).
@@ -338,7 +338,7 @@ Options:
   --prompt TEXT             Override prompt (for quick one-offs)
   --max-turns N            Override max agent turns
   --tools TOOLS            Override tools (comma-separated, e.g. Read,Glob,Grep)
-  --effort LEVEL           Override effort (low, medium, high, max)
+  --effort LEVEL           Override effort (low, medium, high, xhigh, max)
   --timeout SECONDS        Overall session timeout (default: 300)
   --verbose, -v            Verbose logging to stderr
   --dry-run, -n            Validate and display resolved config without running
