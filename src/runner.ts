@@ -1,4 +1,4 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
@@ -137,7 +137,7 @@ export async function runSession(
     if (config.max_budget_usd) sdkOptions.maxBudgetUsd = config.max_budget_usd;
     const sp = config.sdk.system_prompt;
     if (typeof sp === "string") {
-      sdkOptions.systemPrompt = sp;
+      sdkOptions.systemPrompt = [sp, SYSTEM_PROMPT_DYNAMIC_BOUNDARY];
     } else {
       sdkOptions.systemPrompt = {
         type: "preset" as const,

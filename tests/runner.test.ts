@@ -3,11 +3,17 @@ import { runSession, buildSandboxEnv, SAFE_ENV_VARS, SAFE_ENV_PREFIXES } from ".
 import type { SessionConfig } from "../src/config.js";
 
 // Mock all dependencies
-vi.mock("@anthropic-ai/claude-agent-sdk", () => {
+vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
+  const actual = await vi.importActual<typeof import("@anthropic-ai/claude-agent-sdk")>(
+    "@anthropic-ai/claude-agent-sdk",
+  );
   return {
     query: vi.fn(),
+    SYSTEM_PROMPT_DYNAMIC_BOUNDARY: actual.SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
   };
 });
+
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 const mockParse = vi.fn();
 vi.mock("@anthropic-ai/sdk", () => {
   return {
@@ -1113,11 +1119,36 @@ describe("runSession", () => {
     }));
 
     expect(capturedOptions?.maxBudgetUsd).toBe(5.0);
-    expect(capturedOptions?.systemPrompt).toBe("Be concise");
+    expect(capturedOptions?.systemPrompt).toEqual(["Be concise", SYSTEM_PROMPT_DYNAMIC_BOUNDARY]);
     expect(capturedOptions?.disallowedTools).toEqual(["Agent"]);
     expect(capturedOptions?.thinking).toEqual({ type: "adaptive" });
     expect(capturedOptions?.mcpServers).toEqual({ test: {} });
     expect(capturedOptions?.agents).toEqual({ helper: {} });
+  });
+
+  it("wraps custom string systemPrompt in [string, SYSTEM_PROMPT_DYNAMIC_BOUNDARY] for prompt caching", async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: Record<string, Record<string, unknown>>) => {
+      capturedOptions = opts.options;
+      return createMockQuery([
+        { type: "system", subtype: "init", session_id: "s-cache", tools: [], model: "claude-haiku-4-5" },
+        { type: "result", subtype: "success", session_id: "s-cache", num_turns: 1, total_cost_usd: 0 },
+      ]);
+    });
+
+    await runSession(
+      minConfig({
+        sdk: {
+          system_prompt: "Be concise",
+          setting_sources: [],
+        },
+      }),
+    );
+
+    expect(capturedOptions?.systemPrompt).toEqual([
+      "Be concise",
+      SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+    ]);
   });
 
   it("resolves sdk.plugins paths and forwards them to query", async () => {
