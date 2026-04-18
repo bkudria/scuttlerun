@@ -381,6 +381,51 @@ describe("parseSessionConfig", () => {
     expect(agent.futureField).toBe(42);
   });
 
+  it("parses extended agent definition fields (initialPrompt, background, memory, effort, permissionMode)", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: {
+        agents: {
+          worker: {
+            description: "Worker agent",
+            prompt: "Do work",
+            initialPrompt: "start here",
+            background: true,
+            memory: "project",
+            effort: "xhigh",
+            permissionMode: "acceptEdits",
+          },
+        },
+      },
+    });
+    const agent = (config.sdk.agents as Record<string, Record<string, unknown>>)?.worker;
+    expect(agent.initialPrompt).toBe("start here");
+    expect(agent.background).toBe(true);
+    expect(agent.memory).toBe("project");
+    expect(agent.effort).toBe("xhigh");
+    expect(agent.permissionMode).toBe("acceptEdits");
+  });
+
+  it("accepts full model id string in agent definition", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      sdk: {
+        agents: {
+          a: { description: "d", prompt: "p", model: "claude-opus-4-7" },
+        },
+      },
+    });
+    const agent = (config.sdk.agents as Record<string, Record<string, unknown>>)?.a;
+    expect(agent.model).toBe("claude-opus-4-7");
+  });
+
+  it("rejects invalid memory scope in agent definition", () => {
+    expect(() => parseSessionConfig({
+      prompt: "hi",
+      sdk: { agents: { a: { description: "d", prompt: "p", memory: "global" } } },
+    })).toThrow();
+  });
+
   it("parses valid sdk.plugins array", () => {
     const config = parseSessionConfig({
       prompt: "hi",

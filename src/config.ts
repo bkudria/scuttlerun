@@ -115,11 +115,19 @@ const AgentDefinitionSchema = z.object({
   prompt: z.string(),
   tools: z.array(z.string()).optional(),
   disallowedTools: z.array(z.string()).optional(),
-  model: z.enum(["sonnet", "opus", "haiku", "inherit"]).optional(),
+  model: z.string().optional(),
   mcpServers: z.array(AgentMcpServerSpecSchema).optional(),
   criticalSystemReminder_EXPERIMENTAL: z.string().optional(),
   skills: z.array(z.string()).optional(),
   maxTurns: z.number().int().min(1).optional(),
+  initialPrompt: z.string().optional(),
+  background: z.boolean().optional(),
+  memory: z.enum(["user", "project", "local"]).optional(),
+  effort: z.union([
+    z.enum(["low", "medium", "high", "xhigh", "max"]),
+    z.number().int(),
+  ]).optional(),
+  permissionMode: z.enum(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"]).optional(),
 }).passthrough();
 
 const SdkPluginConfigSchema = z.object({
