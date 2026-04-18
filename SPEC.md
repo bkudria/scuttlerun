@@ -248,7 +248,11 @@ sdk:
   plugins:                          # Optional plugins to load
     - type: local                   #   Currently only 'local' is supported
       path: ~/code/my-plugin        #   Absolute, ~-relative, or config-relative path
-  env: {}                           # Optional environment variables
+  env: {}                           # Optional environment variables. When sandbox is
+                                    #   enabled, merged onto the filtered sandbox env.
+                                    #   When sandbox is disabled, replaces process.env
+                                    #   entirely (SDK semantics) — supply PATH/HOME if
+                                    #   the subprocess needs them.
 
 ```
 
