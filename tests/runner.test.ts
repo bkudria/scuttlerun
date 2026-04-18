@@ -22,7 +22,7 @@ vi.mock("../src/project.js", () => {
   return {
     createProjectDir: vi.fn().mockResolvedValue("/tmp/scuttlerun-project-test123"),
     scaffoldProject: vi.fn().mockResolvedValue({ projectPath: "/tmp/scuttlerun-project-scaffold123" }),
-    resolveSkillPath: vi.fn((p: string, _configDir: string) => p),
+    resolveSkillPath: vi.fn((p: string) => p),
   };
 });
 vi.mock("../src/cleanup.js", () => {
