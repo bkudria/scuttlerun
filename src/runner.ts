@@ -219,6 +219,7 @@ export async function runSession(
     timeoutHandle = setTimeout(() => {
       timedOut = true;
       abortController.abort();
+      queryHandle?.interrupt().catch(() => {});
     }, timeoutSeconds * 1000);
 
     // Launch the query
@@ -227,22 +228,9 @@ export async function runSession(
       options: sdkOptions,
     });
 
-    // Process messages — race each iteration against the abort signal
-    const iterator = (queryHandle as AsyncIterable<Record<string, unknown>>)[Symbol.asyncIterator]();
-    while (true) {
-      const abortPromise = new Promise<{ done: true; value: undefined }>((resolve) => {
-        abortController.signal.addEventListener("abort", () => {
-          resolve({ done: true, value: undefined });
-        }, { once: true });
-        // If already aborted, resolve immediately
-        if (abortController.signal.aborted) {
-          resolve({ done: true, value: undefined });
-        }
-      });
-
-      const result = await Promise.race([iterator.next(), abortPromise]);
-      if (result.done || timedOut) break;
-      const message = result.value as Record<string, unknown>;
+    for await (const rawMessage of queryHandle) {
+      if (timedOut) break;
+      const message = rawMessage as Record<string, unknown>;
 
       if (message.type === "system" && message.subtype === "init" && !sessionId) {
         sessionId = message.session_id as string;

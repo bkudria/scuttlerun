@@ -77,6 +77,7 @@ function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
 function createMockQuery(messages: Array<Record<string, unknown>>) {
   const mockQuery = {
     close: vi.fn(),
+    interrupt: vi.fn().mockResolvedValue(undefined),
     [Symbol.asyncIterator]: async function* () {
       for (const msg of messages) {
         yield msg;
@@ -417,9 +418,13 @@ describe("runSession", () => {
   });
 
   it("handles timeout with exit code 5", async () => {
-    // Create a query that never finishes
+    // Create a query that hangs until interrupt() is called
+    let resolveHang: (() => void) | undefined;
     const neverEndingQuery = {
       close: vi.fn(),
+      interrupt: vi.fn(async () => {
+        resolveHang?.();
+      }),
       [Symbol.asyncIterator]: async function* () {
         yield {
           type: "system",
@@ -428,8 +433,9 @@ describe("runSession", () => {
           tools: [],
           model: "claude-haiku-4-5",
         };
-        // Simulate hanging
-        await new Promise(() => {}); // never resolves
+        await new Promise<void>((resolve) => {
+          resolveHang = resolve;
+        });
       },
     };
 
@@ -806,7 +812,7 @@ describe("runSession", () => {
       (opts: { prompt: AsyncGenerator; options: Record<string, unknown> }) => {
         const inputGen = opts.prompt;
         return {
-          close: vi.fn(),
+          close: vi.fn(), interrupt: vi.fn().mockResolvedValue(undefined),
           [Symbol.asyncIterator]: async function* () {
             // Consume initial prompt from generator
             await inputGen.next();
@@ -863,7 +869,7 @@ describe("runSession", () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { options: { canUseTool?: CanUseToolFn } }) => {
       capturedCanUseTool = opts.options.canUseTool;
       return {
-        close: vi.fn(),
+        close: vi.fn(), interrupt: vi.fn().mockResolvedValue(undefined),
         [Symbol.asyncIterator]: async function* () {
           yield { type: "system", subtype: "init", session_id: "s-ask", tools: ["AskUserQuestion"], model: "claude-haiku-4-5" };
           // After init, syntheticUser is created — call canUseTool
@@ -901,7 +907,7 @@ describe("runSession", () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(() => {
       // Simulate: timeout fires, then error is thrown
       return {
-        close: vi.fn(),
+        close: vi.fn(), interrupt: vi.fn().mockResolvedValue(undefined),
         [Symbol.asyncIterator]: async function* () {
           yield { type: "system", subtype: "init", session_id: "s-throw-timeout", tools: [], model: "claude-haiku-4-5" };
           // Wait for timeout to fire, then throw
@@ -972,7 +978,7 @@ describe("runSession", () => {
       (opts: { prompt: AsyncGenerator; options: Record<string, unknown> }) => {
         const inputGen = opts.prompt;
         return {
-          close: vi.fn(),
+          close: vi.fn(), interrupt: vi.fn().mockResolvedValue(undefined),
           [Symbol.asyncIterator]: async function* () {
             // Consume initial prompt
             await inputGen.next();
