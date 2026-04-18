@@ -12,10 +12,11 @@ export interface FooterStats {
   toolCalls: number;
   durationMs: number;
   totalCostUsd: number;
+  oracleCostUsd?: number;
   filesWritten?: string[];
   filesEdited?: string[];
   filesRead?: string[];
-  oracleUsage?: { input_tokens: number; output_tokens: number; calls: number };
+  oracleUsage?: { input_tokens: number; output_tokens: number; calls: number; cost_usd?: number };
 }
 
 function write(text: string): void {
@@ -125,7 +126,10 @@ export function writeFooter(stats: FooterStats): void {
     duration_s: +(stats.durationMs / 1000).toFixed(1),
   };
   if (stats.totalCostUsd > 0) {
-    footer.cost_usd = +stats.totalCostUsd.toFixed(2);
+    footer.cost_usd = +stats.totalCostUsd.toFixed(4);
+  }
+  if (stats.oracleCostUsd !== undefined && stats.oracleCostUsd > 0) {
+    footer.oracle_cost_usd = +stats.oracleCostUsd.toFixed(4);
   }
   if (stats.filesWritten && stats.filesWritten.length > 0) {
     footer.files_written = stats.filesWritten;

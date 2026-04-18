@@ -569,6 +569,20 @@ Queryable with standard jq filters against the native JSONL format.
 
 ---
 
+## Cost Tracking
+
+The transcript footer emits `cost_usd` and `oracle_cost_usd`:
+
+- `cost_usd` — sum of the agent session cost (from SDK's `total_cost_usd`) and the oracle's API cost (computed from token counts via model pricing). Included when > 0.
+- `oracle_cost_usd` — the oracle's API cost alone. Included when > 0.
+- Both are rounded to 4 decimals.
+
+The pricing table is in `src/pricing.ts`. When Anthropic updates model rates, update this file and bump the "last verified" comment. Unknown models fall back to `claude-haiku-4-5` pricing.
+
+The `oracle_usage` block (when present) includes `input_tokens`, `output_tokens`, `calls`, and `cost_usd` — the raw per-metric breakdown the aggregate `oracle_cost_usd` was derived from.
+
+---
+
 ## Downstream Usage
 
 scuttlerun streams a human-readable transcript to stdout and preserves the SDK session file for programmatic queries. What happens next is entirely the caller's concern.

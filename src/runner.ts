@@ -324,15 +324,17 @@ export async function runSession(
 
     // Write footer
     const duration = Date.now() - startTime;
+    const oracleUsage = oracle.getTotalUsage();
     writeFooter({
       turns: resultNumTurns,
       toolCalls: toolCallCount,
       durationMs: duration,
-      totalCostUsd: resultTotalCostUsd,
+      totalCostUsd: resultTotalCostUsd + oracleUsage.cost_usd,
+      oracleCostUsd: oracleUsage.cost_usd,
       filesWritten: Array.from(filesWritten),
       filesEdited: Array.from(filesEdited),
       filesRead: Array.from(filesRead),
-      oracleUsage: oracle.getTotalUsage(),
+      oracleUsage,
     });
   } catch {
     exitCode = timedOut ? 5 : 2;

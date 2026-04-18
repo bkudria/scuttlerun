@@ -300,6 +300,9 @@ describe("Oracle", () => {
       expect(total.input_tokens).toBe(300);
       expect(total.output_tokens).toBe(130);
       expect(total.calls).toBe(2);
+      // Default oracle model is claude-haiku-4-5: $1/MTok input + $5/MTok output
+      // 300 input * $1/1M + 130 output * $5/1M = 0.0003 + 0.00065 = 0.00095
+      expect(total.cost_usd).toBeCloseTo(0.00095, 8);
     });
   });
 });

@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
+import { computeCostUsd } from "./pricing.js";
 
 // Schema for AskUserQuestion oracle response
 const AskUserQuestionResponseSchema = z.object({
@@ -76,12 +77,13 @@ export interface OracleUsageTotal {
   input_tokens: number;
   output_tokens: number;
   calls: number;
+  cost_usd: number;
 }
 
 export class Oracle {
   private client: Anthropic;
   private model: string;
-  private totalUsage: OracleUsageTotal = {
+  private totalUsage: { input_tokens: number; output_tokens: number; calls: number } = {
     input_tokens: 0,
     output_tokens: 0,
     calls: 0,
@@ -145,7 +147,10 @@ export class Oracle {
   }
 
   getTotalUsage(): OracleUsageTotal {
-    return { ...this.totalUsage };
+    return {
+      ...this.totalUsage,
+      cost_usd: computeCostUsd(this.model, this.totalUsage.input_tokens, this.totalUsage.output_tokens),
+    };
   }
 
   private async callWithRetry<T extends z.ZodType>(
