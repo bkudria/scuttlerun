@@ -94,6 +94,9 @@ export function writeTool(name: string, input: unknown): void {
     case "Grep":
       entry.pattern = String(inp.pattern ?? "");
       break;
+    case "TodoWrite":
+      entry.todos = inp.todos ?? [];
+      break;
     default:
       entry.input = inp;
       break;

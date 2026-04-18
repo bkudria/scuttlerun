@@ -152,6 +152,26 @@ describe("transcript", () => {
       expect(parsed.conversation[0].pattern).toBe("function\\s+\\w+");
     });
 
+    it("writes TodoWrite with todos array as top-level field", () => {
+      writeTool("TodoWrite", {
+        todos: [
+          { content: "Fix math.py", status: "in_progress", activeForm: "Fixing math.py" },
+          { content: "Fix util.py", status: "pending", activeForm: "Fixing util.py" },
+        ],
+      });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("TodoWrite");
+      expect(parsed.conversation[0].todos).toHaveLength(2);
+      expect(parsed.conversation[0].todos[0].content).toBe("Fix math.py");
+      expect(parsed.conversation[0].todos[0].status).toBe("in_progress");
+      expect(parsed.conversation[0].input).toBeUndefined();
+    });
+
+    it("handles missing todos in TodoWrite gracefully", () => {
+      writeTool("TodoWrite", {});
+      expect(output).toContain("todos:");
+    });
+
     it("writes unknown tools with input as YAML mapping", () => {
       writeTool("Agent", { prompt: "do something" });
       const parsed = parseYaml("conversation:\n" + output);
