@@ -78,15 +78,25 @@ export interface OracleUsageTotal {
   output_tokens: number;
   calls: number;
   cost_usd: number;
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
 }
 
 export class Oracle {
   private client: Anthropic;
   private model: string;
-  private totalUsage: { input_tokens: number; output_tokens: number; calls: number } = {
+  private totalUsage: {
+    input_tokens: number;
+    output_tokens: number;
+    calls: number;
+    cache_creation_input_tokens: number;
+    cache_read_input_tokens: number;
+  } = {
     input_tokens: 0,
     output_tokens: 0,
     calls: 0,
+    cache_creation_input_tokens: 0,
+    cache_read_input_tokens: 0,
   };
 
   constructor(model: string) {
@@ -149,7 +159,13 @@ export class Oracle {
   getTotalUsage(): OracleUsageTotal {
     return {
       ...this.totalUsage,
-      cost_usd: computeCostUsd(this.model, this.totalUsage.input_tokens, this.totalUsage.output_tokens),
+      cost_usd: computeCostUsd(
+        this.model,
+        this.totalUsage.input_tokens,
+        this.totalUsage.output_tokens,
+        this.totalUsage.cache_creation_input_tokens,
+        this.totalUsage.cache_read_input_tokens,
+      ),
     };
   }
 
@@ -157,14 +173,24 @@ export class Oracle {
     systemPrompt: string,
     userMessage: string,
     schema: T,
-  ): Promise<{ parsed_output: z.infer<T>; usage: { input_tokens: number; output_tokens: number } }> {
+  ): Promise<{
+    parsed_output: z.infer<T>;
+    usage: {
+      input_tokens: number;
+      output_tokens: number;
+      cache_creation_input_tokens?: number | null;
+      cache_read_input_tokens?: number | null;
+    };
+  }> {
     let lastError: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const response = await this.client.messages.parse({
           model: this.model,
           max_tokens: 1024,
-          system: systemPrompt,
+          system: [
+            { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
+          ],
           messages: [{ role: "user" as const, content: userMessage }],
           output_config: { format: zodOutputFormat(schema) },
         });
@@ -179,9 +205,16 @@ export class Oracle {
     throw lastError;
   }
 
-  private trackUsage(usage: { input_tokens: number; output_tokens: number }): void {
+  private trackUsage(usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+  }): void {
     this.totalUsage.input_tokens += usage.input_tokens;
     this.totalUsage.output_tokens += usage.output_tokens;
+    this.totalUsage.cache_creation_input_tokens += usage.cache_creation_input_tokens ?? 0;
+    this.totalUsage.cache_read_input_tokens += usage.cache_read_input_tokens ?? 0;
     this.totalUsage.calls += 1;
   }
 }

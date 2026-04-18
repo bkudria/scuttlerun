@@ -46,3 +46,35 @@ describe("computeCostUsd", () => {
     expect(future).toBeCloseTo(opus, 10);
   });
 });
+
+describe("cache token pricing", () => {
+  it("prices cache_creation_input_tokens at 1.25x input rate (haiku)", () => {
+    expect(computeCostUsd("claude-haiku-4-5", 0, 0, 1_000_000, 0)).toBeCloseTo(1.25, 6);
+  });
+
+  it("prices cache_read_input_tokens at 0.1x input rate (haiku)", () => {
+    expect(computeCostUsd("claude-haiku-4-5", 0, 0, 0, 1_000_000)).toBeCloseTo(0.1, 6);
+  });
+
+  it("scales cache rates with model family (sonnet)", () => {
+    // sonnet input rate is $3/MTok: 1M creation * 1.25 + 1M read * 0.1
+    expect(computeCostUsd("claude-sonnet-4-6", 0, 0, 1_000_000, 1_000_000)).toBeCloseTo(
+      3 * 1.25 + 3 * 0.1,
+      6,
+    );
+  });
+
+  it("sums input + output + cache_creation + cache_read correctly (haiku)", () => {
+    // haiku: $1/MTok input, $5/MTok output, $1.25/MTok cache_creation, $0.10/MTok cache_read
+    // 100k input + 50k output + 200k cache_creation + 800k cache_read
+    // = 0.1 + 0.25 + 0.25 + 0.08 = 0.68
+    expect(computeCostUsd("claude-haiku-4-5", 100_000, 50_000, 200_000, 800_000)).toBeCloseTo(
+      0.68,
+      6,
+    );
+  });
+
+  it("treats omitted cache params as zero (3-arg signature regression guard)", () => {
+    expect(computeCostUsd("claude-haiku-4-5", 1_000_000, 1_000_000)).toBe(6);
+  });
+});

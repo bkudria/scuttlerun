@@ -17,11 +17,21 @@ function getFamilyPrice(model: string): ModelPrice | undefined {
   return undefined;
 }
 
+const CACHE_CREATION_MULTIPLIER = 1.25;
+const CACHE_READ_MULTIPLIER = 0.1;
+
 export function computeCostUsd(
   model: string,
   inputTokens: number,
   outputTokens: number,
+  cacheCreationTokens: number = 0,
+  cacheReadTokens: number = 0,
 ): number {
   const price = PRICES[model] ?? getFamilyPrice(model) ?? PRICES["claude-haiku-4-5"];
-  return (inputTokens * price.inputPerMTok + outputTokens * price.outputPerMTok) / 1_000_000;
+  return (
+    inputTokens * price.inputPerMTok +
+    outputTokens * price.outputPerMTok +
+    cacheCreationTokens * price.inputPerMTok * CACHE_CREATION_MULTIPLIER +
+    cacheReadTokens * price.inputPerMTok * CACHE_READ_MULTIPLIER
+  ) / 1_000_000;
 }
