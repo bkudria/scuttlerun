@@ -13,6 +13,7 @@ export interface FooterStats {
   durationMs: number;
   totalCostUsd: number;
   oracleCostUsd?: number;
+  timedOut?: boolean;
   filesWritten?: string[];
   filesEdited?: string[];
   filesRead?: string[];
@@ -130,6 +131,9 @@ export function writeFooter(stats: FooterStats): void {
   }
   if (stats.oracleCostUsd !== undefined && stats.oracleCostUsd > 0) {
     footer.oracle_cost_usd = +stats.oracleCostUsd.toFixed(4);
+  }
+  if (stats.timedOut) {
+    footer.timed_out = true;
   }
   if (stats.filesWritten && stats.filesWritten.length > 0) {
     footer.files_written = stats.filesWritten;

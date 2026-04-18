@@ -331,6 +331,7 @@ export async function runSession(
       durationMs: duration,
       totalCostUsd: resultTotalCostUsd + oracleUsage.cost_usd,
       oracleCostUsd: oracleUsage.cost_usd,
+      timedOut,
       filesWritten: Array.from(filesWritten),
       filesEdited: Array.from(filesEdited),
       filesRead: Array.from(filesRead),

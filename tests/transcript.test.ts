@@ -377,5 +377,26 @@ describe("transcript", () => {
       });
       expect(output).not.toContain("oracle_usage");
     });
+
+    it("emits timed_out: true when the session timed out", () => {
+      writeFooter({
+        turns: 1,
+        toolCalls: 0,
+        durationMs: 300_000,
+        totalCostUsd: 0,
+        timedOut: true,
+      });
+      expect(output).toContain("timed_out: true");
+    });
+
+    it("omits timed_out when not timed out", () => {
+      writeFooter({
+        turns: 1,
+        toolCalls: 0,
+        durationMs: 5000,
+        totalCostUsd: 0,
+      });
+      expect(output).not.toContain("timed_out");
+    });
   });
 });
