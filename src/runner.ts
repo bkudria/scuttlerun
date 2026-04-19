@@ -39,8 +39,8 @@ export async function runSession(
   // Prevent nested session errors
   delete process.env.CLAUDECODE;
 
-  // Clean old project directories before creating new ones
-  await cleanOldProjects(7, { verbose });
+  // Clean old project directories in the background; best-effort, not on the critical path.
+  cleanOldProjects(7, { verbose }).catch(() => {});
 
   let sessionId: string | undefined;
   let queryHandle: ReturnType<typeof query> | undefined;

@@ -50,6 +50,7 @@ import {
   scaffoldProject as mockScaffoldProject,
   resolveSkillPath as mockResolveSkillPath,
 } from "../src/project.js";
+import { cleanOldProjects as mockCleanOldProjects } from "../src/cleanup.js";
 
 function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
   return {
@@ -102,6 +103,7 @@ describe("runSession", () => {
     vi.resetAllMocks();
     (mockCreateProjectDir as ReturnType<typeof vi.fn>).mockResolvedValue("/tmp/scuttlerun-project-test123");
     (mockScaffoldProject as ReturnType<typeof vi.fn>).mockResolvedValue({ projectPath: "/tmp/scuttlerun-project-scaffold123" });
+    (mockCleanOldProjects as ReturnType<typeof vi.fn>).mockResolvedValue(0);
     delete process.env.CLAUDECODE;
     stdoutOutput = "";
     process.stdout.write = ((chunk: string) => {
