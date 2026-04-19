@@ -188,9 +188,7 @@ export class Oracle {
         const response = await this.client.messages.parse({
           model: this.model,
           max_tokens: 1024,
-          system: [
-            { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
-          ],
+          system: systemPrompt,
           messages: [{ role: "user" as const, content: userMessage }],
           output_config: { format: zodOutputFormat(schema) },
         });

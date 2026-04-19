@@ -58,7 +58,7 @@ describe("Oracle", () => {
       expect(mockParse).toHaveBeenCalledOnce();
       const callArgs = mockParse.mock.calls[0][0];
       expect(callArgs.model).toBe("claude-haiku-4-5");
-      expect(callArgs.system[0].text).toContain("You prefer structured data.");
+      expect(callArgs.system).toContain("You prefer structured data.");
       expect(callArgs.messages[0].role).toBe("user");
     });
 
@@ -262,8 +262,8 @@ describe("Oracle", () => {
     });
   });
 
-  describe("prompt caching", () => {
-    it("passes system as a single TextBlockParam with ephemeral cache_control on answerQuestions", async () => {
+  describe("system prompt", () => {
+    it("passes system prompt as a string on answerQuestions", async () => {
       mockParse.mockResolvedValueOnce({
         parsed_output: {
           answers: [{ question: "Q", answer: "A" }],
@@ -286,18 +286,11 @@ describe("Oracle", () => {
       });
 
       const callArgs = mockParse.mock.calls[0][0];
-      expect(Array.isArray(callArgs.system)).toBe(true);
-      expect(callArgs.system).toHaveLength(1);
-      expect(callArgs.system[0]).toEqual(
-        expect.objectContaining({
-          type: "text",
-          cache_control: { type: "ephemeral" },
-        }),
-      );
-      expect(callArgs.system[0].text).toContain("PERSONA_MARKER");
+      expect(typeof callArgs.system).toBe("string");
+      expect(callArgs.system).toContain("PERSONA_MARKER");
     });
 
-    it("passes system as a single TextBlockParam with ephemeral cache_control on decideTurnPolicy", async () => {
+    it("passes system prompt as a string on decideTurnPolicy", async () => {
       mockParse.mockResolvedValueOnce({
         parsed_output: { decision: "end", reasoning: "done" },
         usage: { input_tokens: 100, output_tokens: 50 },
@@ -310,16 +303,9 @@ describe("Oracle", () => {
       });
 
       const callArgs = mockParse.mock.calls[0][0];
-      expect(Array.isArray(callArgs.system)).toBe(true);
-      expect(callArgs.system).toHaveLength(1);
-      expect(callArgs.system[0]).toEqual(
-        expect.objectContaining({
-          type: "text",
-          cache_control: { type: "ephemeral" },
-        }),
-      );
-      expect(callArgs.system[0].text).toContain("PERSONA_MARKER");
-      expect(callArgs.system[0].text).toContain("ORIGINAL_PROMPT_MARKER");
+      expect(typeof callArgs.system).toBe("string");
+      expect(callArgs.system).toContain("PERSONA_MARKER");
+      expect(callArgs.system).toContain("ORIGINAL_PROMPT_MARKER");
     });
   });
 
