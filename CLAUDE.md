@@ -39,7 +39,7 @@ When working with Agent SDK code (`@anthropic-ai/claude-code-sdk`), load the `/c
 - **`canUseTool` callback** is the correct mechanism for AskUserQuestion handling (PreToolUse hooks don't work — confirmed by spikes)
 - Must `delete process.env.CLAUDECODE` before `query()` to avoid nested session errors
 - Oracle uses `client.messages.parse()` with `output_format` for guaranteed structured JSON output
-- Timeout uses `AbortController` + `Promise.race` against the async iterator (the `for await` loop doesn't respond to abort signals mid-iteration)
+- Timeout uses `AbortController` (passed to SDK via `sdkOptions.abortController`) + `queryHandle.interrupt()` + a `timedOut` flag checked at the top of the `for await` loop (the `for await` doesn't respond to abort signals mid-iteration, so the flag break + SDK-driven iterator end are what actually stop the loop)
 
 ## Testing
 
