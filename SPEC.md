@@ -203,6 +203,8 @@ tools:                              # Tools available to the agent (maps to SDK 
   - Glob
   - Grep
   - AskUserQuestion                 # scuttlerun handles this via synthetic user
+additional_tools:                   # Appended to `tools` after defaults apply; deduped first-wins.
+  - TodoWrite                       # Use this to extend the default tools without re-enumerating them.
 disallowed_tools:                   # Tools to always deny, even under bypassPermissions (maps to SDK `disallowedTools`)
   - Agent                           # Example: block subagent spawning
 
@@ -304,6 +306,8 @@ Later files override earlier ones (deep merge on objects, replace on scalars/arr
 - `base.yaml` defines shared settings (model, tools, permissions)
 - `scenario.yaml` overrides prompt, user persona, output paths
 
+To add tools without re-enumerating the defaults, use `additional_tools:`. It is resolved *after* defaults and cross-file merging: the merged `tools` list (either defaulted or explicit) is appended with the merged `additional_tools`, then deduplicated first-wins. `additional_tools:` itself is still an array and still replaces wholesale on merge — so a scenario's `additional_tools` replaces the base's `additional_tools`, it does not accumulate across files.
+
 **Implementation note:** Merging happens on raw YAML objects *before* applying Zod schema defaults. This is critical — if defaults were applied first, an override YAML missing a field would get the default value, which would then replace the base's value during merge. The `mergeRawConfigs()` function merges raw objects, and `parseSessionConfig()` is called once on the merged result.
 
 ### YAML-to-SDK Option Mapping
@@ -313,6 +317,7 @@ Most YAML fields map directly to SDK options (e.g., `model` → `model`, `max_tu
 | YAML Field | SDK Option | Notes |
 |------------|-----------|-------|
 | `tools` | `tools` | Restricts which tools are *available* — the agent cannot see unlisted tools. This is NOT `allowedTools` (which pre-approves tools but doesn't restrict). |
+| `additional_tools` | — | Not forwarded directly; resolved into `tools` before the SDK call. Appends to whatever `tools` resolves to (default or explicit), deduped first-wins. Use to extend the defaults without re-enumerating them. |
 | `disallowed_tools` | `disallowedTools` | Always deny these tools, even under `bypassPermissions`. Overrides everything. |
 | `permission_mode` | `permissionMode` + `allowDangerouslySkipPermissions` | When `permission_mode: bypassPermissions`, scuttlerun also sets `allowDangerouslySkipPermissions: true`. |
 | `sdk.setting_sources` | `settingSources` | Controls which filesystem settings to load. `["project"]` means "load CLAUDE.md from cwd." Auto-set to `["project"]` when `project:` is present (cwd is the scaffolded temp dir). |

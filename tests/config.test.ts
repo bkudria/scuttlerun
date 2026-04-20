@@ -614,3 +614,73 @@ describe("parseSessionConfig tool validation", () => {
     spy.mockRestore();
   });
 });
+
+describe("additional_tools resolution", () => {
+  const DEFAULT_TOOLS = [
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+    "Glob",
+    "Grep",
+    "AskUserQuestion",
+    "Skill",
+  ];
+
+  it("appends additional_tools to the default tools when tools is absent", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      additional_tools: ["TodoWrite"],
+    });
+    expect(config.tools).toEqual([...DEFAULT_TOOLS, "TodoWrite"]);
+  });
+
+  it("appends additional_tools to an explicit tools list", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      tools: ["Read"],
+      additional_tools: ["TodoWrite"],
+    });
+    expect(config.tools).toEqual(["Read", "TodoWrite"]);
+  });
+
+  it("dedupes duplicate names, preserving first occurrence", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      tools: ["Read", "Write"],
+      additional_tools: ["Write", "TodoWrite"],
+    });
+    expect(config.tools).toEqual(["Read", "Write", "TodoWrite"]);
+  });
+
+  it("warns on unknown tool names in additional_tools", () => {
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    parseSessionConfig({
+      prompt: "hi",
+      additional_tools: ["NotATool"],
+    });
+    const out = spy.mock.calls.map((c) => String(c[0])).join("");
+    expect(out).toContain("[scuttlerun] WARNING");
+    expect(out).toContain("NotATool");
+    expect(out).toContain("additional_tools");
+    spy.mockRestore();
+  });
+
+  it("does not expose additional_tools on the parsed config", () => {
+    const config = parseSessionConfig({
+      prompt: "hi",
+      additional_tools: ["TodoWrite"],
+    });
+    expect("additional_tools" in config).toBe(false);
+  });
+
+  it("mergeRawConfigs: child's additional_tools replaces parent's", () => {
+    const result = mergeRawConfigs(
+      { additional_tools: ["A"] },
+      { additional_tools: ["B"] },
+    );
+    expect(result).toEqual({ additional_tools: ["B"] });
+  });
+});

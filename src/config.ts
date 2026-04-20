@@ -1,6 +1,17 @@
 import { z } from "zod";
 import { getKnownSdkToolNames } from "./sdk-tool-names.js";
 
+function dedupeAppend(base: string[], extra: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const name of [...base, ...extra]) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
 function warnUnknownTools(
   names: string[] | undefined,
   field: string,
@@ -158,6 +169,7 @@ const SessionConfigRawSchema = z.object({
   tools: z
     .array(z.string())
     .default(["Read", "Write", "Edit", "Bash", "Glob", "Grep", "AskUserQuestion", "Skill"]),
+  additional_tools: z.array(z.string()).optional(),
   disallowed_tools: z.array(z.string()).optional(),
   project: ProjectConfigSchema.optional(),
   permission_mode: z
@@ -204,7 +216,10 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
   const parsed = SessionConfigRawSchema.parse(raw);
 
   warnUnknownTools(parsed.tools, "tools");
+  warnUnknownTools(parsed.additional_tools, "additional_tools");
   warnUnknownTools(parsed.disallowed_tools, "disallowed_tools");
+
+  const resolvedTools = dedupeAppend(parsed.tools, parsed.additional_tools ?? []);
 
   // Re-parse nested objects through their schemas to apply inner defaults
   const user = UserConfigSchema.parse(parsed.user ?? {});
@@ -230,7 +245,7 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
     max_turns: parsed.max_turns,
     max_budget_usd: parsed.max_budget_usd,
     effort: parsed.effort,
-    tools: parsed.tools,
+    tools: resolvedTools,
     disallowed_tools: parsed.disallowed_tools,
     project: parsed.project,
     permission_mode: parsed.permission_mode,
