@@ -125,14 +125,17 @@ scuttlerun --help
 
 ### Exit Codes
 
+Shared taxonomy across scuttlerun/pincenez/craboodle. Codes 3 and 4 are craboodle-only; scuttlerun does not emit them.
+
 | Code | Meaning |
 |------|---------|
 | 0 | Session completed normally |
 | 1 | Configuration error |
-| 2 | Session error |
-| 3 | Max turns exceeded |
-| 4 | Budget exceeded |
-| 5 | Timeout |
+| 2 | Runtime error (SDK failure, process crash, unhandled exception) |
+| 5 | Budget exceeded |
+| 6 | Timeout |
+| 7 | Max turns exceeded |
+| 130 | Interrupted (SIGINT) |
 
 ## How It Works
 

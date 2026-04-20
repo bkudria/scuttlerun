@@ -101,8 +101,8 @@ The core orchestrator. Responsibilities:
 
 **Turn completion signal:** The SDK emits a `ResultMessage` when a query turn completes. This message carries `stop_reason`, `session_id`, `usage`, `total_cost_usd`, `num_turns`, `is_error`, and `subtype`:
 - `"success"` — normal completion; triggers the turn policy
-- `"error_max_turns"` — agent hit `maxTurns` limit; maps to exit code 3
-- `"error_max_budget_usd"` — agent exceeded budget; maps to exit code 4
+- `"error_max_turns"` — agent hit `maxTurns` limit; maps to exit code 7
+- `"error_max_budget_usd"` — agent exceeded budget; maps to exit code 5
 - `"error_during_execution"` — runtime error; maps to exit code 2
 
 **Multi-turn coordination:** The async generator and the message consumer (`for await` loop) coordinate via a shared Promise. After each `ResultMessage` with `subtype === "success"`, the consumer consults the turn policy and resolves the Promise — the generator either yields the next `SDKUserMessage` or returns.
@@ -346,14 +346,17 @@ Options:
 
 ### Exit Codes
 
+scuttlerun emits codes from the shared scuttlerun/pincenez/craboodle taxonomy. Codes 3 and 4 are reserved for craboodle-level concerns and not emitted by scuttlerun.
+
 | Code | Meaning |
 |------|---------|
 | 0 | Session completed normally (`end_turn`) |
 | 1 | Configuration error (invalid YAML, missing required fields) |
-| 2 | Session error (SDK connection failure, process crash) |
-| 3 | Session hit max_turns without completing |
-| 4 | Session exceeded budget |
-| 5 | Session timed out |
+| 2 | Runtime error (SDK connection failure, process crash, unhandled exception) |
+| 5 | Session exceeded budget |
+| 6 | Session timed out |
+| 7 | Session hit max_turns without completing |
+| 130 | Interrupted by SIGINT (Unix convention) |
 
 ---
 
@@ -633,7 +636,7 @@ jq 'select(.type=="assistant") | .message.content[] | select(.type=="tool_use")'
 | Invalid session config | Exit 1 with validation error |
 | Invalid skill path in `project.skills` | Exit 1 (path doesn't exist or missing SKILL.md) |
 | API key missing/invalid | Exit 2 with auth error |
-| Session timeout | Emit the footer mapping (partial stats) and exit 5. No distinguished timeout marker is written to the transcript; exit code 5 is the signal. |
+| Session timeout | Emit the footer mapping (partial stats) and exit 6. No distinguished timeout marker is written to the transcript; exit code 6 is the signal. |
 
 ---
 

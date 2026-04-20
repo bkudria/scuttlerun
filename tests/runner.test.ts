@@ -263,7 +263,7 @@ describe("runSession", () => {
     expect(stdoutOutput).toContain("turns:");
   });
 
-  it("handles error_max_turns with exit code 3", async () => {
+  it("handles error_max_turns with exit code 7", async () => {
     const mockQuery = createMockQuery([
       {
         type: "system",
@@ -289,10 +289,10 @@ describe("runSession", () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
     const result = await runSession(minConfig());
 
-    expect(result.exitCode).toBe(3);
+    expect(result.exitCode).toBe(7);
   });
 
-  it("handles error_max_budget_usd with exit code 4", async () => {
+  it("handles error_max_budget_usd with exit code 5", async () => {
     const mockQuery = createMockQuery([
       {
         type: "system",
@@ -318,7 +318,7 @@ describe("runSession", () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
     const result = await runSession(minConfig());
 
-    expect(result.exitCode).toBe(4);
+    expect(result.exitCode).toBe(5);
   });
 
   it("handles error_during_execution with exit code 2", async () => {
@@ -425,7 +425,7 @@ describe("runSession", () => {
     expect(denyResult.behavior).toBe("deny");
   });
 
-  it("handles timeout with exit code 5", async () => {
+  it("handles timeout with exit code 6", async () => {
     // Create a query that hangs until interrupt() is called
     let resolveHang: (() => void) | undefined;
     const neverEndingQuery = {
@@ -453,7 +453,7 @@ describe("runSession", () => {
     // Use a very short timeout for testing
     const result = await runSession(config, { timeoutSeconds: 0.1 });
 
-    expect(result.exitCode).toBe(5);
+    expect(result.exitCode).toBe(6);
     expect(neverEndingQuery.close).toHaveBeenCalled();
   });
 
@@ -482,7 +482,7 @@ describe("runSession", () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
 
     const result = await runSession(minConfig(), { timeoutSeconds: 0.1 });
-    expect(result.exitCode).toBe(5);
+    expect(result.exitCode).toBe(6);
     expect(mockQuery.interrupt).toHaveBeenCalled();
   });
 
@@ -940,7 +940,7 @@ describe("runSession", () => {
     expect(result.exitCode).toBe(2);
   });
 
-  it("returns exit code 5 when query throws after timeout", async () => {
+  it("returns exit code 6 when query throws after timeout", async () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(() => {
       // Simulate: timeout fires, then error is thrown
       return {
@@ -955,7 +955,7 @@ describe("runSession", () => {
     });
 
     const result = await runSession(minConfig(), { timeoutSeconds: 0.1 });
-    expect(result.exitCode).toBe(5);
+    expect(result.exitCode).toBe(6);
   });
 
   it("handles timeout during oracle decideTurn (catch with timedOut)", async () => {
@@ -977,7 +977,7 @@ describe("runSession", () => {
       { timeoutSeconds: 0.05 },
     );
     // Timeout fires during oracle call, oracle then throws → catch with timedOut=true
-    expect(result.exitCode).toBe(5);
+    expect(result.exitCode).toBe(6);
   });
 
   it("handles already-aborted signal on next loop iteration", async () => {
@@ -1007,7 +1007,7 @@ describe("runSession", () => {
     );
     // Timeout fires during oracle call. Oracle completes with "continue".
     // Loop re-enters → abortPromise sees already-aborted signal → breaks.
-    expect(result.exitCode).toBe(5);
+    expect(result.exitCode).toBe(6);
   });
 
   it("handles error result after generator is consumed (resolveNextAction defined)", async () => {

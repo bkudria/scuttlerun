@@ -298,8 +298,8 @@ export async function runSession(
         } else {
           // Error subtypes
           resolveNextAction?.({ type: "end" });
-          if (subtype === "error_max_turns") exitCode = 3;
-          else if (subtype === "error_max_budget_usd") exitCode = 4;
+          if (subtype === "error_max_turns") exitCode = 7;
+          else if (subtype === "error_max_budget_usd") exitCode = 5;
           else exitCode = 2;
         }
       }
@@ -307,7 +307,7 @@ export async function runSession(
 
     // Check for timeout
     if (timedOut) {
-      exitCode = 5;
+      exitCode = 6;
     }
 
     // Write footer
@@ -326,7 +326,7 @@ export async function runSession(
       oracleUsage,
     });
   } catch {
-    exitCode = timedOut ? 5 : 2;
+    exitCode = timedOut ? 6 : 2;
   }
 
   // Cleanup
