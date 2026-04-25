@@ -1342,6 +1342,187 @@ describe("runSession", () => {
   });
 });
 
+// =============================================================================
+// Spec-derived tests (from scuttlerun.allium via `allium plan`)
+// Each test names the obligation it discharges in [bracket-prefix] style.
+// =============================================================================
+
+describe("scuttlerun.allium invariants and rule obligations", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    (mockCreateProjectDir as ReturnType<typeof vi.fn>).mockResolvedValue("/tmp/scuttlerun-project-test123");
+    (mockScaffoldProject as ReturnType<typeof vi.fn>).mockResolvedValue({ projectPath: "/tmp/scuttlerun-project-scaffold123" });
+    (mockCleanOldProjects as ReturnType<typeof vi.fn>).mockResolvedValue(0);
+    delete process.env.CLAUDECODE;
+    stdoutOutput = "";
+    process.stdout.write = ((chunk: string) => {
+      stdoutOutput += chunk;
+      return true;
+    }) as typeof process.stdout.write;
+  });
+
+  afterEach(() => {
+    process.stdout.write = originalStdoutWrite;
+  });
+
+  // -------------------------------------------------------------------------
+  // [invariant.WorkspacePreservedAcrossOutcomes]
+  // For session in Sessions: session.is_terminated implies exists session.workspace
+  // -------------------------------------------------------------------------
+  describe("[invariant] WorkspacePreservedAcrossOutcomes", () => {
+    const terminalCases: Array<{ status: string; subtype: string; expectExit: number }> = [
+      { status: "completed_success", subtype: "success", expectExit: 0 },
+      { status: "exhausted_turns", subtype: "error_max_turns", expectExit: 7 },
+      { status: "exhausted_budget", subtype: "error_max_budget_usd", expectExit: 5 },
+      { status: "failed", subtype: "error_during_execution", expectExit: 2 },
+    ];
+
+    for (const { status, subtype, expectExit } of terminalCases) {
+      it(`preserves workspace path on terminal status ${status}`, async () => {
+        const mockQuery = createMockQuery([
+          { type: "system", subtype: "init", session_id: `s-pres-${status}`, tools: [], model: "claude-haiku-4-5" },
+          subtype === "success"
+            ? {
+                type: "result", subtype: "success", session_id: `s-pres-${status}`,
+                num_turns: 1, total_cost_usd: 0,
+              }
+            : {
+                type: "result", subtype, session_id: `s-pres-${status}`,
+                is_error: true, num_turns: 1, total_cost_usd: 0, errors: ["x"],
+              },
+        ]);
+        (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+        const result = await runSession(minConfig());
+
+        expect(result.exitCode).toBe(expectExit);
+        // Workspace was created exactly once (no re-creation, no destructive cleanup of this run's dir)
+        expect(mockCreateProjectDir).toHaveBeenCalledTimes(1);
+        expect(mockScaffoldProject).not.toHaveBeenCalled();
+      });
+    }
+
+    it("preserves workspace path on terminal status timed_out", async () => {
+      let resolveHang: (() => void) | undefined;
+      const mockQuery = {
+        close: vi.fn(),
+        interrupt: vi.fn(async () => { resolveHang?.(); }),
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "system", subtype: "init", session_id: "s-pres-timeout", tools: [], model: "claude-haiku-4-5" };
+          await new Promise<void>((r) => { resolveHang = r; });
+        },
+      };
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+      const result = await runSession(minConfig(), { timeoutSeconds: 0.05 });
+
+      expect(result.exitCode).toBe(6);
+      expect(mockCreateProjectDir).toHaveBeenCalledTimes(1);
+      expect(mockScaffoldProject).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // [invariant.OnlyTextReachesOracleContext]
+  // For entry in ConversationEntries: entry.role in {user, assistant} and contains
+  // only text. Tool uses, tool results and thinking blocks must be stripped before
+  // the oracle is consulted.
+  // -------------------------------------------------------------------------
+  describe("[invariant] OnlyTextReachesOracleContext", () => {
+    it("strips thinking and tool_use blocks before the oracle's decideTurn call", async () => {
+      mockParse.mockResolvedValueOnce({
+        parsed_output: { decision: "end", reasoning: "done" },
+        usage: { input_tokens: 50, output_tokens: 20 },
+      });
+
+      const mockQuery = createMockQuery([
+        { type: "system", subtype: "init", session_id: "s-text-only", tools: [], model: "claude-haiku-4-5" },
+        {
+          type: "assistant",
+          message: {
+            role: "assistant",
+            content: [
+              { type: "thinking", thinking: "INTERNAL_THINKING_MARKER must be hidden" },
+              { type: "tool_use", id: "tu-1", name: "Write", input: { file_path: "/tmp/leak.txt", content: "TOOL_INPUT_MARKER" } },
+              { type: "text", text: "VISIBLE_ASSISTANT_TEXT" },
+            ],
+          },
+        },
+        { type: "result", subtype: "success", session_id: "s-text-only", num_turns: 1, total_cost_usd: 0 },
+      ]);
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+      await runSession(minConfig({ user: { oracle_model: "claude-haiku-4-5", max_turns: 5 } }));
+
+      // The oracle.decideTurnPolicy call routes through mockParse. Inspect the
+      // user message it received and verify only text content reaches it.
+      expect(mockParse).toHaveBeenCalled();
+      const callArgs = mockParse.mock.calls[0][0];
+      const userMsg = callArgs.messages[0].content as string;
+      expect(userMsg).toContain("VISIBLE_ASSISTANT_TEXT");
+      expect(userMsg).not.toContain("INTERNAL_THINKING_MARKER");
+      expect(userMsg).not.toContain("TOOL_INPUT_MARKER");
+      expect(userMsg).not.toContain("/tmp/leak.txt");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // [rule.SessionFinalises]
+  // when: session: Session.is_terminated
+  // ensures: session.transcript.finalized = true
+  // ensures: AgentSdkClosed(session)
+  // -------------------------------------------------------------------------
+  describe("[rule] SessionFinalises", () => {
+    const cases: Array<{ name: string; subtype: string; expectExit: number }> = [
+      { name: "completed_success", subtype: "success", expectExit: 0 },
+      { name: "exhausted_turns", subtype: "error_max_turns", expectExit: 7 },
+      { name: "exhausted_budget", subtype: "error_max_budget_usd", expectExit: 5 },
+      { name: "failed", subtype: "error_during_execution", expectExit: 2 },
+    ];
+
+    for (const { name, subtype, expectExit } of cases) {
+      it(`closes the SDK query and emits the footer on ${name}`, async () => {
+        const mockQuery = createMockQuery([
+          { type: "system", subtype: "init", session_id: `s-fin-${name}`, tools: [], model: "claude-haiku-4-5" },
+          subtype === "success"
+            ? { type: "result", subtype: "success", session_id: `s-fin-${name}`, num_turns: 1, total_cost_usd: 0 }
+            : { type: "result", subtype, session_id: `s-fin-${name}`, is_error: true, num_turns: 1, total_cost_usd: 0, errors: ["x"] },
+        ]);
+        (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+        const result = await runSession(minConfig());
+
+        expect(result.exitCode).toBe(expectExit);
+        expect(mockQuery.close).toHaveBeenCalledTimes(1);
+        // Footer presence — keys appear in a finalised transcript only
+        expect(stdoutOutput).toContain("turns:");
+        expect(stdoutOutput).toContain("duration_s:");
+      });
+    }
+
+    it("closes the SDK query and emits the footer on timed_out", async () => {
+      let resolveHang: (() => void) | undefined;
+      const mockQuery = {
+        close: vi.fn(),
+        interrupt: vi.fn(async () => { resolveHang?.(); }),
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "system", subtype: "init", session_id: "s-fin-timeout", tools: [], model: "claude-haiku-4-5" };
+          await new Promise<void>((r) => { resolveHang = r; });
+        },
+      };
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+      const result = await runSession(minConfig(), { timeoutSeconds: 0.05 });
+
+      expect(result.exitCode).toBe(6);
+      expect(mockQuery.close).toHaveBeenCalledTimes(1);
+      expect(stdoutOutput).toContain("turns:");
+      expect(stdoutOutput).toContain("duration_s:");
+      expect(stdoutOutput).toContain("timed_out: true");
+    });
+  });
+});
+
 describe("buildSandboxEnv", () => {
   it("includes safe individual vars", () => {
     const env = buildSandboxEnv(

@@ -180,4 +180,105 @@ describe("SyntheticUser", () => {
       expect(call.conversationContext[19]).toEqual({ role: "assistant", text: "assistant-11" });
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Spec-derived tests (from scuttlerun.allium via `allium plan`)
+  // ---------------------------------------------------------------------------
+
+  // [invariant.SinglePersonaPerSession]
+  // For synthetic in SyntheticUsers: synthetic.persona = synthetic.session.input.persona.
+  // The persona supplied at session start drives every oracle call for the entire
+  // session. There is no per-turn persona override.
+  describe("[invariant] SinglePersonaPerSession", () => {
+    it("forwards the same persona to the oracle on every decideTurn call", async () => {
+      const mockDecide = oracle.decideTurnPolicy as ReturnType<typeof vi.fn>;
+      mockDecide.mockResolvedValue({
+        decision: "continue",
+        message: "more",
+        reasoning: "not done",
+        usage: { input_tokens: 80, output_tokens: 30 },
+      });
+
+      userConfig.persona = "PINNED_PERSONA";
+      userConfig.max_turns = 5;
+      const user = new SyntheticUser(oracle, userConfig, "Write code");
+
+      await user.decideTurn();
+      await user.decideTurn();
+      await user.decideTurn();
+
+      expect(mockDecide).toHaveBeenCalledTimes(3);
+      for (const call of mockDecide.mock.calls) {
+        expect(call[0].persona).toBe("PINNED_PERSONA");
+      }
+    });
+
+    it("forwards the same persona to the oracle on every handleAskUserQuestion call", async () => {
+      const mockAnswer = oracle.answerQuestions as ReturnType<typeof vi.fn>;
+      mockAnswer.mockResolvedValue({
+        answers: { "Q?": "A" },
+        reasoning: "r",
+        usage: { input_tokens: 50, output_tokens: 20 },
+      });
+
+      userConfig.persona = "PINNED_PERSONA";
+      const user = new SyntheticUser(oracle, userConfig, "Write code");
+
+      const askInput = {
+        questions: [{
+          question: "Q?",
+          header: "H",
+          options: [{ label: "A", description: "a" }],
+          multiSelect: false,
+        }],
+      };
+
+      await user.handleAskUserQuestion(askInput);
+      await user.handleAskUserQuestion(askInput);
+
+      expect(mockAnswer).toHaveBeenCalledTimes(2);
+      for (const call of mockAnswer.mock.calls) {
+        expect(call[0].persona).toBe("PINNED_PERSONA");
+      }
+    });
+  });
+
+  // [invariant.SubagentQuestionsNotDistinguished]
+  // Clarifying questions originating from a subagent and from the main agent are
+  // answered by the same oracle path with the same persona. The current spec does
+  // not differentiate by origin agent. The Agent SDK's canUseTool signature does
+  // not surface origin information, so SyntheticUser cannot branch on it.
+  describe("[invariant] SubagentQuestionsNotDistinguished", () => {
+    it("produces the same response shape regardless of whether origin info would be supplied", async () => {
+      const mockAnswer = oracle.answerQuestions as ReturnType<typeof vi.fn>;
+      mockAnswer.mockResolvedValue({
+        answers: { "Q?": "A" },
+        reasoning: "consistent",
+        usage: { input_tokens: 50, output_tokens: 20 },
+      });
+
+      const user = new SyntheticUser(oracle, userConfig, "test");
+      const askInput = {
+        questions: [{
+          question: "Q?",
+          header: "H",
+          options: [{ label: "A", description: "a" }, { label: "B", description: "b" }],
+          multiSelect: false,
+        }],
+      };
+
+      const r1 = await user.handleAskUserQuestion(askInput);
+      const r2 = await user.handleAskUserQuestion(askInput);
+
+      // Identical response shape — no per-call/per-origin variation
+      expect(r1.behavior).toBe(r2.behavior);
+      expect(r1.updatedInput.answers).toEqual(r2.updatedInput.answers);
+      expect(r1.oracleResponse.reasoning).toBe(r2.oracleResponse.reasoning);
+
+      // Both calls hit the same oracle path with the same payload shape
+      expect(mockAnswer).toHaveBeenCalledTimes(2);
+      const [firstCall, secondCall] = mockAnswer.mock.calls;
+      expect(Object.keys(firstCall[0]).sort()).toEqual(Object.keys(secondCall[0]).sort());
+    });
+  });
 });

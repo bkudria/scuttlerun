@@ -1,0 +1,790 @@
+-- allium: 3
+-- scuttlerun.allium
+--
+-- Scope: Behaviour of the scuttlerun session driver from invocation to
+-- termination. Distilled from src/ as of commit 96a5e55.
+--
+-- Includes:
+--   - Session lifecycle and outcome-to-exit-code mapping
+--   - Synthetic user answering AskUserQuestion via an LLM oracle
+--   - Reactive turn policy (oracle-driven follow-ups, capped per session)
+--   - Workspace lifecycle: scaffold-or-bare, preservation, stale GC
+--   - Cost accumulation across agent and oracle
+--   - Streaming transcript shape (preamble / conversation / footer)
+--
+-- Excludes:
+--   - YAML config schema and merge semantics (input presentation, not behaviour)
+--   - Agent SDK protocol internals (message envelopes, async-iterator coordination)
+--   - Anthropic Messages API integration details (oracle is a black box here)
+--   - Sandbox enforcement (delegated to the Agent SDK)
+--   - Pricing table maintenance (a data file, not behaviour)
+
+
+-- =============================================================
+-- Configuration
+-- =============================================================
+
+config {
+    workspace_cleanup_age: Duration = 7.days
+    oracle_context_pair_limit: Integer = 10
+    default_session_timeout: Duration = 300.seconds
+    default_max_agent_turns: Integer = 50
+    default_max_user_follow_ups: Integer = 0
+    default_oracle_model: String = "claude-haiku-4-5"
+    workspace_dir_prefix: String = "scuttlerun-project-"
+}
+
+
+-- =============================================================
+-- External entities (caller inputs and integrations)
+-- =============================================================
+
+-- Caller-supplied configuration shape. Value type: no identity, no
+-- lifecycle, immutable for the duration of a session.
+value SessionInput {
+    prompt: String
+    agent_model: String
+    oracle_model: String
+    persona: String?
+    max_agent_turns: Integer
+    max_user_follow_ups: Integer
+    max_budget_usd: Decimal?
+    timeout: Duration
+    permission_mode: default_mode | accept_edits | bypass_permissions | plan_mode | dont_ask
+    tools: Set<String>
+    workspace_template: WorkspaceTemplate?
+}
+
+value WorkspaceTemplate {
+    claude_md: String?
+    skill_sources: List<SkillSource>
+    settings: String?
+    files: List<TemplateFile>
+    git_init: Boolean
+}
+
+value SkillSource {
+    path: String
+    is_directory: Boolean
+    has_skill_md: Boolean
+}
+
+value TemplateFile {
+    relative_path: String
+    contents: String
+}
+
+-- The Agent SDK process scuttlerun drives. Code-to-code boundary.
+external entity AgentSdkClient {}
+
+-- The Anthropic Messages API the oracle calls. Code-to-code boundary.
+external entity AnthropicMessagesApi {}
+
+-- The shell/script invoking scuttlerun.
+external entity Caller {}
+
+-- Token usage reported by Anthropic for an oracle call.
+value TokenUsage {
+    input_tokens: Integer
+    output_tokens: Integer
+    cache_creation_input_tokens: Integer
+    cache_read_input_tokens: Integer
+}
+
+
+-- =============================================================
+-- Domain entities
+-- =============================================================
+
+entity Session {
+    input: SessionInput
+    workspace: Workspace
+    started_at: Timestamp
+    sdk_session_id: String?
+
+    status: pending | running | completed_success
+          | exhausted_turns | exhausted_budget | failed | timed_out
+
+    turn_count: Integer
+    tool_call_count: Integer
+    agent_cost: Decimal
+    oracle_cost: Decimal
+
+    transitions status {
+        pending -> running
+        running -> completed_success
+        running -> exhausted_turns
+        running -> exhausted_budget
+        running -> failed
+        running -> timed_out
+        terminal: completed_success, exhausted_turns, exhausted_budget, failed, timed_out
+    }
+
+    is_terminated: status in {completed_success, exhausted_turns,
+                              exhausted_budget, failed, timed_out}
+    total_cost: agent_cost + oracle_cost
+
+    transcript: Transcript with session = this
+    synthetic_user: SyntheticUser? with session = this
+
+    @guidance
+        -- Exit code mapping (emitted to the OS on termination):
+        --   completed_success → 0
+        --   failed            → 2 (runtime error)
+        --   exhausted_budget  → 5
+        --   timed_out         → 6
+        --   exhausted_turns   → 7
+        -- Code 1 (configuration error) is emitted before a Session exists
+        -- and so is not represented here. Codes 3 and 4 belong to upstream
+        -- tooling in the scuttlerun/pincenez/craboodle taxonomy and are
+        -- never produced by scuttlerun.
+}
+
+-- The temporary directory that becomes the agent's working directory.
+-- Always created, even when no template is supplied.
+entity Workspace {
+    path: String
+    created_at: Timestamp
+    last_modified: Timestamp
+    scaffolded: Boolean
+
+    @guidance
+        -- When scaffolded is true and the sandbox is enabled, HOME is
+        -- redirected into a .home subdirectory of the workspace so tool
+        -- caches (npm, pip, cargo, etc.) stay inside the workspace.
+}
+
+-- The LLM-driven simulation of the human user.
+entity SyntheticUser {
+    session: Session
+    persona: String?
+    follow_up_count: Integer
+    conversation: List<ConversationEntry> with synthetic_user = this
+
+    has_remaining_follow_ups:
+        follow_up_count < session.input.max_user_follow_ups
+
+    @guidance
+        -- The synthetic user only forwards the most recent
+        -- config.oracle_context_pair_limit user/assistant pairs of the
+        -- conversation buffer to the oracle. Earlier entries are dropped.
+        -- Tool uses, tool results and thinking blocks are stripped before
+        -- entries enter the conversation buffer.
+}
+
+entity ConversationEntry {
+    synthetic_user: SyntheticUser
+    sequence: Integer
+    role: user | assistant
+    text: String
+}
+
+-- A clarifying question request from the agent (AskUserQuestion tool).
+-- One request may carry multiple questions; the oracle answers all of them.
+entity ClarifyingQuestionRequest {
+    session: Session
+    questions: List<Question>
+    received_at: Timestamp
+    answer_set: OracleAnswerSet
+}
+
+entity Question {
+    request: ClarifyingQuestionRequest
+    text: String
+    header: String
+    options: List<QuestionOption>
+    multi_select: Boolean
+}
+
+entity QuestionOption {
+    question: Question
+    label: String
+    description: String
+}
+
+entity OracleAnswerSet {
+    request: ClarifyingQuestionRequest
+    answers: List<OracleAnswer> with answer_set = this
+    reasoning: String
+    usage: TokenUsage
+}
+
+entity OracleAnswer {
+    answer_set: OracleAnswerSet
+    question_text: String
+    answer_text: String
+}
+
+-- A turn-policy decision about whether to send a follow-up.
+entity TurnEvaluation {
+    session: Session
+    decided_at: Timestamp
+    decision: continue | end
+    follow_up_message: String when decision = continue
+    reasoning: String
+}
+
+-- Streamed YAML output to stdout. Observable while the session runs.
+entity Transcript {
+    session: Session
+    entries: List<TranscriptEntry> with transcript = this
+    finalized: Boolean
+}
+
+entity TranscriptEntry {
+    transcript: Transcript
+    sequence: Integer
+    kind: user_message | assistant_text | thinking
+        | tool_call | oracle_ask | oracle_turn
+}
+
+
+-- =============================================================
+-- Rules: Session lifecycle
+-- =============================================================
+
+rule SessionStarts {
+    when: SessionRequested(caller, input, started_at)
+
+    -- Best-effort cleanup of stale workspaces from prior runs.
+    -- Failures are silently ignored; this is not on the critical path.
+    ensures: StaleWorkspaceCleanup(config.workspace_cleanup_age)
+
+    ensures: Workspace.created(
+        created_at: started_at,
+        last_modified: started_at,
+        scaffolded: input.workspace_template != null
+    )
+    ensures: Session.created(
+        input: input,
+        started_at: started_at,
+        status: pending,
+        turn_count: 0,
+        tool_call_count: 0,
+        agent_cost: 0,
+        oracle_cost: 0
+    )
+}
+
+rule SessionBecomesRunning {
+    when: AgentInitialized(client, session)
+
+    requires: session.status = pending
+
+    ensures: session.status = running
+    ensures: SyntheticUser.created(
+        session: session,
+        persona: session.input.persona,
+        follow_up_count: 0
+    )
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: user_message
+    )
+
+    @guidance
+        -- The Agent SDK emits an init message with a session_id at the
+        -- start of each query turn. scuttlerun captures the first one
+        -- and uses it to identify the SDK session file.
+}
+
+rule SessionFinalises {
+    when: session: Session.is_terminated
+
+    ensures: session.transcript.finalized = true
+    ensures: AgentSdkClosed(session)
+
+    @guidance
+        -- Fires once when the session enters any terminal state. The
+        -- workspace is preserved on every termination path; reclamation
+        -- happens on the next session start via StaleWorkspaceCleanup.
+        -- The agent SDK child process is closed via query.close().
+}
+
+
+-- =============================================================
+-- Rules: AskUserQuestion handling
+-- =============================================================
+
+rule SyntheticUserAnswersClarifyingQuestion {
+    when: AgentAsksClarifyingQuestion(client, session)
+
+    requires: session.status = running
+    requires: exists session.synthetic_user
+
+    ensures: ClarifyingQuestionRequest.created(session: session)
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: oracle_ask
+    )
+    ensures: AgentReceivesAnswers(session)
+
+    @guidance
+        -- AskUserQuestion is only intercepted when "AskUserQuestion" is in
+        -- session.input.tools. If absent, the agent has no way to call the
+        -- tool and the synthetic user never engages.
+        --
+        -- The oracle is consulted with: the persona, the most recent
+        -- conversation pairs (text only), and the questions. It returns
+        -- an answer per question (option label or free text) plus
+        -- reasoning. Tool uses, tool results and thinking blocks never
+        -- appear in oracle prompts.
+        --
+        -- The oracle's call may be retried once on failure before the
+        -- session is terminated as a runtime error.
+}
+
+
+-- =============================================================
+-- Rules: Reactive turn policy
+-- =============================================================
+
+rule AgentTurnSucceeds {
+    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date)
+
+    requires: session.status = running
+    requires: subtype = success
+
+    ensures: session.agent_cost = agent_cost_to_date
+    ensures: session.turn_count = session.turn_count + 1
+    ensures:
+        if session.input.max_user_follow_ups = 0
+            or not session.synthetic_user.has_remaining_follow_ups:
+            session.status = completed_success
+        else:
+            TurnPolicyConsultation(session)
+}
+
+rule TurnPolicyContinues {
+    when: TurnPolicyDecided(session, decision, message, reasoning)
+
+    requires: session.status = running
+    requires: decision = continue
+    requires: session.synthetic_user.has_remaining_follow_ups
+
+    let synthetic = session.synthetic_user
+
+    ensures: TurnEvaluation.created(
+        session: session,
+        decision: continue,
+        follow_up_message: message,
+        reasoning: reasoning
+    )
+    ensures: synthetic.follow_up_count = synthetic.follow_up_count + 1
+    ensures: ConversationEntry.created(
+        synthetic_user: synthetic,
+        role: user,
+        text: message
+    )
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: oracle_turn
+    )
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: user_message
+    )
+    ensures: AgentReceivesFollowUp(session, message)
+}
+
+rule TurnPolicyEnds {
+    when: TurnPolicyDecided(session, decision, message, reasoning)
+
+    requires: session.status = running
+    requires: decision = end
+
+    ensures: TurnEvaluation.created(
+        session: session,
+        decision: end,
+        reasoning: reasoning
+    )
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: oracle_turn
+    )
+    ensures: session.status = completed_success
+}
+
+rule AgentTurnExhaustsTurns {
+    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date)
+
+    requires: session.status = running
+    requires: subtype = error_max_turns
+
+    ensures: session.agent_cost = agent_cost_to_date
+    ensures: session.status = exhausted_turns
+}
+
+rule AgentTurnExhaustsBudget {
+    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date)
+
+    requires: session.status = running
+    requires: subtype = error_max_budget_usd
+
+    ensures: session.agent_cost = agent_cost_to_date
+    ensures: session.status = exhausted_budget
+}
+
+rule AgentTurnFailsAtRuntime {
+    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date)
+
+    requires: session.status = running
+    requires: subtype = error_during_execution
+
+    ensures: session.agent_cost = agent_cost_to_date
+    ensures: session.status = failed
+}
+
+rule SessionTimesOut {
+    when: session: Session.started_at + session.input.timeout <= now
+
+    requires: session.status = running
+
+    ensures: session.status = timed_out
+    ensures: AgentInterrupted(session)
+
+    @guidance
+        -- On timeout scuttlerun aborts the SDK abort controller and calls
+        -- queryHandle.interrupt() as a belt-and-suspenders signal. The
+        -- transcript footer is still emitted with whatever stats accrued.
+}
+
+
+-- =============================================================
+-- Rules: Workspace lifecycle
+-- =============================================================
+
+rule StaleWorkspacesRemoved {
+    when: StaleWorkspaceCleanup(older_than)
+
+    for workspace in Workspaces
+        where starts_with(workspace.path, config.workspace_dir_prefix)
+        and workspace.last_modified + older_than <= now:
+        ensures: not exists workspace
+
+    @guidance
+        -- Best-effort: filesystem failures (permission errors, races) are
+        -- silently ignored. Never touches directories outside $TMPDIR.
+        -- Never touches directories without the scuttlerun-project- prefix.
+        -- Never touches directories from the current or recent sessions
+        -- (mtime is the gate).
+}
+
+rule WorkspaceScaffoldsSkill {
+    when: SkillReferenced(template, skill, workspace)
+
+    requires: skill.is_directory
+    requires: skill.has_skill_md
+
+    ensures: SkillSymlinked(skill, workspace)
+
+    @guidance
+        -- All skills are validated before any filesystem mutation occurs.
+        -- A failed skill validation rejects the entire session as a
+        -- configuration error (exit 1) — no partial scaffolding remains.
+        -- Skills are symlinked into <workspace>/.claude/skills/<name>/,
+        -- not copied.
+}
+
+
+-- =============================================================
+-- Rules: Streaming events to the transcript and conversation buffer
+-- =============================================================
+
+rule AssistantTextEmitted {
+    when: AgentEmitsAssistantText(client, session, text)
+
+    requires: session.status = running
+
+    ensures: ConversationEntry.created(
+        synthetic_user: session.synthetic_user,
+        role: assistant,
+        text: text
+    )
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: assistant_text
+    )
+}
+
+rule AssistantThinkingEmitted {
+    when: AgentEmitsThinking(client, session, text)
+
+    requires: session.status = running
+
+    -- Thinking reaches the transcript but never the oracle context.
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: thinking
+    )
+}
+
+rule AssistantToolCallEmitted {
+    when: AgentEmitsToolCall(client, session, tool_name)
+
+    requires: session.status = running
+
+    -- Tool calls reach the transcript but never the oracle context.
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: tool_call
+    )
+    ensures: session.tool_call_count = session.tool_call_count + 1
+}
+
+
+-- =============================================================
+-- Rules: Cost accumulation
+-- =============================================================
+
+rule OracleCallTracked {
+    when: OracleCallCompleted(api, session, usage)
+
+    let cost = compute_oracle_cost(session.input.oracle_model, usage)
+
+    ensures: session.oracle_cost = session.oracle_cost + cost
+
+    @guidance
+        -- compute_oracle_cost combines input, output, cache-creation and
+        -- cache-read tokens against the model's per-million-token rates.
+        -- Unknown models fall back to a family rate or to the default
+        -- oracle model's rate.
+}
+
+
+-- =============================================================
+-- Invariants
+-- =============================================================
+
+invariant WorkspacePreservedAcrossOutcomes {
+    -- The workspace owning a terminated session always still exists at
+    -- the moment of termination. Reclamation is deferred to the next
+    -- session's startup GC.
+    for session in Sessions:
+        session.is_terminated implies exists session.workspace
+}
+
+invariant SubagentQuestionsNotDistinguished {
+    -- Clarifying questions originating from a subagent and from the main
+    -- agent are answered by the same oracle path with the same persona.
+    -- The current spec does not differentiate by origin agent.
+    for request in ClarifyingQuestionRequests:
+        true
+}
+
+invariant ScaffoldedFilesStayInProject {
+    -- Files declared by WorkspaceTemplate.files cannot escape the
+    -- workspace nor target .git/. Path traversal and .git/ injection
+    -- are rejected as configuration errors before any file is written.
+    for session in Sessions:
+        session.input.workspace_template != null implies
+            session.input.workspace_template.files.all(file =>
+                file.relative_path != ".git"
+                and not starts_with(file.relative_path, ".git/")
+                and resolves_within_workspace(file.relative_path))
+}
+
+invariant FollowUpsRespectCap {
+    -- The number of follow-up messages the synthetic user yields never
+    -- exceeds the configured cap. Single-turn mode (cap = 0) yields none.
+    for synthetic in SyntheticUsers:
+        synthetic.follow_up_count <= synthetic.session.input.max_user_follow_ups
+}
+
+invariant OnlyTextReachesOracleContext {
+    -- The conversation buffer the oracle sees contains only user text and
+    -- assistant text blocks. Tool uses, tool results and thinking blocks
+    -- are stripped before insertion.
+    for entry in ConversationEntries:
+        entry.role in {user, assistant}
+}
+
+invariant SinglePersonaPerSession {
+    -- The persona supplied at session start drives every oracle call for
+    -- the entire session. There is no per-turn persona override.
+    for synthetic in SyntheticUsers:
+        synthetic.persona = synthetic.session.input.persona
+}
+
+
+-- =============================================================
+-- Surfaces
+-- =============================================================
+
+surface CommandLineInvocation {
+    facing caller: Caller
+
+    context session: Session
+
+    exposes:
+        session.status
+        session.turn_count
+        session.tool_call_count
+        session.total_cost
+        session.workspace.path
+        session.transcript
+
+    provides:
+        SessionRequested(caller, session.input, session.started_at)
+
+    @guarantee Headless
+        -- The CLI never blocks on interactive prompts. Tool permission
+        -- prompts are bypassed (under bypass_permissions) and
+        -- AskUserQuestion is answered by the synthetic user.
+
+    @guarantee SingleSessionPerInvocation
+        -- One invocation runs exactly one session and produces exactly one
+        -- transcript. Batch orchestration, grading and aggregation are
+        -- explicitly out of scope.
+
+    @guarantee ExitCodeReflectsOutcome
+        -- The process exit code maps to session.status (see Session
+        -- @guidance). Exit code 1 is reserved for configuration errors
+        -- raised before a Session is created.
+}
+
+surface StreamingTranscript {
+    facing reader: Caller
+
+    context session: Session
+
+    exposes:
+        session.sdk_session_id
+        session.workspace.path
+        for entry in session.transcript.entries:
+            entry.sequence
+            entry.kind
+
+    @guarantee StreamingYaml
+        -- Output is a single YAML document streamed as the session runs:
+        -- a preamble mapping (session id, config paths, workspace path,
+        -- SDK session file path), a `conversation:` sequence with one
+        -- entry per event, and a footer mapping (turns, tool_calls,
+        -- duration, optional costs and file lists). Multi-line strings
+        -- use block-literal style.
+
+    @guarantee InspectableMidSession
+        -- A reader joining mid-session sees the preamble plus all entries
+        -- emitted so far. The footer appears only after termination.
+
+    @guarantee FullConversationInJsonl
+        -- The full native conversation (including tool uses, tool results
+        -- and thinking) is preserved by the Agent SDK in a JSONL file
+        -- whose path is announced in the preamble. scuttlerun does not
+        -- own this file.
+}
+
+surface AgentSdkBoundary {
+    facing client: AgentSdkClient
+
+    context session: Session
+
+    exposes:
+        session.sdk_session_id
+        session.workspace.path
+
+    provides:
+        AgentInitialized(client, session)
+        AgentTurnCompleted(client, session)
+        AgentAsksClarifyingQuestion(client, session)
+        AgentEmitsAssistantText(client, session)
+        AgentEmitsThinking(client, session)
+        AgentEmitsToolCall(client, session)
+
+    contracts:
+        fulfils ToolPermissionCallback
+        demands MultiTurnPromptStream
+        demands SessionPersistence
+        demands AbortableExecution
+}
+
+surface OracleApiBoundary {
+    facing api: AnthropicMessagesApi
+
+    context session: Session
+
+    provides:
+        OracleCallCompleted(api, session)
+
+    contracts:
+        demands StructuredOutputParse
+}
+
+
+-- =============================================================
+-- Contracts
+-- =============================================================
+
+contract ToolPermissionCallback {
+    decide: (tool_name: String, input: Any) -> Any
+
+    @invariant AskUserQuestionAnswered
+        -- For tool_name = "AskUserQuestion", the result is
+        -- { behavior: "allow", updatedInput: { questions, answers } }
+        -- where answers come from the oracle and reflect the configured
+        -- persona. If the input does not parse as a list of questions,
+        -- the result is { behavior: "deny" }.
+
+    @invariant OtherToolsPassThrough
+        -- For tool_name != "AskUserQuestion", the result is
+        -- { behavior: "allow" }. The configured permission_mode is
+        -- responsible for any further enforcement; the callback itself
+        -- adds no extra restriction.
+}
+
+contract MultiTurnPromptStream {
+    yield_initial: (session: Session) -> Any
+    yield_follow_up_or_end: (session: Session, decision: TurnEvaluation) -> Any
+
+    @invariant FollowUpsRespectCap
+        -- The number of follow-up messages yielded is bounded by
+        -- session.input.max_user_follow_ups. When the cap is zero or has
+        -- been reached, no further messages are yielded.
+}
+
+contract SessionPersistence {
+    write_jsonl: (session_id: String, message: Any) -> Any
+
+    @invariant FullConversationPreserved
+        -- Every message exchanged with the agent (user, assistant text,
+        -- tool uses, tool results, thinking, system) is written to the
+        -- SDK's native JSONL file. scuttlerun surfaces the file's path
+        -- in the preamble but never modifies its contents.
+}
+
+contract AbortableExecution {
+    abort: (session: Session) -> Any
+    interrupt: (session: Session) -> Any
+
+    @invariant TerminatesPromptlyOnAbort
+        -- After abort and interrupt are signalled, the iterator stops
+        -- producing messages within a bounded delay determined by the
+        -- in-flight SDK iteration. scuttlerun additionally checks an
+        -- internal flag at the top of each loop iteration to break
+        -- promptly without waiting for the iterator to drain.
+}
+
+contract StructuredOutputParse {
+    parse: (system_prompt: String, user_message: String, schema: Any) -> Any
+
+    @invariant SchemaConformance
+        -- The returned parsed_output conforms to the requested schema.
+        -- The call is retried once on failure before reporting a
+        -- structured-output error to the caller.
+
+    @invariant UsageReported
+        -- The response carries token-usage counts (input, output,
+        -- cache-creation, cache-read) used by scuttlerun for cost
+        -- accounting.
+}
+
+
+-- =============================================================
+-- Open questions
+-- =============================================================
+
+open question "Subagent AskUserQuestion discrimination — the current spec answers main-agent and subagent-origin clarifying questions through the same path with the same persona. SPEC.md notes per-agent persona / refusal as a future consideration."
+
+open question "Agent SDK transient-failure retry — mid-stream SDK failures currently terminate the session as failed. Whether to retry (and at what granularity: from scratch vs. resume by session_id) is unresolved."
+
+open question "Configurable workspace cleanup threshold — the 7-day GC threshold is currently a constant. Whether to expose it via session config or environment is unresolved."

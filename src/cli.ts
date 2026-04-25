@@ -186,12 +186,15 @@ Output:
   The project temp dir in $TMPDIR is preserved after the session ends.
 
 Exit Codes:
-  0   Session completed normally
-  1   Configuration error (invalid YAML, missing fields)
-  2   Session error (SDK failure, process crash)
-  3   Max turns exceeded
-  4   Budget exceeded
-  5   Timeout`;
+  Codes 3 and 4 are reserved for upstream tooling and not emitted by scuttlerun.
+
+  0    Session completed normally
+  1    Configuration error (invalid YAML, missing fields)
+  2    Runtime error (SDK failure, process crash, unhandled exception)
+  5    Budget exceeded
+  6    Timeout
+  7    Max turns exceeded
+  130  Interrupted (SIGINT)`;
 
 async function main() {
   const program = new Command();
