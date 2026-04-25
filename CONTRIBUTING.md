@@ -32,6 +32,23 @@ npm run build        # tsc → dist/
 
 scuttlerun follows TDD. Write a failing test first, then the minimum code to make it pass. Tests live in `tests/` with 1:1 mapping to source files.
 
+## Commit Messages
+
+scuttlerun follows the [Conventional Commits](https://www.conventionalcommits.org/) specification, enforced by commitlint via a Husky `commit-msg` hook (installed automatically on `npm install`).
+
+Format: `<type>[optional scope]: <description>`
+
+Common types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `build`, `ci`, `perf`, `style`, `revert`.
+
+Examples:
+
+```
+feat(oracle): support Haiku 4.5
+fix: align exit codes between SDK and CLI
+docs: clarify timeout semantics in SPEC
+test(cleanup): cover non-verbose error path
+```
+
 ## Pull Requests
 
 1. Fork the repo and create a topic branch from `main`.
