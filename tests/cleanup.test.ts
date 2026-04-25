@@ -128,6 +128,29 @@ describe("cleanOldProjects", () => {
     }
   });
 
+  it("silently swallows per-directory errors when verbose is false", async () => {
+    const { cleanOldProjects } = await import("../src/cleanup.js");
+    const oldDir = await createOldDir("scuttlerun-project-test-silent-" + Date.now(), 10);
+
+    mockRm.mockRejectedValueOnce(new Error("EBUSY: resource busy"));
+
+    let stderrOutput = "";
+    const origWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const cleaned = await cleanOldProjects(7);
+      expect(cleaned).toBe(0);
+      expect(stderrOutput).toBe("");
+    } finally {
+      process.stderr.write = origWrite;
+      await actualRm(oldDir, { recursive: true }).catch(() => {});
+    }
+  });
+
   it("returns 0 when readdir throws", async () => {
     const { cleanOldProjects } = await import("../src/cleanup.js");
     mockReaddir.mockRejectedValueOnce(new Error("EPERM"));
