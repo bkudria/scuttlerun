@@ -156,6 +156,48 @@ describe("runSession", () => {
     expect(mockQuery.close).toHaveBeenCalled();
   });
 
+  it("swallows cleanup rejections so the session still runs", async () => {
+    (mockCleanOldProjects as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("readdir failed"),
+    );
+
+    const mockQuery = createMockQuery([
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "test-cleanup-reject",
+        tools: ["Read", "Write"],
+        model: "claude-haiku-4-5",
+      },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "ok" }],
+        },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "test-cleanup-reject",
+        stop_reason: "end_turn",
+        is_error: false,
+        num_turns: 1,
+        total_cost_usd: 0.001,
+        duration_ms: 1000,
+        usage: { input_tokens: 10, output_tokens: 5 },
+        result: "ok",
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    const result = await runSession(minConfig());
+
+    expect(result.exitCode).toBe(0);
+    expect(mockCleanOldProjects).toHaveBeenCalled();
+  });
+
   it("always creates a temp dir even without project config", async () => {
     const mockQuery = createMockQuery([
       {
