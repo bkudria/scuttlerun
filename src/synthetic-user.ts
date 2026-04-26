@@ -5,7 +5,7 @@ import type {
 } from "./oracle.js";
 import type { UserConfig } from "./config.js";
 
-const ORACLE_CONTEXT_PAIR_LIMIT = 10;
+const ORACLE_CONTEXT_ENTRY_LIMIT = 20;
 
 export interface CanUseToolResult {
   behavior: "allow";
@@ -105,10 +105,9 @@ export class SyntheticUser {
   }
 
   private getRecentContext(): ConversationEntry[] {
-    const maxEntries = ORACLE_CONTEXT_PAIR_LIMIT * 2;
-    if (this.conversationBuffer.length <= maxEntries) {
+    if (this.conversationBuffer.length <= ORACLE_CONTEXT_ENTRY_LIMIT) {
       return [...this.conversationBuffer];
     }
-    return this.conversationBuffer.slice(-maxEntries);
+    return this.conversationBuffer.slice(-ORACLE_CONTEXT_ENTRY_LIMIT);
   }
 }
