@@ -719,12 +719,20 @@ surface StreamingTranscript {
         -- per event, and a footer mapping. The preamble carries four
         -- keys: `session` (the SDK session id), `config` (the resolved
         -- configuration), `project` (the workspace path) and
-        -- `transcript` (the SDK session JSONL path). The footer carries
-        -- seven keys: `turns` (count), `tool_calls` (count), `duration`
-        -- (seconds), `oracle_cost_usd` (Decimal), `oracle_usage`
-        -- (per-model token totals), `timed_out` (Boolean) and `files`
-        -- (the list of files written or modified inside the workspace).
-        -- Multi-line strings use block-literal style.
+        -- `transcript` (the SDK session JSONL path). The footer
+        -- always carries `turns` (count), `tool_calls` (count) and
+        -- `duration_s` (seconds). Additional keys appear conditionally:
+        -- `cost_usd` (Decimal: agent + oracle total) appears when the
+        -- total is greater than zero; `oracle_cost_usd` (Decimal)
+        -- appears when the oracle cost is greater than zero;
+        -- `oracle_usage` appears when the oracle has been called at
+        -- least once and carries per-model input/output token totals
+        -- alongside `cache_creation_input_tokens`,
+        -- `cache_read_input_tokens` and `cost_usd`; `timed_out`
+        -- (Boolean) appears only when truthy; and `files_written`,
+        -- `files_edited`, `files_read` each appear only when their
+        -- respective list is non-empty. Multi-line strings use
+        -- block-literal style.
 
     @guarantee InspectableMidSession
         -- A reader joining mid-session sees the preamble plus all entries
