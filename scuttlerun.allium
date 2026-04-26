@@ -16,7 +16,7 @@
 --   - YAML config schema and merge semantics (input presentation, not behaviour)
 --   - Agent SDK protocol internals (message envelopes, async-iterator coordination)
 --   - Anthropic Messages API integration details (oracle is a black box here)
---   - Sandbox enforcement (delegated to the Agent SDK)
+--   - Sandbox enforcement (delegated to the Agent SDK; scuttlerun configures the sandbox via SessionInput.sandbox)
 --   - Pricing table maintenance (a data file, not behaviour)
 
 
@@ -52,7 +52,9 @@ value SessionInput {
     timeout: Duration
     permission_mode: default | accept_edits | bypass_permissions | plan | dont_ask
     tools: List<String>
+    disallowed_tools: List<String>
     project: ProjectTemplate?
+    sandbox: Sandbox
 
     @guidance
         -- permission_mode values map 1:1 to the Agent SDK's camelCase
@@ -63,8 +65,22 @@ value SessionInput {
         --   plan               -> "plan"
         --   dont_ask           -> "dontAsk"
         --
-        -- tools is a List<String> (not a Set) because order is preserved
-        -- with first-wins dedup when additional_tools is layered on top.
+        -- tools is the resolved post-merge allow list the runner hands to
+        -- the Agent SDK. The caller may supply two layers of tool input —
+        -- a base list and an additional list — and the resolved tools
+        -- field represents both layers concatenated, with the additional
+        -- entries appended after the base entries and duplicates removed
+        -- on a first-wins basis. The list shape (rather than a set) is
+        -- load-bearing: ordering is preserved so that downstream
+        -- consumers see a deterministic sequence, and first-wins dedup
+        -- means an additional entry that repeats a base entry is a
+        -- no-op rather than a reorder.
+        --
+        -- timeout is supplied at runtime via the --timeout CLI flag
+        -- (defaulting to config.default_session_timeout, 300 seconds)
+        -- rather than being read from a YAML config file. The field on
+        -- SessionInput represents the resolved value the runner enforces
+        -- against session.started_at, not a YAML-configurable knob.
 }
 
 value ProjectTemplate {
@@ -73,6 +89,15 @@ value ProjectTemplate {
     settings: Map<String, Any>?
     files: Map<String, String>?
     git_init: Boolean
+}
+
+value Sandbox {
+    enabled: Boolean
+    network: enabled | disabled
+    fs_allow: List<String>
+    fs_deny: List<String>
+    allowed_domains: List<String>
+    auto_allow_bash: Boolean
 }
 
 -- The Agent SDK process scuttlerun drives. Code-to-code boundary.
@@ -150,9 +175,18 @@ entity Workspace {
     scaffolded: Boolean
 
     @guidance
-        -- When scaffolded is true and the sandbox is enabled, HOME is
-        -- redirected into a .home subdirectory of the workspace so tool
-        -- caches (npm, pip, cargo, etc.) stay inside the workspace.
+        -- When the sandbox is enabled, HOME is redirected to
+        -- <workspace>/.home so that the agent process does not read or
+        -- write the operator's home directory. This applies regardless
+        -- of whether the workspace was scaffolded from a project
+        -- template.
+        --
+        -- When session.input.sandbox.enabled, the agent subprocess
+        -- receives only an allowlisted set of environment variables
+        -- (plus any user-supplied sdk.env overrides applied on top).
+        -- The behavioural shape is: env is filtered, not inherited.
+        -- The contents of the allowlist are a code-level concern and
+        -- are not enumerated here.
 }
 
 -- The LLM-driven simulation of the human user.
@@ -700,6 +734,15 @@ surface AgentSdkBoundary {
         demands MultiTurnPromptStream
         demands SessionPersistence
         demands AbortableExecution
+
+    @guidance
+        -- session.input.disallowed_tools is the deny list scuttlerun
+        -- passes to the Agent SDK alongside the allow list. Under
+        -- permission_mode = bypass_permissions the SDK skips its
+        -- normal prompt-and-allow flow, so disallowed_tools is the
+        -- only mechanism that blocks tool calls in that mode. Under
+        -- the other permission modes the deny list still applies but
+        -- is layered on top of the mode's own enforcement.
 }
 
 surface OracleApiBoundary {
