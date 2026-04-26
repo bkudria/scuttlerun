@@ -441,22 +441,18 @@ rule AgentTurnSucceeds {
 
     ensures: session.agent_cost = agent_cost_to_date
     ensures: session.turn_count = session.turn_count + 1
-    ensures:
-        if session.input.max_user_follow_ups = 0:
-            session.status = completed_success
-        else:
-            TurnPolicyConsultation(session)
+    ensures: TurnPolicyConsultation(session)
 
     @guidance
-        -- Turn-policy consultation is unconditional whenever
-        -- max_user_follow_ups > 0. The cap-hit short-circuit lives in
-        -- the turn-policy machinery (TurnPolicyCapped) rather than
-        -- here: even when the cap has been reached the consultation
-        -- request is raised, and the cap-aware rule downstream
-        -- decides to end without invoking the oracle. This mirrors
-        -- the runner's control flow, which always calls
-        -- decideTurn() after a successful agent turn and lets
-        -- decideTurn() check the cap before deciding whether to
+        -- Turn-policy consultation is unconditional after every
+        -- successful agent turn. Both short-circuits — the cap=0
+        -- single-turn case and the cap-reached case — live in the
+        -- turn-policy machinery (TurnPolicyCapped, whose guard
+        -- not has_remaining_follow_ups holds when max_user_follow_ups
+        -- is zero or already consumed) and end the session without
+        -- invoking the oracle. This mirrors the runner's control
+        -- flow, which always calls decideTurn() after a successful
+        -- agent turn and lets decideTurn() decide whether to
         -- contact the oracle.
 }
 
