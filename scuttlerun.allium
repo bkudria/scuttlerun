@@ -249,39 +249,12 @@ entity ConversationEntry {
 }
 
 -- A clarifying question request from the agent (AskUserQuestion tool).
--- One request may carry multiple questions; the oracle answers all of them.
+-- A marker entity recording that a request was received and routed
+-- to the oracle. Question payload, oracle answers, reasoning and
+-- token usage are observable through the transcript and footer
+-- rather than persisted on the entity model.
 entity ClarifyingQuestionRequest {
     session: Session
-    questions: List<Question>
-    received_at: Timestamp
-    answer_set: OracleAnswerSet
-}
-
-entity Question {
-    request: ClarifyingQuestionRequest
-    text: String
-    header: String
-    options: List<QuestionOption>
-    multi_select: Boolean
-}
-
-entity QuestionOption {
-    question: Question
-    label: String
-    description: String
-}
-
-entity OracleAnswerSet {
-    request: ClarifyingQuestionRequest
-    answers: List<OracleAnswer> with answer_set = this
-    reasoning: String
-    usage: TokenUsage
-}
-
-entity OracleAnswer {
-    answer_set: OracleAnswerSet
-    question: String
-    answer: String
 }
 
 -- A turn-policy decision about whether to send a follow-up.
