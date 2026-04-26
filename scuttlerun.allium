@@ -409,13 +409,13 @@ rule SyntheticUserAnswersClarifyingQuestion {
 -- =============================================================
 
 rule AgentTurnSucceeds {
-    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date)
+    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: subtype = success
 
     ensures: session.agent_cost = agent_cost_to_date
-    ensures: session.turn_count = session.turn_count + 1
+    ensures: session.turn_count = num_turns_to_date
     ensures: TurnPolicyConsultation(session)
 
     @guidance
@@ -429,6 +429,12 @@ rule AgentTurnSucceeds {
         -- flow, which always calls decideTurn() after a successful
         -- agent turn and lets decideTurn() decide whether to
         -- contact the oracle.
+        --
+        -- num_turns_to_date is the SDK-reported cumulative count of
+        -- agent turns completed in this session up to and including
+        -- this result. scuttlerun mirrors the SDK's count rather
+        -- than maintaining an independent counter, matching the
+        -- snapshot idiom used for agent_cost_to_date.
 }
 
 rule TurnPolicyCapped {
@@ -512,32 +518,35 @@ rule TurnPolicyEndsByCap {
 }
 
 rule AgentTurnExhaustsTurns {
-    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date)
+    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: subtype = error_max_turns
 
     ensures: session.agent_cost = agent_cost_to_date
+    ensures: session.turn_count = num_turns_to_date
     ensures: session.status = exhausted_turns
 }
 
 rule AgentTurnExhaustsBudget {
-    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date)
+    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: subtype = error_max_budget_usd
 
     ensures: session.agent_cost = agent_cost_to_date
+    ensures: session.turn_count = num_turns_to_date
     ensures: session.status = exhausted_budget
 }
 
 rule AgentTurnFailsAtRuntime {
-    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date)
+    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: subtype = error_during_execution
 
     ensures: session.agent_cost = agent_cost_to_date
+    ensures: session.turn_count = num_turns_to_date
     ensures: session.status = failed
 }
 
