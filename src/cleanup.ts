@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 const PREFIX = "scuttlerun-project-";
 const MS_PER_DAY = 86_400_000;
 
+export const WORKSPACE_CLEANUP_AGE_DAYS = 7;
+
 /**
  * Remove scuttlerun project directories older than maxAgeDays from $TMPDIR.
  * Best-effort: failures are silently ignored.

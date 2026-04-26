@@ -6,7 +6,7 @@ import type { SessionConfig } from "./config.js";
 import { Oracle, AskUserQuestionInputSchema } from "./oracle.js";
 import { SyntheticUser } from "./synthetic-user.js";
 import { scaffoldProject, createProjectDir, resolveSkillPath } from "./project.js";
-import { cleanOldProjects } from "./cleanup.js";
+import { cleanOldProjects, WORKSPACE_CLEANUP_AGE_DAYS } from "./cleanup.js";
 import {
   writeHeader,
   writeUser,
@@ -40,7 +40,7 @@ export async function runSession(
   delete process.env.CLAUDECODE;
 
   // Clean old project directories in the background; best-effort, not on the critical path.
-  cleanOldProjects(7, { verbose }).catch(() => {});
+  cleanOldProjects(WORKSPACE_CLEANUP_AGE_DAYS, { verbose }).catch(() => {});
 
   let sessionId: string | undefined;
   let queryHandle: ReturnType<typeof query> | undefined;

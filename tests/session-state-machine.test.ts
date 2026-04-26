@@ -48,6 +48,7 @@ vi.mock("../src/project.js", () => ({
 
 vi.mock("../src/cleanup.js", () => ({
   cleanOldProjects: vi.fn().mockResolvedValue(0),
+  WORKSPACE_CLEANUP_AGE_DAYS: 7,
 }));
 
 vi.mock("node:fs", async () => {
