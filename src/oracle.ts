@@ -165,6 +165,7 @@ export class Oracle {
         this.totalUsage.output_tokens,
         this.totalUsage.cache_creation_input_tokens,
         this.totalUsage.cache_read_input_tokens,
+        this.model,
       ),
     };
   }

@@ -20,14 +20,24 @@ function getFamilyPrice(model: string): ModelPrice | undefined {
 const CACHE_CREATION_MULTIPLIER = 1.25;
 const CACHE_READ_MULTIPLIER = 0.1;
 
+const ULTIMATE_FALLBACK_MODEL = "claude-haiku-4-5";
+
+function lookupPrice(model: string): ModelPrice | undefined {
+  return PRICES[model] ?? getFamilyPrice(model);
+}
+
 export function computeCostUsd(
   model: string,
   inputTokens: number,
   outputTokens: number,
   cacheCreationTokens: number = 0,
   cacheReadTokens: number = 0,
+  defaultModel: string = ULTIMATE_FALLBACK_MODEL,
 ): number {
-  const price = PRICES[model] ?? getFamilyPrice(model) ?? PRICES["claude-haiku-4-5"];
+  const price =
+    lookupPrice(model) ??
+    lookupPrice(defaultModel) ??
+    PRICES[ULTIMATE_FALLBACK_MODEL];
   return (
     inputTokens * price.inputPerMTok +
     outputTokens * price.outputPerMTok +

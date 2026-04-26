@@ -45,6 +45,24 @@ describe("computeCostUsd", () => {
     const opus = computeCostUsd("claude-opus-4-7", 1000, 1000);
     expect(future).toBeCloseTo(opus, 10);
   });
+
+  it("falls back to the configured default model's rate when family matching also fails", () => {
+    // An unknown model (no opus/sonnet/haiku in name) priced with a configured
+    // default model that uses a *different* rate from haiku must charge the
+    // default model's rate, not the hard-coded haiku literal.
+    const unknown = computeCostUsd(
+      "claude-fictional-9-9",
+      1_000_000,
+      1_000_000,
+      0,
+      0,
+      "claude-opus-4-7",
+    );
+    const opus = computeCostUsd("claude-opus-4-7", 1_000_000, 1_000_000);
+    const haiku = computeCostUsd("claude-haiku-4-5", 1_000_000, 1_000_000);
+    expect(unknown).toBeCloseTo(opus, 10);
+    expect(unknown).not.toBeCloseTo(haiku, 6);
+  });
 });
 
 describe("cache token pricing", () => {
