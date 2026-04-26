@@ -68,7 +68,7 @@ value SessionInput {
         -- max_user_follow_ups is supplied via the YAML field
         -- user.max_turns (under the top-level user section). The field
         -- on SessionInput represents the resolved value the runner
-        -- enforces against synthetic_user.follow_up_count.
+        -- enforces against synthetic_user.user_turn_count.
         --
         -- tools is the resolved post-merge allow list the runner hands to
         -- the Agent SDK. The caller may supply two layers of tool input —
@@ -229,11 +229,11 @@ entity Workspace {
 entity SyntheticUser {
     session: Session
     persona: String?
-    follow_up_count: Integer
+    user_turn_count: Integer
     conversation: List<ConversationEntry> with synthetic_user = this
 
     has_remaining_follow_ups:
-        follow_up_count < session.input.max_user_follow_ups
+        user_turn_count < session.input.max_user_follow_ups
 
     @guidance
         -- The synthetic user only forwards the most recent
@@ -369,7 +369,7 @@ rule SessionBecomesRunning {
     ensures: SyntheticUser.created(
         session: session,
         persona: session.input.persona,
-        follow_up_count: 0
+        user_turn_count: 0
     )
     ensures: TranscriptEntry.created(
         transcript: session.transcript,
@@ -496,7 +496,7 @@ rule TurnPolicyContinues {
         follow_up_message: message,
         reasoning: reasoning
     )
-    ensures: synthetic.follow_up_count = synthetic.follow_up_count + 1
+    ensures: synthetic.user_turn_count = synthetic.user_turn_count + 1
     ensures: ConversationEntry.created(
         synthetic_user: synthetic,
         role: user,
@@ -734,7 +734,7 @@ invariant FollowUpsRespectCap {
     -- The number of follow-up messages the synthetic user yields never
     -- exceeds the configured cap. Single-turn mode (cap = 0) yields none.
     for synthetic in SyntheticUsers:
-        synthetic.follow_up_count <= synthetic.session.input.max_user_follow_ups
+        synthetic.user_turn_count <= synthetic.session.input.max_user_follow_ups
 }
 
 invariant OnlyTextReachesOracleContext {
