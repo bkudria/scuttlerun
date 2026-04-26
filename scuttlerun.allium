@@ -53,6 +53,7 @@ value SessionInput {
     permission_mode: `default` | `acceptEdits` | `bypassPermissions` | `plan` | `dontAsk`
     tools: List<String>
     disallowed_tools: List<String>?
+    effort: low | medium | high | xhigh | max
     project: ProjectTemplate?
     sandbox: Sandbox
 
@@ -79,6 +80,10 @@ value SessionInput {
         -- rather than being read from a YAML config file. The field on
         -- SessionInput represents the resolved value the runner enforces
         -- against session.started_at, not a YAML-configurable knob.
+        --
+        -- effort is passed through to the Agent SDK as a reasoning
+        -- effort knob. Default value handling lives in CLI/config and
+        -- is out of spec scope.
 }
 
 value ProjectTemplate {
