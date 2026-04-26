@@ -301,6 +301,21 @@ rule SessionStarts {
     )
 }
 
+rule SessionScaffoldsSkills {
+    when: SessionRequested(caller, input, started_at)
+
+    requires: input.project != null
+
+    for skill_path in input.project.skills:
+        for workspace in Workspaces where workspace.created_at = started_at:
+            ensures: SkillReferenced(input.project, skill_path, workspace)
+
+    @guidance
+        -- Each skill path declared on the project template is announced
+        -- to the workspace just created for this session, kicking off
+        -- scaffold-time validation in WorkspaceScaffoldsSkill.
+}
+
 rule SessionBecomesRunning {
     when: AgentInitialized(client, session)
 
@@ -577,15 +592,20 @@ rule AssistantToolCallEmitted {
 rule OracleCallTracked {
     when: OracleCallCompleted(api, session, usage)
 
-    let cost = compute_oracle_cost(session.input.oracle_model, usage)
-
-    ensures: session.oracle_cost = session.oracle_cost + cost
+    ensures: session.oracle_cost = session.oracle_cost
+        + usage.input_tokens * input_rate(session.input.oracle_model)
+        + usage.output_tokens * output_rate(session.input.oracle_model)
+        + usage.cache_creation_input_tokens * cache_creation_rate(session.input.oracle_model)
+        + usage.cache_read_input_tokens * cache_read_rate(session.input.oracle_model)
 
     @guidance
-        -- compute_oracle_cost combines input, output, cache-creation and
-        -- cache-read tokens against the model's per-million-token rates.
-        -- Unknown models fall back to a family rate or to the default
-        -- oracle model's rate.
+        -- The cost increment combines input, output, cache-creation and
+        -- cache-read token counts from the call's TokenUsage with the
+        -- model's per-million-token rates: input tokens times the input
+        -- rate, output tokens times the output rate, plus cache-creation
+        -- and cache-read tokens against their own rate columns. Unknown
+        -- models fall back to a family rate or to the default oracle
+        -- model's rate; the rate-table lookup is implementation detail.
 }
 
 
@@ -599,14 +619,6 @@ invariant WorkspacePreservedAcrossOutcomes {
     -- session's startup GC.
     for session in Sessions:
         session.is_terminated implies exists session.workspace
-}
-
-invariant SubagentQuestionsNotDistinguished {
-    -- Clarifying questions originating from a subagent and from the main
-    -- agent are answered by the same oracle path with the same persona.
-    -- The current spec does not differentiate by origin agent.
-    for request in ClarifyingQuestionRequests:
-        true
 }
 
 invariant ScaffoldedFilesStayInProject {
@@ -666,9 +678,13 @@ surface CommandLineInvocation {
         SessionRequested(caller, session.input, session.started_at)
 
     @guarantee Headless
-        -- The CLI never blocks on interactive prompts. Tool permission
-        -- prompts are bypassed (under bypass_permissions) and
-        -- AskUserQuestion is answered by the synthetic user.
+        -- The CLI runs without an interactive TTY: stdin is closed for
+        -- agent input, stdout streams the YAML transcript, and stderr
+        -- carries diagnostics only. When permission_mode is
+        -- bypass_permissions, tool permission prompts are bypassed
+        -- entirely; under other permission modes, the SDK may surface
+        -- prompts and the operator must answer them on stdin
+        -- explicitly.
 
     @guarantee SingleSessionPerInvocation
         -- One invocation runs exactly one session and produces exactly one
@@ -752,6 +768,7 @@ surface OracleApiBoundary {
 
     provides:
         OracleCallCompleted(api, session)
+        TurnPolicyDecided(api, session, decision)
 
     contracts:
         demands StructuredOutputParse
@@ -780,13 +797,17 @@ contract ToolPermissionCallback {
 }
 
 contract MultiTurnPromptStream {
-    yield_initial: (session: Session) -> Any
-    yield_follow_up_or_end: (session: Session, decision: TurnEvaluation) -> Any
+    next_message: (session: Session) -> Any
 
-    @invariant FollowUpsRespectCap
-        -- The number of follow-up messages yielded is bounded by
-        -- session.input.max_user_follow_ups. When the cap is zero or has
-        -- been reached, no further messages are yielded.
+    @invariant StreamExhaustion
+        -- The stream yields the initial prompt followed by zero or
+        -- more follow-up messages, then signals end-of-stream. After
+        -- end-of-stream, the stream is exhausted; calling
+        -- next_message again is an error. The number of follow-up
+        -- messages yielded is bounded by
+        -- session.input.max_user_follow_ups; when the cap is zero or
+        -- has been reached, the stream signals end-of-stream
+        -- immediately after the initial prompt.
 }
 
 contract SessionPersistence {
