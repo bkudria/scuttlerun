@@ -398,11 +398,47 @@ rule AgentTurnSucceeds {
     ensures: session.agent_cost = agent_cost_to_date
     ensures: session.turn_count = session.turn_count + 1
     ensures:
-        if session.input.max_user_follow_ups = 0
-            or not session.synthetic_user.has_remaining_follow_ups:
+        if session.input.max_user_follow_ups = 0:
             session.status = completed_success
         else:
             TurnPolicyConsultation(session)
+
+    @guidance
+        -- Turn-policy consultation is unconditional whenever
+        -- max_user_follow_ups > 0. The cap-hit short-circuit lives in
+        -- the turn-policy machinery (TurnPolicyCapped) rather than
+        -- here: even when the cap has been reached the consultation
+        -- request is raised, and the cap-aware rule downstream
+        -- decides to end without invoking the oracle. This mirrors
+        -- the runner's control flow, which always calls
+        -- decideTurn() after a successful agent turn and lets
+        -- decideTurn() check the cap before deciding whether to
+        -- contact the oracle.
+}
+
+rule TurnPolicyCapped {
+    when: TurnPolicyConsultation(session)
+
+    requires: session.status = running
+    requires: not session.synthetic_user.has_remaining_follow_ups
+
+    -- Short-circuit: the cap has been reached, so the turn policy
+    -- ends the session without contacting the oracle. The decision
+    -- still surfaces as a TurnPolicyDecided event so that downstream
+    -- handling (TurnPolicyEnds) is uniform.
+    ensures: TurnPolicyDecided(session, end, null, null)
+}
+
+rule TurnPolicyConsultsOracle {
+    when: TurnPolicyConsultation(session)
+
+    requires: session.status = running
+    requires: session.synthetic_user.has_remaining_follow_ups
+
+    -- The oracle is contacted; its decision arrives later as
+    -- TurnPolicyDecided and is handled by TurnPolicyContinues or
+    -- TurnPolicyEnds.
+    ensures: OracleConsultedForTurnPolicy(session)
 }
 
 rule TurnPolicyContinues {
