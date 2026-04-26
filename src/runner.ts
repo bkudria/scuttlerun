@@ -309,8 +309,12 @@ export async function runSession(
     if (timedOut) {
       exitCode = 6;
     }
-
-    // Write footer
+  } catch {
+    exitCode = timedOut ? 6 : 2;
+  } finally {
+    // Always finalise the transcript on every termination path
+    // (happy, timeout, exception) — see spec rule SessionFinalises and
+    // invariant WorkspacePreservedAcrossOutcomes.
     const duration = Date.now() - startTime;
     const oracleUsage = oracle.getTotalUsage();
     writeFooter({
@@ -325,8 +329,6 @@ export async function runSession(
       filesRead: Array.from(filesRead),
       oracleUsage,
     });
-  } catch {
-    exitCode = timedOut ? 6 : 2;
   }
 
   // Cleanup

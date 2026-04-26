@@ -1520,6 +1520,29 @@ describe("scuttlerun.allium invariants and rule obligations", () => {
       expect(stdoutOutput).toContain("duration_s:");
       expect(stdoutOutput).toContain("timed_out: true");
     });
+
+    it("emits the footer when an unexpected exception is thrown mid-stream", async () => {
+      // SDK iterator throws partway through the for-await loop, after init.
+      // The transcript must still be finalised (footer emitted) on this path.
+      const mockQuery = {
+        close: vi.fn(),
+        interrupt: vi.fn().mockResolvedValue(undefined),
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "system", subtype: "init", session_id: "s-fin-exception", tools: [], model: "claude-haiku-4-5" };
+          throw new Error("unexpected SDK explosion");
+        },
+      };
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+      const result = await runSession(minConfig());
+
+      // Exit code stays 2 for non-timeout exceptions
+      expect(result.exitCode).toBe(2);
+      // Footer-distinguishing keys must be present
+      expect(stdoutOutput).toContain("turns:");
+      expect(stdoutOutput).toContain("tool_calls:");
+      expect(stdoutOutput).toContain("duration_s:");
+    });
   });
 });
 
