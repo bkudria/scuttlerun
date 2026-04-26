@@ -50,21 +50,13 @@ value SessionInput {
     max_user_follow_ups: Integer
     max_budget_usd: Decimal?
     timeout: Duration
-    permission_mode: default | accept_edits | bypass_permissions | plan | dont_ask
+    permission_mode: `default` | `acceptEdits` | `bypassPermissions` | `plan` | `dontAsk`
     tools: List<String>
     disallowed_tools: List<String>?
     project: ProjectTemplate?
     sandbox: Sandbox
 
     @guidance
-        -- permission_mode values map 1:1 to the Agent SDK's camelCase
-        -- strings:
-        --   default            -> "default"
-        --   accept_edits       -> "acceptEdits"
-        --   bypass_permissions -> "bypassPermissions"
-        --   plan               -> "plan"
-        --   dont_ask           -> "dontAsk"
-        --
         -- max_user_follow_ups is supplied via the YAML field
         -- user.max_turns (under the top-level user section). The field
         -- on SessionInput represents the resolved value the runner
@@ -137,14 +129,6 @@ external entity AnthropicMessagesApi {}
 
 -- The shell/script invoking scuttlerun.
 external entity Caller {}
-
--- Token usage reported by Anthropic for an oracle call.
-value TokenUsage {
-    input_tokens: Integer
-    output_tokens: Integer
-    cache_creation_input_tokens: Integer
-    cache_read_input_tokens: Integer
-}
 
 
 -- =============================================================
@@ -654,7 +638,7 @@ rule OracleCallTracked {
 
     @guidance
         -- The cost increment combines input, output, cache-creation and
-        -- cache-read token counts from the call's TokenUsage with the
+        -- cache-read token counts reported by the API call with the
         -- model's per-million-token rates: input tokens times the input
         -- rate, output tokens times the output rate, plus cache-creation
         -- and cache-read tokens against their own rate columns. The
@@ -732,7 +716,6 @@ surface CommandLineInvocation {
     context session: Session
 
     exposes:
-        session.status
         session.turn_count
         session.tool_call_count
         session.total_cost
@@ -746,7 +729,7 @@ surface CommandLineInvocation {
         -- The CLI runs without an interactive TTY: stdin is closed for
         -- agent input, stdout streams the YAML transcript, and stderr
         -- carries diagnostics only. When permission_mode is
-        -- bypass_permissions, tool permission prompts are bypassed
+        -- `bypassPermissions`, tool permission prompts are bypassed
         -- entirely; under other permission modes, the SDK may surface
         -- prompts and the operator must answer them on stdin
         -- explicitly.
@@ -832,7 +815,7 @@ surface AgentSdkBoundary {
     @guidance
         -- session.input.disallowed_tools is the deny list scuttlerun
         -- passes to the Agent SDK alongside the allow list. Under
-        -- permission_mode = bypass_permissions the SDK skips its
+        -- permission_mode = `bypassPermissions` the SDK skips its
         -- normal prompt-and-allow flow, so disallowed_tools is the
         -- only mechanism that blocks tool calls in that mode. Under
         -- the other permission modes the deny list still applies but
