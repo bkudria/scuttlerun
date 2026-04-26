@@ -932,6 +932,55 @@ describe("runSession", () => {
     expect(stdoutOutput).toContain("Please add tests");
   });
 
+  it("does not emit oracle_turn transcript entry on cap-driven termination", async () => {
+    // Oracle returns "continue" for the first decideTurn. After that the
+    // synthetic user's userTurnCount equals max_turns (1), so the second
+    // decideTurn short-circuits on the cap and never contacts the oracle.
+    // Per spec rule TurnPolicyEndsByCap, no oracle_turn transcript entry
+    // is emitted on the cap-driven path.
+    mockParse.mockResolvedValueOnce({
+      parsed_output: { decision: "continue", message: "Add tests", reasoning: "Task incomplete" },
+      usage: { input_tokens: 100, output_tokens: 50 },
+    });
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
+      (opts: { prompt: AsyncGenerator; options: Record<string, unknown> }) => {
+        const inputGen = opts.prompt;
+        return {
+          close: vi.fn(), interrupt: vi.fn().mockResolvedValue(undefined),
+          [Symbol.asyncIterator]: async function* () {
+            await inputGen.next();
+            const pendingContinue = inputGen.next();
+
+            yield { type: "system", subtype: "init", session_id: "s-cap", tools: [], model: "claude-haiku-4-5" };
+            yield { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "First answer." }] } };
+            yield { type: "result", subtype: "success", session_id: "s-cap", num_turns: 1, total_cost_usd: 0.01 };
+
+            const continueResult = await pendingContinue;
+            expect(continueResult.done).toBe(false);
+
+            const pendingEnd = inputGen.next();
+
+            yield { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Second answer." }] } };
+            yield { type: "result", subtype: "success", session_id: "s-cap", num_turns: 2, total_cost_usd: 0.02 };
+
+            const endResult = await pendingEnd;
+            expect(endResult.done).toBe(true);
+          },
+        };
+      },
+    );
+
+    const result = await runSession(minConfig({
+      user: { oracle_model: "claude-haiku-4-5", max_turns: 1 },
+    }));
+
+    expect(result.exitCode).toBe(0);
+    expect(mockParse).toHaveBeenCalledTimes(1);
+    const oracleTurnMatches = stdoutOutput.match(/oracle: turn/g) ?? [];
+    expect(oracleTurnMatches).toHaveLength(1);
+  });
+
   it("handles canUseTool AskUserQuestion via oracle", async () => {
     type CanUseToolFn = (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
 

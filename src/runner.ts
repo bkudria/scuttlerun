@@ -282,8 +282,11 @@ export async function runSession(
           // Consult turn policy
           const decision = await syntheticUser.decideTurn();
 
-          // Write oracle turn policy decision
-          if (config.user.max_turns > 0) {
+          // Write oracle turn policy decision only when the oracle was
+          // actually consulted. Cap-driven short-circuits (max_turns=0
+          // or userTurnCount>=cap) leave reasoning undefined and emit
+          // no transcript entry, per spec rule TurnPolicyEndsByCap.
+          if (decision.reasoning !== undefined) {
             writeOracleTurn(decision.decision, decision.message, decision.reasoning);
           }
 
