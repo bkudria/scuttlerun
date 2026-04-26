@@ -50,28 +50,29 @@ value SessionInput {
     max_user_follow_ups: Integer
     max_budget_usd: Decimal?
     timeout: Duration
-    permission_mode: default_mode | accept_edits | bypass_permissions | plan_mode | dont_ask
-    tools: Set<String>
-    workspace_template: WorkspaceTemplate?
+    permission_mode: default | accept_edits | bypass_permissions | plan | dont_ask
+    tools: List<String>
+    project: ProjectTemplate?
+
+    @guidance
+        -- permission_mode values map 1:1 to the Agent SDK's camelCase
+        -- strings:
+        --   default            -> "default"
+        --   accept_edits       -> "acceptEdits"
+        --   bypass_permissions -> "bypassPermissions"
+        --   plan               -> "plan"
+        --   dont_ask           -> "dontAsk"
+        --
+        -- tools is a List<String> (not a Set) because order is preserved
+        -- with first-wins dedup when additional_tools is layered on top.
 }
 
-value WorkspaceTemplate {
+value ProjectTemplate {
     claude_md: String?
-    skill_sources: List<SkillSource>
-    settings: String?
-    files: List<TemplateFile>
+    skills: List<String>
+    settings: Map<String, Any>?
+    files: Map<String, String>?
     git_init: Boolean
-}
-
-value SkillSource {
-    path: String
-    is_directory: Boolean
-    has_skill_md: Boolean
-}
-
-value TemplateFile {
-    relative_path: String
-    contents: String
 }
 
 -- The Agent SDK process scuttlerun drives. Code-to-code boundary.
@@ -253,7 +254,7 @@ rule SessionStarts {
     ensures: Workspace.created(
         created_at: started_at,
         last_modified: started_at,
-        scaffolded: input.workspace_template != null
+        scaffolded: input.project != null
     )
     ensures: Session.created(
         input: input,
@@ -471,19 +472,21 @@ rule StaleWorkspacesRemoved {
 }
 
 rule WorkspaceScaffoldsSkill {
-    when: SkillReferenced(template, skill, workspace)
+    when: SkillReferenced(template, skill_path, workspace)
 
-    requires: skill.is_directory
-    requires: skill.has_skill_md
+    requires: is_directory(skill_path)
+    requires: has_skill_md(skill_path)
 
-    ensures: SkillSymlinked(skill, workspace)
+    ensures: SkillSymlinked(skill_path, workspace)
 
     @guidance
-        -- All skills are validated before any filesystem mutation occurs.
-        -- A failed skill validation rejects the entire session as a
-        -- configuration error (exit 1) — no partial scaffolding remains.
-        -- Skills are symlinked into <workspace>/.claude/skills/<name>/,
-        -- not copied.
+        -- skill_path is one entry from project.skills (a raw path string).
+        -- All skill paths are validated before any filesystem mutation
+        -- occurs: each path must resolve to a directory containing a
+        -- SKILL.md file. A failed skill validation rejects the entire
+        -- session as a configuration error (exit 1) — no partial
+        -- scaffolding remains. Skills are symlinked into
+        -- <workspace>/.claude/skills/<name>/, not copied.
 }
 
 
@@ -573,15 +576,16 @@ invariant SubagentQuestionsNotDistinguished {
 }
 
 invariant ScaffoldedFilesStayInProject {
-    -- Files declared by WorkspaceTemplate.files cannot escape the
+    -- Files declared by ProjectTemplate.files cannot escape the
     -- workspace nor target .git/. Path traversal and .git/ injection
     -- are rejected as configuration errors before any file is written.
-    for session in Sessions:
-        session.input.workspace_template != null implies
-            session.input.workspace_template.files.all(file =>
-                file.relative_path != ".git"
-                and not starts_with(file.relative_path, ".git/")
-                and resolves_within_workspace(file.relative_path))
+    for session in Sessions where session.input.project != null
+                              and session.input.project.files != null:
+        for (path, _) in session.input.project.files:
+            path != ".git"
+            and not starts_with(path, ".git/")
+            and not contains(path, "..")
+            and not starts_with(path, "/")
 }
 
 invariant FollowUpsRespectCap {
