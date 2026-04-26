@@ -603,9 +603,13 @@ rule OracleCallTracked {
         -- cache-read token counts from the call's TokenUsage with the
         -- model's per-million-token rates: input tokens times the input
         -- rate, output tokens times the output rate, plus cache-creation
-        -- and cache-read tokens against their own rate columns. Unknown
-        -- models fall back to a family rate or to the default oracle
-        -- model's rate; the rate-table lookup is implementation detail.
+        -- and cache-read tokens against their own rate columns. The
+        -- cache columns are derived from the input rate by fixed
+        -- multipliers: cache-creation tokens are billed at 1.25 times
+        -- the input rate, and cache-read tokens at 0.10 times the input
+        -- rate. Unknown models fall back to a family rate or to the
+        -- default oracle model's rate; the rate-table lookup is
+        -- implementation detail.
 }
 
 
@@ -711,11 +715,16 @@ surface StreamingTranscript {
 
     @guarantee StreamingYaml
         -- Output is a single YAML document streamed as the session runs:
-        -- a preamble mapping (session id, config paths, workspace path,
-        -- SDK session file path), a `conversation:` sequence with one
-        -- entry per event, and a footer mapping (turns, tool_calls,
-        -- duration, optional costs and file lists). Multi-line strings
-        -- use block-literal style.
+        -- a preamble mapping, a `conversation:` sequence with one entry
+        -- per event, and a footer mapping. The preamble carries four
+        -- keys: `session` (the SDK session id), `config` (the resolved
+        -- configuration), `project` (the workspace path) and
+        -- `transcript` (the SDK session JSONL path). The footer carries
+        -- seven keys: `turns` (count), `tool_calls` (count), `duration`
+        -- (seconds), `oracle_cost_usd` (Decimal), `oracle_usage`
+        -- (per-model token totals), `timed_out` (Boolean) and `files`
+        -- (the list of files written or modified inside the workspace).
+        -- Multi-line strings use block-literal style.
 
     @guarantee InspectableMidSession
         -- A reader joining mid-session sees the preamble plus all entries
