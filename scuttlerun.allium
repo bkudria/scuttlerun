@@ -193,6 +193,13 @@ entity Workspace {
         -- The behavioural shape is: env is filtered, not inherited.
         -- The contents of the allowlist are a code-level concern and
         -- are not enumerated here.
+        --
+        -- last_modified reflects the filesystem mtime of the workspace
+        -- directory, not an in-memory write-tracking value. It is
+        -- updated by the operating system in response to file activity
+        -- inside the workspace and is read back from the filesystem
+        -- when StaleWorkspaceCleanup evaluates whether a workspace is
+        -- old enough to reclaim.
 }
 
 -- The LLM-driven simulation of the human user.
@@ -305,6 +312,14 @@ rule SessionStarts {
         agent_cost: 0,
         oracle_cost: 0
     )
+
+    @guidance
+        -- StaleWorkspaceCleanup is fire-and-forget: it is dispatched
+        -- when the session starts but is not sequenced before the new
+        -- Workspace is created. The two ensures may complete in either
+        -- order, and the cleanup's success or failure does not block
+        -- session startup. The order shown here is logical, not
+        -- temporal.
 }
 
 rule SessionScaffoldsSkills {
@@ -652,6 +667,13 @@ rule OracleCallTracked {
         -- rate. Unknown models fall back to a family rate or to the
         -- default oracle model's rate; the rate-table lookup is
         -- implementation detail.
+        --
+        -- The per-call accumulation expressed by this rule is the
+        -- logical model. The implementation accumulates raw token
+        -- totals across calls and computes the cost once at session
+        -- finalisation; intermediate session.oracle_cost values are
+        -- not observable to callers and need not match per-call
+        -- arithmetic until the footer is emitted.
 }
 
 
