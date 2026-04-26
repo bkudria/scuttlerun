@@ -99,11 +99,34 @@ value ProjectTemplate {
 
 value Sandbox {
     enabled: Boolean
-    network: enabled | disabled
-    fs_allow: List<String>
-    fs_deny: List<String>
+    network: SandboxNetwork
+    filesystem: SandboxFilesystem
+
+    @guidance
+        -- Network access is governed by the explicit allowlist on
+        -- SandboxNetwork; an empty allowed_domains list means no
+        -- domains are reachable. There is no global on/off network
+        -- toggle separate from sandbox.enabled.
+        --
+        -- Filesystem access is governed by separate read and write
+        -- denylists plus a write allowlist; there is no general read
+        -- allowlist (read defaults to allowed except as denied).
+        --
+        -- Bash auto-allow under the sandbox is not caller-configurable:
+        -- when the sandbox is enabled, the runner always passes
+        -- autoAllowBashIfSandboxed=true and allowUnsandboxedCommands=
+        -- false to the Agent SDK.
+}
+
+value SandboxNetwork {
     allowed_domains: List<String>
-    auto_allow_bash: Boolean
+    allow_local_binding: Boolean
+}
+
+value SandboxFilesystem {
+    deny_read: List<String>
+    allow_write: List<String>
+    deny_write: List<String>
 }
 
 -- The Agent SDK process scuttlerun drives. Code-to-code boundary.
