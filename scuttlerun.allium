@@ -896,12 +896,12 @@ contract MultiTurnPromptStream {
     @invariant StreamExhaustion
         -- The stream yields the initial prompt followed by zero or
         -- more follow-up messages, then signals end-of-stream. After
-        -- end-of-stream, the stream is exhausted; calling
-        -- next_message again is an error. The number of follow-up
-        -- messages yielded is bounded by
-        -- session.input.max_user_follow_ups; when the cap is zero or
-        -- has been reached, the stream signals end-of-stream
-        -- immediately after the initial prompt.
+        -- end-of-stream, subsequent calls signal end-of-stream
+        -- (idempotent); the SDK does not call next_message after
+        -- end-of-stream. The number of follow-up messages yielded is
+        -- bounded by session.input.max_user_follow_ups; when the cap
+        -- is zero or has been reached, the stream signals
+        -- end-of-stream immediately after the initial prompt.
 }
 
 contract SessionPersistence {
