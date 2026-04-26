@@ -63,6 +63,22 @@ describe("computeCostUsd", () => {
     expect(unknown).toBeCloseTo(opus, 10);
     expect(unknown).not.toBeCloseTo(haiku, 6);
   });
+
+  it("falls back to haiku rates when both model and defaultModel are unknown", () => {
+    // Defensive last-resort: if neither the model nor the configured default
+    // model resolves (direct match or family match), we still produce a
+    // sensible price using the haiku rate rather than NaN.
+    const result = computeCostUsd(
+      "claude-fictional-9-9",
+      1_000_000,
+      1_000_000,
+      0,
+      0,
+      "claude-also-fictional-0",
+    );
+    const haiku = computeCostUsd("claude-haiku-4-5", 1_000_000, 1_000_000);
+    expect(result).toBeCloseTo(haiku, 10);
+  });
 });
 
 describe("cache token pricing", () => {
