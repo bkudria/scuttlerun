@@ -19,32 +19,25 @@ export async function scaffoldProject(
   config: ProjectConfig,
   _configDir: string,
 ): Promise<ScaffoldResult> {
+  // Validate every input before any filesystem mutation. A failure
+  // here rejects the whole scaffold and leaves no workspace behind.
+  const resolvedSkills = await validateSkills(config.skills, _configDir);
+  validateFilePaths(config.files);
+
   const projectPath = await fs.mkdtemp(join(tmpdir(), "scuttlerun-project-"));
 
-  // Write CLAUDE.md
   if (config.claude_md) {
     await fs.writeFile(join(projectPath, "CLAUDE.md"), config.claude_md);
   }
 
-  // Symlink skills (validate all paths before creating anything)
-  if (config.skills && config.skills.length > 0) {
-    const resolvedSkills: Array<{ original: string; resolved: string }> = [];
-    for (const skillPath of config.skills) {
-      const resolved = resolveSkillPath(skillPath, _configDir);
-      await validateSkillPath(skillPath, resolved);
-      resolvedSkills.push({ original: skillPath, resolved });
-    }
-
+  if (resolvedSkills.length > 0) {
     const skillsDir = join(projectPath, ".claude", "skills");
     await fs.mkdir(skillsDir, { recursive: true });
-
     for (const { resolved } of resolvedSkills) {
-      const name = basename(resolved);
-      await fs.symlink(resolved, join(skillsDir, name));
+      await fs.symlink(resolved, join(skillsDir, basename(resolved)));
     }
   }
 
-  // Write settings.json
   if (config.settings) {
     const claudeDir = join(projectPath, ".claude");
     await fs.mkdir(claudeDir, { recursive: true });
@@ -59,30 +52,53 @@ export async function scaffoldProject(
     await execFileAsync("git", ["init"], { cwd: projectPath });
   }
 
-  // Write project files
   if (config.files) {
-    // Resolve the project path once via realpath (handles symlinks in tmpdir, e.g. macOS /tmp → /private/tmp)
-    const realProjectPath = await fs.realpath(projectPath);
     for (const [filePath, content] of Object.entries(config.files)) {
-      // Reject writes into .git/ to prevent malicious git hooks
-      if (filePath === ".git" || filePath.startsWith(".git/")) {
-        throw new Error(`File path targets .git/ directory: "${filePath}"`);
-      }
       const fullPath = join(projectPath, filePath);
-      // Use resolve() for the file path since it may not exist yet (realpath requires existence)
-      const realFullPath = resolve(realProjectPath, filePath);
-      if (
-        !realFullPath.startsWith(realProjectPath + "/") &&
-        realFullPath !== realProjectPath
-      ) {
-        throw new Error(`File path escapes project directory: "${filePath}"`);
-      }
       await fs.mkdir(dirname(fullPath), { recursive: true });
       await fs.writeFile(fullPath, content);
     }
   }
 
   return { projectPath };
+}
+
+async function validateSkills(
+  skills: string[] | undefined,
+  configDir: string,
+): Promise<Array<{ original: string; resolved: string }>> {
+  if (!skills || skills.length === 0) return [];
+  const resolved: Array<{ original: string; resolved: string }> = [];
+  for (const skillPath of skills) {
+    const resolvedPath = resolveSkillPath(skillPath, configDir);
+    await validateSkillPath(skillPath, resolvedPath);
+    resolved.push({ original: skillPath, resolved: resolvedPath });
+  }
+  return resolved;
+}
+
+// Synthetic absolute base used to detect path traversal without
+// depending on the project directory existing yet. Any prefix-comparable
+// absolute path works; pick something unlikely to collide with real
+// content.
+const VALIDATION_BASE = "/__scuttlerun_validation__";
+
+function validateFilePaths(
+  files: Record<string, string> | undefined,
+): void {
+  if (!files) return;
+  for (const filePath of Object.keys(files)) {
+    if (filePath === ".git" || filePath.startsWith(".git/")) {
+      throw new Error(`File path targets .git/ directory: "${filePath}"`);
+    }
+    const resolved = resolve(VALIDATION_BASE, filePath);
+    if (
+      !resolved.startsWith(VALIDATION_BASE + "/") &&
+      resolved !== VALIDATION_BASE
+    ) {
+      throw new Error(`File path escapes project directory: "${filePath}"`);
+    }
+  }
 }
 
 async function validateSkillPath(

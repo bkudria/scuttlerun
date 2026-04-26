@@ -326,4 +326,63 @@ describe("scaffoldProject", () => {
       "Skill path does not exist",
     );
   });
+
+  // Atomicity: validation failures must leave no workspace artifacts.
+  // The whole scaffold step is one configuration check followed by one
+  // filesystem mutation; nothing should be written before validation
+  // passes.
+  describe("atomic scaffolding", () => {
+    async function listScuttlerunWorkspaces(): Promise<string[]> {
+      // Match production scaffolds only ("scuttlerun-project-XXXXXX"),
+      // not test fixtures ("scuttlerun-project-test-*") that other
+      // parallel tests churn through their beforeEach/afterEach.
+      const all = await fs.readdir(tmpdir());
+      return all
+        .filter(
+          (d) =>
+            d.startsWith("scuttlerun-project-") &&
+            !d.startsWith("scuttlerun-project-test-"),
+        )
+        .sort();
+    }
+
+    it("creates no workspace when an invalid skill is paired with claude_md", async () => {
+      const config: ProjectConfig = {
+        claude_md: "should not be written",
+        skills: ["./does-not-exist"],
+      };
+      const before = await listScuttlerunWorkspaces();
+      await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+        "Skill path does not exist",
+      );
+      const after = await listScuttlerunWorkspaces();
+      expect(after).toEqual(before);
+    });
+
+    it("creates no workspace when a .git/ file path is paired with claude_md", async () => {
+      const config: ProjectConfig = {
+        claude_md: "should not be written",
+        files: { ".git/hooks/pre-commit": "bad" },
+      };
+      const before = await listScuttlerunWorkspaces();
+      await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+        ".git/",
+      );
+      const after = await listScuttlerunWorkspaces();
+      expect(after).toEqual(before);
+    });
+
+    it("creates no workspace when a traversal file path is paired with claude_md", async () => {
+      const config: ProjectConfig = {
+        claude_md: "should not be written",
+        files: { "../escape.txt": "bad" },
+      };
+      const before = await listScuttlerunWorkspaces();
+      await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
+        "escapes project directory",
+      );
+      const after = await listScuttlerunWorkspaces();
+      expect(after).toEqual(before);
+    });
+  });
 });
