@@ -201,7 +201,6 @@ entity Workspace {
     path: String
     created_at: Timestamp
     last_modified: Timestamp
-    scaffolded: Boolean
 
     @guidance
         -- When the sandbox is enabled, HOME is redirected to
@@ -230,7 +229,6 @@ entity SyntheticUser {
     session: Session
     persona: String?
     user_turn_count: Integer
-    conversation: List<ConversationEntry> with synthetic_user = this
 
     has_remaining_follow_ups:
         user_turn_count < session.input.max_user_follow_ups
@@ -289,7 +287,6 @@ entity OracleAnswer {
 -- A turn-policy decision about whether to send a follow-up.
 entity TurnEvaluation {
     session: Session
-    decided_at: Timestamp
     decision: continue | end
     follow_up_message: String when decision = continue
     reasoning: String
@@ -323,8 +320,7 @@ rule SessionStarts {
 
     ensures: Workspace.created(
         created_at: started_at,
-        last_modified: started_at,
-        scaffolded: input.project != null
+        last_modified: started_at
     )
     ensures: Session.created(
         input: input,
