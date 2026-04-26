@@ -624,18 +624,27 @@ rule WorkspaceScaffoldsSkill {
 -- =============================================================
 
 rule AssistantTextEmitted {
-    when: AgentEmitsAssistantText(client, session, text)
+    when: AgentEmitsAssistantMessage(client, session, text_blocks)
 
     requires: session.status = running
+    requires: text_blocks.count > 0
 
+    -- One transcript entry per text block in the assistant message.
+    for block in text_blocks:
+        ensures: TranscriptEntry.created(
+            transcript: session.transcript,
+            kind: assistant_text
+        )
+
+    -- One conversation entry per assistant message: text is the
+    -- newline-joined concatenation of every text block. This pairs
+    -- the assistant turn with a single user-side entry in the
+    -- oracle context, regardless of how the model split its reply
+    -- into blocks.
     ensures: ConversationEntry.created(
         synthetic_user: session.synthetic_user,
         role: assistant,
-        text: text
-    )
-    ensures: TranscriptEntry.created(
-        transcript: session.transcript,
-        kind: assistant_text
+        text: join(text_blocks, "\n")
     )
 }
 
@@ -845,7 +854,7 @@ surface AgentSdkBoundary {
         AgentInitialized(client, session)
         AgentTurnCompleted(client, session)
         AgentAsksClarifyingQuestion(client, session)
-        AgentEmitsAssistantText(client, session)
+        AgentEmitsAssistantMessage(client, session)
         AgentEmitsThinking(client, session)
         AgentEmitsToolCall(client, session)
 
