@@ -2,7 +2,7 @@
 -- scuttlerun.allium
 --
 -- Scope: Behaviour of the scuttlerun session driver from invocation to
--- termination. Distilled from src/ as of commit 96a5e55.
+-- termination. Distilled from src/ as of commit fed8d50.
 --
 -- Includes:
 --   - Session lifecycle and outcome-to-exit-code mapping
