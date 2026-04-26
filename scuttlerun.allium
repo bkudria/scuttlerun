@@ -26,7 +26,7 @@
 
 config {
     workspace_cleanup_age: Duration = 7.days
-    oracle_context_pair_limit: Integer = 10
+    oracle_context_entry_limit: Integer = 20
     default_session_timeout: Duration = 300.seconds
     default_max_agent_turns: Integer = 50
     default_max_user_follow_ups: Integer = 0
@@ -225,10 +225,10 @@ entity SyntheticUser {
 
     @guidance
         -- The synthetic user only forwards the most recent
-        -- config.oracle_context_pair_limit user/assistant pairs of the
-        -- conversation buffer to the oracle. Earlier entries are dropped.
-        -- Tool uses, tool results and thinking blocks are stripped before
-        -- entries enter the conversation buffer.
+        -- config.oracle_context_entry_limit user/assistant entries of
+        -- the conversation buffer to the oracle. Earlier entries are
+        -- dropped. Tool uses, tool results and thinking blocks are
+        -- stripped before entries enter the conversation buffer.
 }
 
 entity ConversationEntry {
