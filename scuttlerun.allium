@@ -65,10 +65,16 @@ value SessionInput {
         --   plan               -> "plan"
         --   dont_ask           -> "dontAsk"
         --
+        -- max_user_follow_ups is supplied via the YAML field
+        -- user.max_turns (under the top-level user section). The field
+        -- on SessionInput represents the resolved value the runner
+        -- enforces against synthetic_user.follow_up_count.
+        --
         -- tools is the resolved post-merge allow list the runner hands to
         -- the Agent SDK. The caller may supply two layers of tool input —
-        -- a base list and an additional list — and the resolved tools
-        -- field represents both layers concatenated, with the additional
+        -- a base list (YAML field tools) and an additional list (YAML
+        -- field additional_tools) — and the resolved tools field
+        -- represents both layers concatenated, with the additional
         -- entries appended after the base entries and duplicates removed
         -- on a first-wins basis. The list shape (rather than a set) is
         -- load-bearing: ordering is preserved so that downstream
