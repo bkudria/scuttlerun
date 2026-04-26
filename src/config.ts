@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { getKnownSdkToolNames } from "./sdk-tool-names.js";
 
+export const DEFAULT_ORACLE_MODEL = "claude-haiku-4-5";
+
 function dedupeAppend(base: string[], extra: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -50,7 +52,7 @@ const ProjectConfigSchema = z.object({
 
 const UserConfigSchema = z.object({
   persona: z.string().optional(),
-  oracle_model: z.string().default("claude-haiku-4-5"),
+  oracle_model: z.string().default(DEFAULT_ORACLE_MODEL),
   max_turns: z.number().int().min(0).default(0),
 });
 
