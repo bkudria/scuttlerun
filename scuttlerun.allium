@@ -780,8 +780,9 @@ surface StreamingTranscript {
         -- Output is a single YAML document streamed as the session runs:
         -- a preamble mapping, a `conversation:` sequence with one entry
         -- per event, and a footer mapping. The preamble carries four
-        -- keys: `session` (the SDK session id), `config` (the resolved
-        -- configuration), `project` (the workspace path) and
+        -- keys: `session` (the SDK session id), `config` (the path or
+        -- list of paths to the YAML config files supplied at
+        -- invocation), `project` (the workspace path) and
         -- `transcript` (the SDK session JSONL path). The footer
         -- always carries `turns` (count), `tool_calls` (count) and
         -- `duration_s` (seconds). Additional keys appear conditionally:
