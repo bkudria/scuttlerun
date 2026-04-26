@@ -5,6 +5,8 @@ import type {
 } from "./oracle.js";
 import type { UserConfig } from "./config.js";
 
+const ORACLE_CONTEXT_PAIR_LIMIT = 10;
+
 export interface CanUseToolResult {
   behavior: "allow";
   updatedInput: {
@@ -102,13 +104,8 @@ export class SyntheticUser {
     };
   }
 
-  /**
-   * Returns the last 10 user/assistant pairs from the conversation buffer.
-   * Truncated for oracle context windows.
-   */
   private getRecentContext(): ConversationEntry[] {
-    // Each "pair" is a user + assistant message = 2 entries
-    const maxEntries = 20; // 10 pairs
+    const maxEntries = ORACLE_CONTEXT_PAIR_LIMIT * 2;
     if (this.conversationBuffer.length <= maxEntries) {
       return [...this.conversationBuffer];
     }
