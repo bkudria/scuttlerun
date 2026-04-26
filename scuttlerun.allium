@@ -466,11 +466,12 @@ rule TurnPolicyContinues {
     ensures: AgentReceivesFollowUp(session, message)
 }
 
-rule TurnPolicyEnds {
+rule TurnPolicyEndsByOracle {
     when: TurnPolicyDecided(session, decision, message, reasoning)
 
     requires: session.status = running
     requires: decision = end
+    requires: reasoning != null
 
     ensures: TurnEvaluation.created(
         session: session,
@@ -480,6 +481,24 @@ rule TurnPolicyEnds {
     ensures: TranscriptEntry.created(
         transcript: session.transcript,
         kind: oracle_turn
+    )
+    ensures: session.status = completed_success
+}
+
+rule TurnPolicyEndsByCap {
+    when: TurnPolicyDecided(session, decision, message, reasoning)
+
+    requires: session.status = running
+    requires: decision = end
+    requires: reasoning = null
+
+    -- Cap-driven termination: the session ends without consulting the
+    -- oracle, so no oracle_turn transcript entry is emitted. The
+    -- TurnEvaluation still records the decision for completeness.
+    ensures: TurnEvaluation.created(
+        session: session,
+        decision: end,
+        reasoning: reasoning
     )
     ensures: session.status = completed_success
 }
