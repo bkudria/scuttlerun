@@ -314,27 +314,29 @@ export async function runSession(
   } finally {
     // Always finalise the transcript on every termination path
     // (happy, timeout, exception) — see spec rule SessionFinalises and
-    // invariant WorkspacePreservedAcrossOutcomes.
-    const duration = Date.now() - startTime;
-    const oracleUsage = oracle.getTotalUsage();
-    writeFooter({
-      turns: resultNumTurns,
-      toolCalls: toolCallCount,
-      durationMs: duration,
-      totalCostUsd: resultTotalCostUsd + oracleUsage.cost_usd,
-      oracleCostUsd: oracleUsage.cost_usd,
-      timedOut,
-      filesWritten: Array.from(filesWritten),
-      filesEdited: Array.from(filesEdited),
-      filesRead: Array.from(filesRead),
-      oracleUsage,
-    });
+    // invariant WorkspacePreservedAcrossOutcomes. The inner finally
+    // guarantees AgentSdkClosed even if writeFooter throws.
+    try {
+      const duration = Date.now() - startTime;
+      const oracleUsage = oracle.getTotalUsage();
+      writeFooter({
+        turns: resultNumTurns,
+        toolCalls: toolCallCount,
+        durationMs: duration,
+        totalCostUsd: resultTotalCostUsd + oracleUsage.cost_usd,
+        oracleCostUsd: oracleUsage.cost_usd,
+        timedOut,
+        filesWritten: Array.from(filesWritten),
+        filesEdited: Array.from(filesEdited),
+        filesRead: Array.from(filesRead),
+        oracleUsage,
+      });
+    } finally {
+      /* v8 ignore next -- timeoutHandle is always set; defensive guard */
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (queryHandle) queryHandle.close();
+    }
   }
-
-  // Cleanup
-  /* v8 ignore next -- timeoutHandle is always set; defensive guard */
-  if (timeoutHandle) clearTimeout(timeoutHandle);
-  if (queryHandle) queryHandle.close();
 
   return { exitCode, sessionId };
 }

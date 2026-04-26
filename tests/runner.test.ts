@@ -1543,6 +1543,26 @@ describe("scuttlerun.allium invariants and rule obligations", () => {
       expect(stdoutOutput).toContain("tool_calls:");
       expect(stdoutOutput).toContain("duration_s:");
     });
+
+    it("closes the SDK query even when footer emission throws", async () => {
+      const mockQuery = createMockQuery([
+        { type: "system", subtype: "init", session_id: "s-fin-footer-throw", tools: [], model: "claude-haiku-4-5" },
+        { type: "result", subtype: "success", session_id: "s-fin-footer-throw", num_turns: 1, total_cost_usd: 0 },
+      ]);
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+      // Throw on the first footer line so the entire writeFooter call aborts
+      process.stdout.write = ((chunk: string) => {
+        stdoutOutput += chunk;
+        if (chunk.includes("turns:")) {
+          throw new Error("stdout closed during footer");
+        }
+        return true;
+      }) as typeof process.stdout.write;
+
+      await expect(runSession(minConfig())).rejects.toThrow("stdout closed during footer");
+      expect(mockQuery.close).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
