@@ -18,6 +18,8 @@ import {
   writeFooter,
 } from "./transcript.js";
 
+export const DEFAULT_SESSION_TIMEOUT_SECONDS = 300;
+
 export interface RunResult {
   exitCode: number;
   sessionId?: string;
@@ -34,7 +36,7 @@ export async function runSession(
   config: SessionConfig,
   options: RunOptions = {},
 ): Promise<RunResult> {
-  const { timeoutSeconds = 300, verbose = false } = options;
+  const { timeoutSeconds = DEFAULT_SESSION_TIMEOUT_SECONDS, verbose = false } = options;
 
   // Prevent nested session errors
   delete process.env.CLAUDECODE;

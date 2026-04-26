@@ -5,7 +5,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { readFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { parseSessionConfig, mergeRawConfigs, type SessionConfig } from "./config.js";
-import { runSession } from "./runner.js";
+import { runSession, DEFAULT_SESSION_TIMEOUT_SECONDS } from "./runner.js";
 
 interface CliOverrides {
   model?: string;
@@ -215,7 +215,7 @@ async function main() {
     .option("--max-turns <n>", "Max agent turns (default: 50)", (v: string) => parseInt(v, 10))
     .option("--tools <tools>", "Tools list, comma-separated (e.g. Read,Write,Grep)")
     .option("--effort <level>", "Thinking effort: low, medium, high, xhigh, max (default: high)")
-    .option("--timeout <seconds>", "Session timeout in seconds", (v: string) => parseInt(v, 10), 300)
+    .option("--timeout <seconds>", "Session timeout in seconds", (v: string) => parseInt(v, 10), DEFAULT_SESSION_TIMEOUT_SECONDS)
     .option("-v, --verbose", "Verbose logging to stderr (includes agent stderr)")
     .option("-n, --dry-run", "Validate and display the resolved config without running")
     .action(async (sessionFile: string, overrideFiles: string[], opts) => {
