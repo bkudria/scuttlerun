@@ -844,11 +844,11 @@ surface AgentSdkBoundary {
 
     provides:
         AgentInitialized(client, session)
-        AgentTurnCompleted(client, session)
+        AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
         AgentAsksClarifyingQuestion(client, session)
-        AgentEmitsAssistantMessage(client, session)
-        AgentEmitsThinking(client, session)
-        AgentEmitsToolCall(client, session)
+        AgentEmitsAssistantMessage(client, session, text_blocks)
+        AgentEmitsThinking(client, session, text)
+        AgentEmitsToolCall(client, session, tool_name)
 
     contracts:
         fulfils ToolPermissionCallback
@@ -872,8 +872,8 @@ surface OracleApiBoundary {
     context session: Session
 
     provides:
-        OracleCallCompleted(api, session)
-        TurnPolicyDecided(api, session, decision)
+        OracleCallCompleted(api, session, usage)
+        TurnPolicyDecided(session, decision, message, reasoning)
 
     contracts:
         demands StructuredOutputParse
