@@ -63,17 +63,18 @@ value SessionInput {
         -- on SessionInput represents the resolved value the runner
         -- enforces against synthetic_user.user_turn_count.
         --
-        -- tools is the resolved post-merge allow list the runner hands to
-        -- the Agent SDK. The caller may supply two layers of tool input —
-        -- a base list (YAML field tools) and an additional list (YAML
-        -- field additional_tools) — and the resolved tools field
-        -- represents both layers concatenated, with the additional
-        -- entries appended after the base entries and duplicates removed
-        -- on a first-wins basis. The list shape (rather than a set) is
-        -- load-bearing: ordering is preserved so that downstream
-        -- consumers see a deterministic sequence, and first-wins dedup
-        -- means an additional entry that repeats a base entry is a
-        -- no-op rather than a reorder.
+        -- tools is the resolved post-merge available-tools list the
+        -- runner hands to the Agent SDK — the base set of tools made
+        -- available to the agent. The caller may supply two layers of
+        -- tool input — a base list (YAML field tools) and an
+        -- additional list (YAML field additional_tools) — and the
+        -- resolved tools field represents both layers concatenated,
+        -- with the additional entries appended after the base entries
+        -- and duplicates removed on a first-wins basis. The list shape
+        -- (rather than a set) is load-bearing: ordering is preserved
+        -- so that downstream consumers see a deterministic sequence,
+        -- and first-wins dedup means an additional entry that repeats
+        -- a base entry is a no-op rather than a reorder.
         --
         -- timeout is supplied at runtime via the --timeout CLI flag
         -- (defaulting to config.default_session_timeout, 300 seconds)
