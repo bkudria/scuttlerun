@@ -282,8 +282,8 @@ entity OracleAnswerSet {
 
 entity OracleAnswer {
     answer_set: OracleAnswerSet
-    question_text: String
-    answer_text: String
+    question: String
+    answer: String
 }
 
 -- A turn-policy decision about whether to send a follow-up.
