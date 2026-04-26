@@ -52,7 +52,7 @@ value SessionInput {
     timeout: Duration
     permission_mode: default | accept_edits | bypass_permissions | plan | dont_ask
     tools: List<String>
-    disallowed_tools: List<String>
+    disallowed_tools: List<String>?
     project: ProjectTemplate?
     sandbox: Sandbox
 
