@@ -78,8 +78,8 @@ export interface OracleUsageTotal {
   output_tokens: number;
   calls: number;
   cost_usd: number;
-  cache_creation_input_tokens?: number;
-  cache_read_input_tokens?: number;
+  cache_creation_input_tokens: number;
+  cache_read_input_tokens: number;
 }
 
 export class Oracle {

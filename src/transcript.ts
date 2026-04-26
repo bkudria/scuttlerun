@@ -17,7 +17,14 @@ export interface FooterStats {
   filesWritten?: string[];
   filesEdited?: string[];
   filesRead?: string[];
-  oracleUsage?: { input_tokens: number; output_tokens: number; calls: number; cost_usd?: number };
+  oracleUsage?: {
+    input_tokens: number;
+    output_tokens: number;
+    calls: number;
+    cost_usd?: number;
+    cache_creation_input_tokens: number;
+    cache_read_input_tokens: number;
+  };
 }
 
 function write(text: string): void {

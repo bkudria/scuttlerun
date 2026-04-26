@@ -379,12 +379,60 @@ describe("transcript", () => {
         toolCalls: 5,
         durationMs: 12000,
         totalCostUsd: 0.05,
-        oracleUsage: { input_tokens: 1500, output_tokens: 200, calls: 4 },
+        oracleUsage: {
+          input_tokens: 1500,
+          output_tokens: 200,
+          calls: 4,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
       });
       expect(output).toContain("oracle_usage:");
       expect(output).toContain("input_tokens: 1500");
       expect(output).toContain("output_tokens: 200");
       expect(output).toContain("calls: 4");
+    });
+
+    it("includes cache_creation_input_tokens and cache_read_input_tokens in oracle_usage", () => {
+      writeFooter({
+        turns: 3,
+        toolCalls: 5,
+        durationMs: 12000,
+        totalCostUsd: 0.05,
+        oracleUsage: {
+          input_tokens: 1500,
+          output_tokens: 200,
+          calls: 4,
+          cache_creation_input_tokens: 250,
+          cache_read_input_tokens: 2000,
+        },
+      });
+      const parsed = parseYaml(output);
+      expect(parsed.oracle_usage).toBeDefined();
+      expect(parsed.oracle_usage.input_tokens).toBe(1500);
+      expect(parsed.oracle_usage.output_tokens).toBe(200);
+      expect(parsed.oracle_usage.cache_creation_input_tokens).toBe(250);
+      expect(parsed.oracle_usage.cache_read_input_tokens).toBe(2000);
+      expect(parsed.oracle_usage.calls).toBe(4);
+    });
+
+    it("includes cache token fields in oracle_usage even when zero", () => {
+      writeFooter({
+        turns: 3,
+        toolCalls: 5,
+        durationMs: 12000,
+        totalCostUsd: 0.05,
+        oracleUsage: {
+          input_tokens: 1500,
+          output_tokens: 200,
+          calls: 4,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+      });
+      const parsed = parseYaml(output);
+      expect(parsed.oracle_usage.cache_creation_input_tokens).toBe(0);
+      expect(parsed.oracle_usage.cache_read_input_tokens).toBe(0);
     });
 
     it("omits oracle_usage when calls is 0", () => {
@@ -393,7 +441,13 @@ describe("transcript", () => {
         toolCalls: 0,
         durationMs: 5000,
         totalCostUsd: 0,
-        oracleUsage: { input_tokens: 0, output_tokens: 0, calls: 0 },
+        oracleUsage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          calls: 0,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
       });
       expect(output).not.toContain("oracle_usage");
     });
