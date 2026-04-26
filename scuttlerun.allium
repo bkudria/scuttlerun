@@ -693,12 +693,19 @@ invariant ScaffoldedFilesStayInProject {
     -- Files declared by ProjectTemplate.files cannot escape the
     -- workspace nor target .git/. Path traversal and .git/ injection
     -- are rejected as configuration errors before any file is written.
+    --
+    -- escapes_workspace is a realpath-style check: the candidate path
+    -- is resolved relative to the workspace root and the result must
+    -- remain inside the workspace. Interior `..` segments that
+    -- resolve back inside the workspace (for example
+    -- `subdir/../file`) are permitted; only paths whose resolved form
+    -- lies outside the workspace are rejected.
     for session in Sessions where session.input.project != null
                               and session.input.project.files != null:
         for (path, _) in session.input.project.files:
             path != ".git"
             and not starts_with(path, ".git/")
-            and not contains(path, "..")
+            and not escapes_workspace(path)
             and not starts_with(path, "/")
 }
 
