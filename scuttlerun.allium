@@ -789,9 +789,10 @@ surface StreamingTranscript {
         -- total is greater than zero; `oracle_cost_usd` (Decimal)
         -- appears when the oracle cost is greater than zero;
         -- `oracle_usage` appears when the oracle has been called at
-        -- least once and carries per-model input/output token totals
-        -- alongside `cache_creation_input_tokens`,
-        -- `cache_read_input_tokens` and `cost_usd`; `timed_out`
+        -- least once and is a flat mapping with `input_tokens`,
+        -- `output_tokens`, `cache_creation_input_tokens`,
+        -- `cache_read_input_tokens`, `calls` and `cost_usd`;
+        -- `timed_out`
         -- (Boolean) appears only when truthy; and `files_written`,
         -- `files_edited`, `files_read` each appear only when their
         -- respective list is non-empty. Multi-line strings use
