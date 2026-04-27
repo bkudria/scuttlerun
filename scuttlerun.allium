@@ -68,6 +68,10 @@ value SessionInput {
     sandbox: Sandbox
 
     @guidance
+        -- agent_model is supplied via the top-level YAML field model.
+        -- oracle_model is supplied via the YAML field user.oracle_model
+        -- (under the top-level user section).
+        --
         -- max_user_follow_ups is supplied via the YAML field
         -- user.max_turns (under the top-level user section). The field
         -- on SessionInput represents the resolved value the runner
@@ -186,6 +190,10 @@ entity Session {
     synthetic_user: SyntheticUser? with session = this
 
     @guidance
+        -- status is a logical/observable property of the session, not a
+        -- persisted field. Its terminal value is reflected in the OS exit
+        -- code (see mapping below) rather than written to storage.
+        --
         -- Exit code mapping (emitted to the OS on termination):
         --   completed_success → 0
         --   failed            → 2 (runtime error)
@@ -766,6 +774,14 @@ invariant FollowUpsRespectCap {
     -- exceeds the configured cap. Single-turn mode (cap = 0) yields none.
     for synthetic in SyntheticUsers:
         synthetic.user_turn_count <= synthetic.session.input.max_user_follow_ups
+}
+
+invariant AgentTurnCapAtLeastOne {
+    -- The agent turn cap is bounded below by one: a session must permit
+    -- at least one agent turn. The user-side cap (max_user_follow_ups)
+    -- has no such floor and may be zero (single-turn mode).
+    for session in Sessions:
+        session.input.max_agent_turns >= 1
 }
 
 invariant OnlyTextReachesOracleContext {
