@@ -673,7 +673,9 @@ scuttlerun/
 ├── package.json               # Package config, dependencies, scripts
 ├── tsconfig.json              # TypeScript configuration
 ├── vitest.config.ts           # Vitest test configuration
-├── SPEC.md                    # This file
+├── docs/
+│   ├── spec.md                # This file
+│   └── goals.md               # Project motivation, vision, and non-goals
 ├── README.md                  # Usage documentation
 ├── src/
 │   ├── cli.ts                 # Commander CLI entry point

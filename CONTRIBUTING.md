@@ -58,6 +58,6 @@ test(cleanup): cover non-verbose error path
 
 ## Further Reading
 
-- [SPEC.md](SPEC.md) — full technical specification and design decisions
-- [GOALS.md](GOALS.md) — project motivation, vision, and non-goals
+- [docs/spec.md](docs/spec.md) — full technical specification and design decisions
+- [docs/goals.md](docs/goals.md) — project motivation, vision, and non-goals
 - [CLAUDE.md](CLAUDE.md) — architecture overview and key technical details
