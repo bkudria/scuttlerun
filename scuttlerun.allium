@@ -118,7 +118,10 @@ value Sandbox {
         --
         -- Filesystem access is governed by separate read and write
         -- denylists plus a write allowlist; there is no general read
-        -- allowlist (read defaults to allowed except as denied).
+        -- allowlist (read defaults to allowed except as denied). The
+        -- workspace path and /tmp are unconditionally writable in
+        -- addition to whatever allow_write lists; callers do not need
+        -- to (and cannot) revoke these two roots.
         --
         -- Bash auto-allow under the sandbox is not caller-configurable:
         -- when the sandbox is enabled, the runner always passes
@@ -350,6 +353,14 @@ rule SessionBecomesRunning {
         transcript: session.transcript,
         kind: user_message
     )
+    -- The initial prompt enters the synthetic user's conversation
+    -- buffer so the oracle has context on the very first follow-up
+    -- or clarifying question. Subsequent user entries are added by
+    -- TurnPolicyContinues.
+    ensures: ConversationEntry.created(
+        synthetic_user: session.synthetic_user,
+        role: user
+    )
 
     @guidance
         -- The Agent SDK emits an init message with a session_id at the
@@ -550,6 +561,26 @@ rule AgentTurnFailsAtRuntime {
     ensures: session.status = failed
 }
 
+rule SessionFailsFromUncaughtException {
+    when: RunnerCaughtException(session)
+
+    requires: session.status = running
+
+    ensures: session.status = failed
+
+    @guidance
+        -- Witnesses the running -> failed edge for exceptions that
+        -- escape the message-processing loop without arriving as an
+        -- AgentTurnCompleted result (for example, an SDK iterator
+        -- failure, a writer error or any other thrown error). The
+        -- agent_cost and turn_count snapshots are not updated on
+        -- this path because no result message reported new values;
+        -- whatever last value the AgentTurnCompleted handlers wrote
+        -- is preserved. Coincident timeouts are handled by
+        -- SessionTimesOut and take precedence over this rule when
+        -- both apply.
+}
+
 rule SessionTimesOut {
     when: session: Session.started_at + session.input.timeout <= now
 
@@ -562,6 +593,10 @@ rule SessionTimesOut {
         -- On timeout scuttlerun aborts the SDK abort controller and calls
         -- queryHandle.interrupt() as a belt-and-suspenders signal. The
         -- transcript footer is still emitted with whatever stats accrued.
+        -- The terminal status reflects the timeout regardless of whether
+        -- the for-await loop unwound normally or via an exception thrown
+        -- mid-iteration: the runner's catch path checks the timed-out
+        -- flag and resolves to timed_out either way.
 }
 
 
@@ -666,10 +701,11 @@ rule OracleCallTracked {
     when: OracleCallCompleted(api, session, usage)
 
     ensures: session.oracle_cost = session.oracle_cost
-        + usage.input_tokens * input_rate(session.input.oracle_model)
-        + usage.output_tokens * output_rate(session.input.oracle_model)
-        + usage.cache_creation_input_tokens * cache_creation_rate(session.input.oracle_model)
-        + usage.cache_read_input_tokens * cache_read_rate(session.input.oracle_model)
+        + (usage.input_tokens * input_rate(session.input.oracle_model)
+         + usage.output_tokens * output_rate(session.input.oracle_model)
+         + usage.cache_creation_input_tokens * cache_creation_rate(session.input.oracle_model)
+         + usage.cache_read_input_tokens * cache_read_rate(session.input.oracle_model))
+            / 1_000_000
 
     @guidance
         -- The cost increment combines input, output, cache-creation and
@@ -849,6 +885,7 @@ surface AgentSdkBoundary {
         AgentEmitsAssistantMessage(client, session, text_blocks)
         AgentEmitsThinking(client, session, text)
         AgentEmitsToolCall(client, session, tool_name)
+        RunnerCaughtException(session)
 
     contracts:
         fulfils ToolPermissionCallback
