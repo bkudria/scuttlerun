@@ -107,7 +107,7 @@ The core orchestrator. Responsibilities:
 
 **Multi-turn coordination:** The async generator and the message consumer (`for await` loop) coordinate via a shared Promise. After each `ResultMessage` with `subtype === "success"`, the consumer consults the turn policy and resolves the Promise — the generator either yields the next `SDKUserMessage` or returns.
 
-**Conversation buffer:** scuttlerun maintains an in-memory array of conversation entries, appending each `SDKAssistantMessage` and `SDKUserMessage` as they stream through the `for await` loop. When building oracle context (for AskUserQuestion or turn-policy prompts), assistant messages are filtered to keep only `TextBlock` content — `ToolUseBlock`, `ThinkingBlock`, and other block types are stripped. Assistant messages with no remaining text blocks after filtering are omitted entirely. The buffer is truncated to the last 10 user/assistant pairs before inclusion in oracle prompts.
+**Conversation buffer:** scuttlerun maintains an in-memory array of conversation entries, appending each `SDKAssistantMessage` and `SDKUserMessage` as they stream through the `for await` loop. When building oracle context (for AskUserQuestion or turn-policy prompts), assistant messages are filtered to keep only `TextBlock` content — `ToolUseBlock`, `ThinkingBlock`, and other block types are stripped. Assistant messages with no remaining text blocks after filtering are omitted entirely. The buffer is truncated to the last 20 user/assistant entries before inclusion in oracle prompts.
 
 **SDKUserMessage structure:** When yielding messages from the async generator, each message must conform to:
 ```typescript
@@ -415,7 +415,7 @@ When the agent calls `AskUserQuestion`, the `canUseTool` callback fires. scuttle
    ```
 2. **Builds an oracle prompt** containing:
    - The user persona from session config
-   - The conversation so far (initial prompt + last 10 user/assistant pairs, with tool call/result content stripped — only user messages and assistant text blocks are included; truncated for long sessions)
+   - The conversation so far (initial prompt + last 20 user/assistant entries, with tool call/result content stripped — only user messages and assistant text blocks are included; truncated for long sessions)
    - The specific questions and options
 3. **Calls the oracle** (see LLM Oracle) to get:
    ```json
@@ -447,7 +447,7 @@ After each `ResultMessage` where `subtype === "success"`, scuttlerun consults th
 
 1. **Builds a turn-policy prompt** containing:
    - The user persona
-   - The conversation so far (initial prompt + last 10 user/assistant pairs, with tool call/result content stripped — only user messages and assistant text blocks are included; truncated for long sessions)
+   - The conversation so far (initial prompt + last 20 user/assistant entries, with tool call/result content stripped — only user messages and assistant text blocks are included; truncated for long sessions)
    - The original task/prompt
    - Instruction: "Should the user send a follow-up, or is the task complete?"
 2. **Calls the oracle** (see LLM Oracle):

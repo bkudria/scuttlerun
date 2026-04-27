@@ -40,6 +40,7 @@ config {
     default_session_timeout: Duration = 300.seconds
     default_max_agent_turns: Integer = 50
     default_max_user_follow_ups: Integer = 0
+    default_agent_model: String = "claude-haiku-4-5"
     default_oracle_model: String = "claude-haiku-4-5"
     workspace_dir_prefix: String = "scuttlerun-project-"
 }
@@ -68,9 +69,11 @@ value SessionInput {
     sandbox: Sandbox
 
     @guidance
-        -- agent_model is supplied via the top-level YAML field model.
+        -- agent_model is supplied via the top-level YAML field model
+        -- and defaults to config.default_agent_model when omitted.
         -- oracle_model is supplied via the YAML field user.oracle_model
-        -- (under the top-level user section).
+        -- (under the top-level user section) and defaults to
+        -- config.default_oracle_model when omitted.
         --
         -- max_user_follow_ups is supplied via the YAML field
         -- user.max_turns (under the top-level user section). The field
@@ -115,6 +118,11 @@ value Sandbox {
     filesystem: SandboxFilesystem
 
     @guidance
+        -- sandbox.enabled defaults to true. Callers must explicitly set
+        -- enabled=false to opt out; the default-on posture is
+        -- load-bearing for the HOME redirection and env-filter
+        -- behaviour described on Workspace.
+        --
         -- Network access is governed by the explicit allowlist on
         -- SandboxNetwork; an empty allowed_domains list means no
         -- domains are reachable. There is no global on/off network
@@ -123,9 +131,16 @@ value Sandbox {
         -- Filesystem access is governed by separate read and write
         -- denylists plus a write allowlist; there is no general read
         -- allowlist (read defaults to allowed except as denied). The
-        -- workspace path and /tmp are unconditionally writable in
-        -- addition to whatever allow_write lists; callers do not need
-        -- to (and cannot) revoke these two roots.
+        -- read denylist defaults to common credential paths
+        -- (~/.ssh, ~/.aws, ~/.config/gcloud) and the write denylist
+        -- defaults to .env; these defaults apply only when the caller
+        -- supplies no list of their own. Supplying a deny_read or
+        -- deny_write list replaces the default in full, so callers
+        -- who customise these lists must re-include any default
+        -- entries they want to retain. The workspace path and /tmp
+        -- are unconditionally writable in addition to whatever
+        -- allow_write lists; callers do not need to (and cannot)
+        -- revoke these two roots.
         --
         -- Bash auto-allow under the sandbox is not caller-configurable:
         -- when the sandbox is enabled, the runner always passes
@@ -822,11 +837,13 @@ surface CommandLineInvocation {
     @guarantee Headless
         -- The CLI runs without an interactive TTY: stdin is closed for
         -- agent input, stdout streams the YAML transcript, and stderr
-        -- carries diagnostics only. When permission_mode is
-        -- `bypassPermissions`, tool permission prompts are bypassed
-        -- entirely; under other permission modes, the SDK may surface
-        -- prompts and the operator must answer them on stdin
-        -- explicitly.
+        -- carries diagnostics only. permission_mode defaults to
+        -- `bypassPermissions` (chosen so the headless invocation does
+        -- not block on a TTY-less permission prompt). When
+        -- permission_mode is `bypassPermissions`, tool permission
+        -- prompts are bypassed entirely; under other permission modes,
+        -- the SDK may surface prompts and the operator must answer
+        -- them on stdin explicitly.
 
     @guarantee SingleSessionPerInvocation
         -- One invocation runs exactly one session and produces exactly one
