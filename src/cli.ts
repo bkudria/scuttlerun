@@ -280,14 +280,30 @@ async function main() {
           process.exit(0);
         }
 
-        const result = await runSession(config, {
-          timeoutSeconds: opts.timeout,
-          verbose: opts.verbose,
-          configDir,
-          configPaths,
-        });
+        const signalController = new AbortController();
+        let signalCount = 0;
+        const handleSignal = () => {
+          signalCount++;
+          if (signalCount === 1) signalController.abort();
+          else process.exit(130);
+        };
+        process.on("SIGINT", handleSignal);
+        process.on("SIGTERM", handleSignal);
 
-        process.exit(result.exitCode);
+        try {
+          const result = await runSession(config, {
+            timeoutSeconds: opts.timeout,
+            verbose: opts.verbose,
+            configDir,
+            configPaths,
+            signal: signalController.signal,
+          });
+
+          process.exit(result.exitCode);
+        } finally {
+          process.off("SIGINT", handleSignal);
+          process.off("SIGTERM", handleSignal);
+        }
       } catch (err) {
         process.stderr.write(formatCliError(err) + "\n");
         process.exit(1);

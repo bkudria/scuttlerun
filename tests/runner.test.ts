@@ -1390,6 +1390,82 @@ describe("runSession", () => {
     expect(env.CUSTOM_VAR).toBe("custom");
     expect(env.HOME).toBe("/tmp/scuttlerun-project-test123/.home");
   });
+
+  it("returns exit code 130 when options.signal is aborted mid-session", async () => {
+    mockParse.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return {
+        parsed_output: { decision: "continue", message: "more", reasoning: "ok" },
+        usage: { input_tokens: 50, output_tokens: 20 },
+      };
+    });
+
+    const mockQuery = createMockQuery([
+      { type: "system", subtype: "init", session_id: "s-sigint-1", tools: [], model: "claude-haiku-4-5" },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Hi." }] } },
+      { type: "result", subtype: "success", session_id: "s-sigint-1", num_turns: 1, total_cost_usd: 0 },
+      { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "More." }] } },
+      { type: "result", subtype: "success", session_id: "s-sigint-1", num_turns: 2, total_cost_usd: 0 },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    const signalController = new AbortController();
+    setTimeout(() => signalController.abort(), 30);
+
+    const result = await runSession(
+      minConfig({ user: { oracle_model: "claude-haiku-4-5", max_turns: 5 } }),
+      { signal: signalController.signal },
+    );
+
+    expect(result.exitCode).toBe(130);
+  });
+
+  it("calls queryHandle.interrupt() when options.signal is aborted", async () => {
+    mockParse.mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return {
+        parsed_output: { decision: "continue", message: "m", reasoning: "ok" },
+        usage: { input_tokens: 50, output_tokens: 20 },
+      };
+    });
+
+    const interruptSpy = vi.fn().mockResolvedValue(undefined);
+    const mockQuery = {
+      close: vi.fn(),
+      interrupt: interruptSpy,
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: "system", subtype: "init", session_id: "s-sigint-2", tools: [], model: "claude-haiku-4-5" };
+        yield { type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "Hi." }] } };
+        yield { type: "result", subtype: "success", session_id: "s-sigint-2", num_turns: 1, total_cost_usd: 0 };
+      },
+    };
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    const signalController = new AbortController();
+    setTimeout(() => signalController.abort(), 30);
+
+    await runSession(
+      minConfig({ user: { oracle_model: "claude-haiku-4-5", max_turns: 5 } }),
+      { signal: signalController.signal },
+    );
+
+    expect(interruptSpy).toHaveBeenCalled();
+  });
+
+  it("removes the signal listener after runSession returns", async () => {
+    const mockQuery = createMockQuery([
+      { type: "system", subtype: "init", session_id: "s-sigint-3", tools: [], model: "claude-haiku-4-5" },
+      { type: "result", subtype: "success", session_id: "s-sigint-3", num_turns: 1, total_cost_usd: 0 },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    const signalController = new AbortController();
+    const removeSpy = vi.spyOn(signalController.signal, "removeEventListener");
+
+    await runSession(minConfig(), { signal: signalController.signal });
+
+    expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
 });
 
 // =============================================================================

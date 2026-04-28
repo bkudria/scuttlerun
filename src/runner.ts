@@ -30,6 +30,7 @@ export interface RunOptions {
   verbose?: boolean;
   configDir?: string;
   configPaths?: string[];
+  signal?: AbortSignal;
 }
 
 export async function runSession(
@@ -76,6 +77,19 @@ export async function runSession(
   const abortController = new AbortController();
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
+  let signaled = false;
+
+  // Forward an externally-supplied AbortSignal (e.g. SIGINT from cli.ts) into
+  // our internal abortController so the SDK and oracle stop in flight.
+  let onExternalAbort: (() => void) | undefined;
+  if (options.signal) {
+    onExternalAbort = () => {
+      signaled = true;
+      abortController.abort();
+      queryHandle?.interrupt().catch(() => {});
+    };
+    options.signal.addEventListener("abort", onExternalAbort);
+  }
 
   // Track stats
   let toolCallCount = 0;
@@ -232,6 +246,7 @@ export async function runSession(
 
     for await (const rawMessage of queryHandle) {
       if (timedOut) break;
+      if (signaled) break;
       const message = rawMessage as Record<string, unknown>;
 
       if (message.type === "system" && message.subtype === "init" && !sessionId) {
@@ -313,9 +328,13 @@ export async function runSession(
     // Check for timeout
     if (timedOut) {
       exitCode = 6;
+    } else if (signaled) {
+      exitCode = 130;
     }
   } catch {
-    exitCode = timedOut ? 6 : 2;
+    if (timedOut) exitCode = 6;
+    else if (signaled) exitCode = 130;
+    else exitCode = 2;
   } finally {
     // Always finalise the transcript on every termination path
     // (happy, timeout, exception) — see spec rule SessionFinalises and
@@ -340,6 +359,9 @@ export async function runSession(
       /* v8 ignore next -- timeoutHandle is always set; defensive guard */
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (queryHandle) queryHandle.close();
+      if (options.signal && onExternalAbort) {
+        options.signal.removeEventListener("abort", onExternalAbort);
+      }
     }
   }
 
