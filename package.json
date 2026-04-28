@@ -22,7 +22,8 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "dev": "tsx src/cli.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "prepublishOnly": "npm run build && npm test"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.114",
