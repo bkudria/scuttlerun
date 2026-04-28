@@ -11,6 +11,12 @@ npm install
 npm run build
 ```
 
+scuttlerun requires an Anthropic API key for any session that exercises the agent or oracle:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
 ## Running Tests
 
 ```bash

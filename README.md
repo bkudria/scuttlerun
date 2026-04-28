@@ -9,12 +9,33 @@ A TypeScript CLI that drives multi-turn Claude sessions programmatically using t
 
 ## Installation
 
+From npm (recommended):
+
 ```bash
-git clone <repo-url> && cd scuttlerun
+npm install -g scuttlerun
+# or run without installing:
+npx scuttlerun@latest <session.yaml>
+```
+
+From source:
+
+```bash
+git clone https://github.com/bkudria/scuttlerun.git
+cd scuttlerun
 npm install
 npm run build
 npm link          # makes `scuttlerun` available globally
 ```
+
+## Configuration
+
+scuttlerun requires an Anthropic API key:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Get one at [console.anthropic.com](https://console.anthropic.com/).
 
 ## Quick Start
 
@@ -187,7 +208,7 @@ See [`examples/`](examples/) for complete session configs:
 - **[simple.yaml](examples/simple.yaml)** — Single-turn, no follow-ups
 - **[interactive.yaml](examples/interactive.yaml)** — AskUserQuestion handling
 - **[multi-turn.yaml](examples/multi-turn.yaml)** — Reactive multi-turn with a persona
-- **[skill-eval.yaml](examples/skill-eval.yaml)** — Managed project with skill symlinks
+- **[skill-use.yaml](examples/skill-use.yaml)** — Managed project with skill symlinks
 
 ## Development
 
