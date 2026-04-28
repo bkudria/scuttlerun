@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { parseSessionConfig, mergeRawConfigs, type SessionConfig } from "./config.js";
 import { runSession, DEFAULT_SESSION_TIMEOUT_SECONDS } from "./runner.js";
+import { formatCliError } from "./errors.js";
 
 interface CliOverrides {
   model?: string;
@@ -288,9 +289,7 @@ async function main() {
 
         process.exit(result.exitCode);
       } catch (err) {
-        process.stderr.write(
-          `[scuttlerun] Error: ${err instanceof Error ? err.message : String(err)}\n`,
-        );
+        process.stderr.write(formatCliError(err) + "\n");
         process.exit(1);
       }
     });
