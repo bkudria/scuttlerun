@@ -4,6 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Unreleased.** scuttlerun is under active development and its API, config format, and behavior may change without notice.
+>
+> **CLI-only.** scuttlerun is intended to be used as a command-line tool. There is no supported programmatic API; modules under `dist/` are implementation details and may change without notice.
 
 A TypeScript CLI that drives multi-turn Claude sessions programmatically using the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk). scuttlerun simulates a synthetic user powered by an LLM oracle, enabling headless, scriptable, fully-observable interactions with Claude — including interactive tools like `AskUserQuestion`.
 
