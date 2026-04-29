@@ -200,7 +200,7 @@ duration_s: 12.3
 
 The output is valid YAML and machine-parseable (e.g. with `yq`).
 
-**Project directory** — Always created in `$TMPDIR`, preserved after the session ends. Inspect agent-created files there.
+**Project directory** — Always created in `$TMPDIR` as `scuttlerun-project-<id>/`, preserved after the session ends so you can inspect agent-created files. On the next run, scuttlerun garbage-collects its own `scuttlerun-project-*` directories that are older than 7 days; nothing else in `$TMPDIR` is touched.
 
 **SDK session file** — Full conversation record in Claude Code's native JSONL format at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Queryable with `jq`.
 
