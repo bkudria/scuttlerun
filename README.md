@@ -205,12 +205,14 @@ The output is valid YAML and machine-parseable (e.g. with `yq`).
 
 ## Examples
 
-See [`examples/`](examples/) for complete session configs:
+See [`examples/`](examples/) for complete session configs (and [`examples/README.md`](examples/README.md) for an index with a feature-coverage table):
 
+- **[tour.yaml](examples/tour.yaml)** — Flagship: persona + AskUserQuestion + multi-turn + project scaffolding in one config
 - **[simple.yaml](examples/simple.yaml)** — Single-turn, no follow-ups
 - **[interactive.yaml](examples/interactive.yaml)** — AskUserQuestion handling
 - **[multi-turn.yaml](examples/multi-turn.yaml)** — Reactive multi-turn with a persona
 - **[skill-use.yaml](examples/skill-use.yaml)** — Managed project with skill symlinks
+- **[claude-md.yaml](examples/claude-md.yaml)** — Inject a project-wide CLAUDE.md
 
 ## Development
 

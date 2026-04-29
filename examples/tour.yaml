@@ -1,0 +1,32 @@
+# Flagship tour: combines persona + AskUserQuestion + multi-turn + project scaffolding.
+# Run with: scuttlerun examples/tour.yaml
+version: "1"
+
+prompt: |
+  Ask the user one question to understand what subject they want a haiku about,
+  then write a haiku for them. If they're not satisfied, revise based on feedback.
+
+max_turns: 30
+
+tools:
+  - Read
+  - Write
+  - AskUserQuestion
+  - Skill
+
+project:
+  claude_md: |
+    ## Workflow
+    Always ask the user one clarifying question before writing the first
+    draft, so the result reflects what they actually want.
+
+  skills:
+    - ./haiku-writer
+
+user:
+  max_turns: 3
+  persona: |
+    You are a haiku connoisseur who appreciates seasonal imagery
+    and respects the 5-7-5 syllable form. You like haikus inspired
+    by autumn rain. If a draft is off-meter or feels generic, ask
+    for a revision once. You are satisfied after at most one revision.
