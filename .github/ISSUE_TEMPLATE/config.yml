@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/bkudria/scuttlerun/security/advisories/new
+    about: Report security issues privately, not via public issues.
+  - name: Other ways to get help
+    url: https://github.com/bkudria/scuttlerun/blob/main/SUPPORT.md
+    about: See SUPPORT.md for the full list of channels.
