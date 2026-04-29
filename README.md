@@ -217,6 +217,7 @@ See [`examples/`](examples/) for complete session configs:
 ```bash
 npm install
 npm run build        # TypeScript compilation
+npm run typecheck    # Type-check without emit (faster than build)
 npm test             # Run all tests (vitest)
 npm run test:watch   # Watch mode
 npm run dev -- examples/simple.yaml   # Run via tsx
