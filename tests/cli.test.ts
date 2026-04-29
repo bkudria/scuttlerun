@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { buildConfig } from "../src/cli.js";
+import { describe, it, expect, afterEach } from "vitest";
+import { assertAnthropicApiKey, buildConfig } from "../src/cli.js";
 
 describe("buildConfig", () => {
   it("parses a YAML file into a SessionConfig", async () => {
@@ -53,5 +53,34 @@ max_turns: 10
     expect(config.effort).toBe("max");
     expect(config.tools).toEqual(["Read", "Grep", "Glob"]);
     expect(config.user.oracle_model).toBe("claude-sonnet-4-6");
+  });
+});
+
+describe("assertAnthropicApiKey", () => {
+  const originalKey = process.env.ANTHROPIC_API_KEY;
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = originalKey;
+  });
+
+  it("returns silently when ANTHROPIC_API_KEY is set", () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    expect(() => assertAnthropicApiKey()).not.toThrow();
+  });
+
+  it("throws an actionable error when ANTHROPIC_API_KEY is unset", () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    expect(() => assertAnthropicApiKey()).toThrow(/ANTHROPIC_API_KEY/);
+    expect(() => assertAnthropicApiKey()).toThrow(/README/);
+  });
+
+  it("throws when ANTHROPIC_API_KEY is empty", () => {
+    process.env.ANTHROPIC_API_KEY = "";
+    expect(() => assertAnthropicApiKey()).toThrow(/ANTHROPIC_API_KEY/);
+  });
+
+  it("throws when ANTHROPIC_API_KEY is whitespace only", () => {
+    process.env.ANTHROPIC_API_KEY = "   ";
+    expect(() => assertAnthropicApiKey()).toThrow(/ANTHROPIC_API_KEY/);
   });
 });
