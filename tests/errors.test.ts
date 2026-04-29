@@ -20,7 +20,7 @@ describe("formatZodError", () => {
     expect(result.success).toBe(false);
     if (result.success) return;
     const out = formatZodError(result.error);
-    expect(out).toMatch(/^  - user\.oracle_model: /);
+    expect(out).toMatch(/^ {2}- user\.oracle_model: /);
   });
 
   it("renders multiple issues on separate lines", () => {
@@ -31,8 +31,8 @@ describe("formatZodError", () => {
     const out = formatZodError(result.error);
     const lines = out.split("\n");
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatch(/^  - a: /);
-    expect(lines[1]).toMatch(/^  - b: /);
+    expect(lines[0]).toMatch(/^ {2}- a: /);
+    expect(lines[1]).toMatch(/^ {2}- b: /);
   });
 
   it("renders root issues with (root) marker when path is empty", () => {
@@ -40,7 +40,7 @@ describe("formatZodError", () => {
     expect(result.success).toBe(false);
     if (result.success) return;
     const out = formatZodError(result.error);
-    expect(out).toMatch(/^  - \(root\): /);
+    expect(out).toMatch(/^ {2}- \(root\): /);
   });
 });
 
