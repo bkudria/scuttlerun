@@ -62,6 +62,7 @@ prompt: |
 
 | Field | Type | Default |
 |-------|------|---------|
+| `version` | string | `"1"` (config schema version; only `"1"` is currently accepted) |
 | `prompt` | string | *(required)* |
 | `model` | string | `claude-haiku-4-5` |
 | `max_turns` | number | `50` |

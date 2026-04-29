@@ -79,6 +79,9 @@ Session Config (YAML):
       - Grep
       - AskUserQuestion                 # Handled by the synthetic user
       - Skill                           # Invoke Claude Code skills
+    additional_tools: []                # Appended to tools after defaults (optional)
+                                        #   Deduped first-wins; useful for adding
+                                        #   to defaults without restating them
     disallowed_tools:                   # Always deny these tools (optional)
       - Agent
 
