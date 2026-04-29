@@ -82,9 +82,21 @@ export interface OracleUsageTotal {
   cache_read_input_tokens: number;
 }
 
+export interface OracleOptions {
+  verbose?: boolean;
+  sleep?: (ms: number) => Promise<void>;
+  baseDelayMs?: number;
+}
+
+const ORACLE_MAX_ATTEMPTS = 4;
+const ORACLE_DEFAULT_BASE_DELAY_MS = 250;
+
 export class Oracle {
   private client: Anthropic;
   private model: string;
+  private verbose: boolean;
+  private sleep: (ms: number) => Promise<void>;
+  private baseDelayMs: number;
   private totalUsage: {
     input_tokens: number;
     output_tokens: number;
@@ -99,9 +111,12 @@ export class Oracle {
     cache_read_input_tokens: 0,
   };
 
-  constructor(model: string) {
+  constructor(model: string, options: OracleOptions = {}) {
     this.client = new Anthropic();
     this.model = model;
+    this.verbose = options.verbose ?? false;
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.baseDelayMs = options.baseDelayMs ?? ORACLE_DEFAULT_BASE_DELAY_MS;
   }
 
   async answerQuestions(
@@ -184,7 +199,7 @@ export class Oracle {
     };
   }> {
     let lastError: unknown;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < ORACLE_MAX_ATTEMPTS; attempt++) {
       try {
         const response = await this.client.messages.parse({
           model: this.model,
@@ -199,9 +214,23 @@ export class Oracle {
         return { parsed_output: response.parsed_output, usage: response.usage };
       } catch (err) {
         lastError = err;
+        if (attempt === 0 && this.verbose) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[scuttlerun] oracle: first attempt failed (${msg}); retrying with backoff`);
+        }
+        if (attempt < ORACLE_MAX_ATTEMPTS - 1) {
+          const exponential = this.baseDelayMs * 2 ** attempt;
+          const jitter = Math.random() * this.baseDelayMs;
+          await this.sleep(exponential + jitter);
+        }
       }
     }
-    throw lastError;
+    const lastMsg = lastError instanceof Error ? lastError.message : String(lastError);
+    const wrapped = new Error(`Oracle exhausted ${ORACLE_MAX_ATTEMPTS} attempts: ${lastMsg}`);
+    if (lastError instanceof Error) {
+      (wrapped as Error & { cause?: unknown }).cause = lastError;
+    }
+    throw wrapped;
   }
 
   private trackUsage(usage: {

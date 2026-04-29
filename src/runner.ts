@@ -71,7 +71,7 @@ export async function runSession(
   }
 
   // Create oracle
-  const oracle = new Oracle(config.user.oracle_model);
+  const oracle = new Oracle(config.user.oracle_model, { verbose });
 
   // Set up timeout
   const abortController = new AbortController();

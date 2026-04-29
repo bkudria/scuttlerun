@@ -94,12 +94,15 @@ describe("Oracle", () => {
     });
 
     it("throws after retry exhaustion", async () => {
+      const o = new Oracle("claude-haiku-4-5", { sleep: () => Promise.resolve() });
       mockParse
         .mockRejectedValueOnce(new Error("fail 1"))
-        .mockRejectedValueOnce(new Error("fail 2"));
+        .mockRejectedValueOnce(new Error("fail 2"))
+        .mockRejectedValueOnce(new Error("fail 3"))
+        .mockRejectedValueOnce(new Error("fail 4"));
 
       await expect(
-        oracle.answerQuestions({
+        o.answerQuestions({
           persona: "test",
           conversationContext: [],
           questions: [
@@ -114,7 +117,8 @@ describe("Oracle", () => {
             },
           ],
         })
-      ).rejects.toThrow("fail 2");
+      ).rejects.toThrow(/exhausted.*4 attempts.*fail 4/);
+      expect(mockParse).toHaveBeenCalledTimes(4);
     });
   });
 
@@ -201,6 +205,121 @@ describe("Oracle", () => {
           ],
         }),
       ).rejects.toThrow("Oracle returned no structured output");
+    });
+
+    it("sleeps between attempts with exponential backoff", async () => {
+      const sleepCalls: number[] = [];
+      const fastSleep = (ms: number) => {
+        sleepCalls.push(ms);
+        return Promise.resolve();
+      };
+      const o = new Oracle("claude-haiku-4-5", { sleep: fastSleep });
+
+      mockParse
+        .mockRejectedValueOnce(new Error("e1"))
+        .mockRejectedValueOnce(new Error("e2"))
+        .mockRejectedValueOnce(new Error("e3"))
+        .mockRejectedValueOnce(new Error("e4"));
+
+      await expect(
+        o.answerQuestions({
+          persona: "p",
+          conversationContext: [],
+          questions: [
+            { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+          ],
+        }),
+      ).rejects.toThrow();
+
+      expect(sleepCalls).toHaveLength(3);
+      expect(sleepCalls[0]).toBeLessThan(sleepCalls[1]);
+      expect(sleepCalls[1]).toBeLessThan(sleepCalls[2]);
+    });
+
+    it("logs first failure to stderr when verbose", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const o = new Oracle("claude-haiku-4-5", {
+        verbose: true,
+        sleep: () => Promise.resolve(),
+      });
+
+      mockParse
+        .mockRejectedValueOnce(new Error("first failure here"))
+        .mockResolvedValueOnce({
+          parsed_output: {
+            answers: [{ question: "Q", answer: "A" }],
+            reasoning: "ok",
+          },
+          usage: { input_tokens: 10, output_tokens: 5 },
+        });
+
+      await o.answerQuestions({
+        persona: "p",
+        conversationContext: [],
+        questions: [
+          { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+        ],
+      });
+
+      expect(errorSpy).toHaveBeenCalled();
+      const logged = errorSpy.mock.calls.flat().join(" ");
+      expect(logged).toContain("first failure here");
+      errorSpy.mockRestore();
+    });
+
+    it("does not log when verbose is false", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const o = new Oracle("claude-haiku-4-5", { sleep: () => Promise.resolve() });
+
+      mockParse
+        .mockRejectedValueOnce(new Error("silent failure"))
+        .mockResolvedValueOnce({
+          parsed_output: {
+            answers: [{ question: "Q", answer: "A" }],
+            reasoning: "ok",
+          },
+          usage: { input_tokens: 10, output_tokens: 5 },
+        });
+
+      await o.answerQuestions({
+        persona: "p",
+        conversationContext: [],
+        questions: [
+          { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+        ],
+      });
+
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+
+    it("wraps exhausted error with attempt count and underlying message", async () => {
+      const o = new Oracle("claude-haiku-4-5", { sleep: () => Promise.resolve() });
+      mockParse
+        .mockRejectedValueOnce(new Error("e1"))
+        .mockRejectedValueOnce(new Error("e2"))
+        .mockRejectedValueOnce(new Error("e3"))
+        .mockRejectedValueOnce(new Error("final boom"));
+
+      let caught: unknown;
+      try {
+        await o.answerQuestions({
+          persona: "p",
+          conversationContext: [],
+          questions: [
+            { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+          ],
+        });
+      } catch (e) {
+        caught = e;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      const err = caught as Error & { cause?: unknown };
+      expect(err.message).toMatch(/exhausted.*4 attempts/);
+      expect(err.message).toContain("final boom");
+      expect(err.cause).toBeInstanceOf(Error);
+      expect((err.cause as Error).message).toBe("final boom");
     });
   });
 
