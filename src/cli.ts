@@ -220,7 +220,7 @@ async function main() {
     .option("--tools <tools>", "Tools list, comma-separated (e.g. Read,Write,Grep)")
     .option("--effort <level>", "Thinking effort: low, medium, high, xhigh, max (default: high)")
     .option("--timeout <seconds>", "Session timeout in seconds", (v: string) => parseInt(v, 10), DEFAULT_SESSION_TIMEOUT_SECONDS)
-    .option("-v, --verbose", "Verbose logging to stderr (includes agent stderr)")
+    .option("-v, --verbose", "Verbose logging to stderr (includes agent stderr; note: -V is --version)")
     .option("-n, --dry-run", "Validate and display the resolved config without running")
     .action(async (sessionFile: string, overrideFiles: string[], opts) => {
       try {
