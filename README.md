@@ -228,6 +228,13 @@ npm run test:watch   # Watch mode
 npm run dev -- examples/simple.yaml   # Run via tsx
 ```
 
+## Contributing
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — Development setup, tests, commit conventions, PR workflow
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — Community guidelines
+- [SECURITY.md](SECURITY.md) — Reporting a vulnerability
+- [CHANGELOG.md](CHANGELOG.md) — Release history
+
 ## See Also
 
 - [docs/goals.md](docs/goals.md) — Project motivation, vision, and non-goals
