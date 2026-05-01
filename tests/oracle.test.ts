@@ -321,6 +321,64 @@ describe("Oracle", () => {
       expect(err.cause).toBeInstanceOf(Error);
       expect((err.cause as Error).message).toBe("final boom");
     });
+
+    it("logs first failure to stderr when verbose with non-Error throw", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const o = new Oracle("claude-haiku-4-5", {
+        verbose: true,
+        sleep: () => Promise.resolve(),
+      });
+
+      mockParse
+        .mockRejectedValueOnce("string-not-error")
+        .mockResolvedValueOnce({
+          parsed_output: {
+            answers: [{ question: "Q", answer: "A" }],
+            reasoning: "ok",
+          },
+          usage: { input_tokens: 10, output_tokens: 5 },
+        });
+
+      await o.answerQuestions({
+        persona: "p",
+        conversationContext: [],
+        questions: [
+          { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+        ],
+      });
+
+      const logged = errorSpy.mock.calls.flat().join(" ");
+      expect(logged).toContain("string-not-error");
+      errorSpy.mockRestore();
+    });
+
+    it("wraps exhausted error when all attempts throw non-Error values", async () => {
+      const o = new Oracle("claude-haiku-4-5", { sleep: () => Promise.resolve() });
+      mockParse
+        .mockRejectedValueOnce("e1")
+        .mockRejectedValueOnce("e2")
+        .mockRejectedValueOnce("e3")
+        .mockRejectedValueOnce("final-string");
+
+      let caught: unknown;
+      try {
+        await o.answerQuestions({
+          persona: "p",
+          conversationContext: [],
+          questions: [
+            { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+          ],
+        });
+      } catch (e) {
+        caught = e;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      const err = caught as Error & { cause?: unknown };
+      expect(err.message).toMatch(/exhausted.*4 attempts/);
+      expect(err.message).toContain("final-string");
+      expect(err.cause).toBeUndefined();
+    });
   });
 
   describe("message building", () => {
