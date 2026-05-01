@@ -529,6 +529,35 @@ describe("runSession", () => {
     expect(mockQuery.interrupt).toHaveBeenCalled();
   });
 
+  it("swallows interrupt() rejection and exits 130 when external signal aborts mid-iteration", async () => {
+    const mockQuery = {
+      close: vi.fn(),
+      interrupt: vi.fn().mockRejectedValue(new Error("interrupt failed")),
+      [Symbol.asyncIterator]: async function* () {
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "s-sigabort",
+          tools: [],
+          model: "claude-haiku-4-5",
+        };
+        // Reject after the signal fires, forcing the for-await into the outer catch
+        await new Promise<void>((_, reject) => {
+          setTimeout(() => reject(new Error("aborted")), 50);
+        });
+      },
+    };
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    const signalController = new AbortController();
+    setTimeout(() => signalController.abort(), 30);
+
+    const result = await runSession(minConfig(), { signal: signalController.signal });
+    expect(result.exitCode).toBe(130);
+    expect(mockQuery.interrupt).toHaveBeenCalled();
+  });
+
   it("deletes process.env.CLAUDECODE before calling query", async () => {
     process.env.CLAUDECODE = "1";
 
