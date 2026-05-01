@@ -26,6 +26,8 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "dev": "tsx src/cli.ts",
     "prepare": "husky",
     "prepublishOnly": "npm run build && npm test"
@@ -44,7 +46,9 @@
     "@types/node": "^25.6.0",
     "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^10.2.1",
+    "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
+    "prettier": "^3.8.3",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.58.2",
