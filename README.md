@@ -11,6 +11,8 @@ A TypeScript CLI that drives multi-turn Claude sessions programmatically using t
 
 ## Installation
 
+**Prerequisites:** Node.js 20 or later (LTS recommended; CI tests on 20, 22, 24).
+
 From npm (recommended):
 
 ```bash
