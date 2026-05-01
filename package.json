@@ -2,7 +2,27 @@
   "name": "scuttlerun",
   "version": "0.1.0",
   "description": "Multi-turn Claude session driver",
+  "keywords": [
+    "claude",
+    "anthropic",
+    "agent-sdk",
+    "cli",
+    "llm",
+    "ai",
+    "agent",
+    "synthetic-user",
+    "multi-turn",
+    "headless",
+    "transcript",
+    "evaluation",
+    "automation"
+  ],
+  "author": "Benjamin Kudria <ben@kudria.net>",
   "license": "MIT",
+  "homepage": "https://github.com/bkudria/scuttlerun#readme",
+  "bugs": {
+    "url": "https://github.com/bkudria/scuttlerun/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/bkudria/scuttlerun.git"
