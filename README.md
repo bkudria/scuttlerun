@@ -18,6 +18,10 @@ The closest alternatives each leave a gap that scuttlerun fills:
 
 scuttlerun is a thin orchestration layer on top of the Agent SDK that adds those pieces. It is a **session driver, not an eval framework** — it produces transcripts; scoring/grading composes downstream (see [docs/goals.md](docs/goals.md) for the full positioning).
 
+![Demo: scuttlerun running an interactive session, with the synthetic user answering an AskUserQuestion call](assets/demo.gif)
+
+> Source: [`assets/demo.tape`](assets/demo.tape) (re-record with `vhs assets/demo.tape`).
+
 ## Installation
 
 **Prerequisites:** Node.js 20 or later (LTS recommended; CI tests on 20, 22, 24).
