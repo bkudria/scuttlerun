@@ -4,12 +4,8 @@ import { join } from "node:path";
 
 // Mock node:fs/promises with passthrough so we can override readdir/rm for specific tests
 const actualFs = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
-const mockReaddir = vi.fn<typeof actualFs.readdir>((...args: Parameters<typeof actualFs.readdir>) =>
-  actualFs.readdir(...args),
-);
-const mockRm = vi.fn<typeof actualFs.rm>((...args: Parameters<typeof actualFs.rm>) =>
-  actualFs.rm(...args),
-);
+const mockReaddir = vi.fn<typeof actualFs.readdir>(actualFs.readdir);
+const mockRm = vi.fn<typeof actualFs.rm>(actualFs.rm);
 vi.mock("node:fs/promises", async () => {
   const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
   return { ...actual, readdir: mockReaddir, rm: mockRm };

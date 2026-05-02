@@ -54,6 +54,21 @@ max_turns: 10
     expect(config.tools).toEqual(["Read", "Grep", "Glob"]);
     expect(config.user.oracle_model).toBe("claude-sonnet-4-6");
   });
+
+  it("applies max_budget_usd CLI override", async () => {
+    const yaml = `
+prompt: hi
+max_budget_usd: 1.0
+`;
+    const config = await buildConfig([yaml], { maxBudgetUsd: 5.5 });
+    expect(config.max_budget_usd).toBe(5.5);
+  });
+
+  it("sets max_budget_usd via CLI even when YAML omits it", async () => {
+    const yaml = `prompt: hi\n`;
+    const config = await buildConfig([yaml], { maxBudgetUsd: 2.5 });
+    expect(config.max_budget_usd).toBe(2.5);
+  });
 });
 
 describe("assertAnthropicApiKey", () => {

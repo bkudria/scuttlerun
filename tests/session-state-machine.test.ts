@@ -63,6 +63,7 @@ import { cleanOldProjects as mockCleanOldProjects } from "../src/cleanup.js";
 function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
   return {
     prompt: "ping",
+    model: "claude-haiku-4-5",
     max_turns: 50,
     effort: "high",
     tools: ["Read"],

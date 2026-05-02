@@ -44,7 +44,7 @@
   "scripts": {
     "clean": "rm -rf dist",
     "build": "npm run clean && tsc && chmod +x dist/cli.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",

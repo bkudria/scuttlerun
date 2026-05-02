@@ -157,6 +157,7 @@ scuttlerun --help
 | `--oracle-model <model>` | Override synthetic user model |
 | `--prompt <text>` | Override prompt |
 | `--max-turns <n>` | Override max agent turns |
+| `--max-budget-usd <usd>` | Override max session cost in USD |
 | `--tools <tools>` | Override tools (comma-separated) |
 | `--effort <level>` | Override effort level |
 | `--timeout <seconds>` | Session timeout (default: 300) |
@@ -261,4 +262,4 @@ npm run dev -- examples/simple.yaml   # Run via tsx
 ## See Also
 
 - [docs/goals.md](docs/goals.md) — Project motivation, vision, and non-goals
-- [docs/spec.md](docs/spec.md) — Full specification and design decisions
+- [scuttlerun.allium](scuttlerun.allium) — Full specification (Allium)

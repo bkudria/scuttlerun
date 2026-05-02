@@ -56,6 +56,7 @@ import { cleanOldProjects as mockCleanOldProjects } from "../src/cleanup.js";
 function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
   return {
     prompt: "Write a haiku",
+    model: "claude-haiku-4-5",
     max_turns: 50,
     effort: "high",
     tools: ["Read", "Write", "AskUserQuestion", "Skill"],
@@ -1052,6 +1053,89 @@ describe("runSession", () => {
     expect(stdoutOutput).toContain("TypeScript");
   });
 
+  it("denies tool use, writes oracle error, and exits 2 when handleAskUserQuestion throws a non-Error", async () => {
+    type CanUseToolFn = (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
+
+    const { SyntheticUser } = await import("../src/synthetic-user.js");
+    const spy = vi.spyOn(SyntheticUser.prototype, "handleAskUserQuestion")
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .mockImplementationOnce((async () => { throw "string-error-from-oracle"; }) as any);
+
+    let capturedCanUseTool: CanUseToolFn | undefined;
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { options: { canUseTool?: CanUseToolFn } }) => {
+      capturedCanUseTool = opts.options.canUseTool;
+      return {
+        close: vi.fn(), interrupt: vi.fn().mockResolvedValue(undefined),
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "system", subtype: "init", session_id: "s-oracle-str", tools: ["AskUserQuestion"], model: "claude-haiku-4-5" };
+          await capturedCanUseTool!("AskUserQuestion", {
+            questions: [{
+              question: "Q?",
+              header: "H",
+              options: [
+                { label: "A", description: "a" },
+                { label: "B", description: "b" },
+              ],
+              multiSelect: false,
+            }],
+          });
+          yield { type: "result", subtype: "success", session_id: "s-oracle-str", num_turns: 1, total_cost_usd: 0 };
+        },
+      };
+    });
+
+    const result = await runSession(minConfig());
+
+    expect(stdoutOutput).toContain("oracle: error");
+    expect(stdoutOutput).toContain("string-error-from-oracle");
+    expect(result.exitCode).toBe(2);
+
+    spy.mockRestore();
+  });
+
+  it("denies tool use, writes oracle error, and exits 2 when handleAskUserQuestion throws", async () => {
+    type CanUseToolFn = (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
+
+    // Make the oracle throw on the first call. Spy on the prototype so the
+    // runner-constructed SyntheticUser instance picks up the rejection.
+    const { SyntheticUser } = await import("../src/synthetic-user.js");
+    const spy = vi.spyOn(SyntheticUser.prototype, "handleAskUserQuestion")
+      .mockRejectedValueOnce(new Error("Oracle exhausted 4 attempts: network down"));
+
+    let capturedCanUseTool: CanUseToolFn | undefined;
+    let askResult: { behavior: string } | undefined;
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { options: { canUseTool?: CanUseToolFn } }) => {
+      capturedCanUseTool = opts.options.canUseTool;
+      return {
+        close: vi.fn(), interrupt: vi.fn().mockResolvedValue(undefined),
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: "system", subtype: "init", session_id: "s-oracle-fail", tools: ["AskUserQuestion"], model: "claude-haiku-4-5" };
+          askResult = await capturedCanUseTool!("AskUserQuestion", {
+            questions: [{
+              question: "What language?",
+              header: "Language",
+              options: [
+                { label: "TypeScript", description: "TS" },
+                { label: "Python", description: "Py" },
+              ],
+              multiSelect: false,
+            }],
+          }) as { behavior: string };
+          yield { type: "result", subtype: "success", session_id: "s-oracle-fail", num_turns: 1, total_cost_usd: 0 };
+        },
+      };
+    });
+
+    const result = await runSession(minConfig());
+
+    expect(askResult?.behavior).toBe("deny");
+    expect(stdoutOutput).toContain("oracle: error");
+    expect(stdoutOutput).toContain("Oracle exhausted 4 attempts: network down");
+    expect(result.exitCode).toBe(2);
+
+    spy.mockRestore();
+  });
+
   it("returns exit code 2 when query throws a non-timeout error", async () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(() => {
       throw new Error("SDK crash");
@@ -1235,8 +1319,8 @@ describe("runSession", () => {
       sdk: {
         system_prompt: "Be concise",
         thinking: { type: "adaptive" },
-        mcp_servers: { test: {} },
-        agents: { helper: {} },
+        mcp_servers: { test: { command: "node", args: ["server.js"] } },
+        agents: { helper: { description: "helper agent", prompt: "be helpful" } },
         setting_sources: ["project"],
       },
     }));
@@ -1245,8 +1329,8 @@ describe("runSession", () => {
     expect(capturedOptions?.systemPrompt).toEqual(["Be concise", SYSTEM_PROMPT_DYNAMIC_BOUNDARY]);
     expect(capturedOptions?.disallowedTools).toEqual(["Agent"]);
     expect(capturedOptions?.thinking).toEqual({ type: "adaptive" });
-    expect(capturedOptions?.mcpServers).toEqual({ test: {} });
-    expect(capturedOptions?.agents).toEqual({ helper: {} });
+    expect(capturedOptions?.mcpServers).toEqual({ test: { command: "node", args: ["server.js"] } });
+    expect(capturedOptions?.agents).toEqual({ helper: { description: "helper agent", prompt: "be helpful" } });
   });
 
   it("wraps custom string systemPrompt in [string, SYSTEM_PROMPT_DYNAMIC_BOUNDARY] for prompt caching", async () => {

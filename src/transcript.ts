@@ -130,6 +130,10 @@ export function writeOracleTurn(
   writeEntry(entry);
 }
 
+export function writeOracleError(reason: string): void {
+  writeEntry({ oracle: "error", reason });
+}
+
 export function writeFooter(stats: FooterStats): void {
   const footer: Record<string, unknown> = {
     turns: stats.turns,

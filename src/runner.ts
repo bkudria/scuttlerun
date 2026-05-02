@@ -15,6 +15,7 @@ import {
   writeTool,
   writeOracleAsk,
   writeOracleTurn,
+  writeOracleError,
   writeFooter,
 } from "./transcript.js";
 
@@ -94,6 +95,7 @@ export async function runSession(
   // Track stats
   let toolCallCount = 0;
   let exitCode = 0;
+  let oracleFailed = false;
   const startTime = Date.now();
   let resultNumTurns = 0;
   let resultTotalCostUsd = 0;
@@ -218,15 +220,22 @@ export async function runSession(
         if (!parsed.success) {
           return { behavior: "deny" };
         }
-        const result = await syntheticUser.handleAskUserQuestion(parsed.data);
-        writeOracleAsk(
-          result.oracleResponse.answers,
-          result.oracleResponse.reasoning,
-        );
-        return {
-          behavior: result.behavior,
-          updatedInput: result.updatedInput,
-        };
+        try {
+          const result = await syntheticUser.handleAskUserQuestion(parsed.data);
+          writeOracleAsk(
+            result.oracleResponse.answers,
+            result.oracleResponse.reasoning,
+          );
+          return {
+            behavior: result.behavior,
+            updatedInput: result.updatedInput,
+          };
+        } catch (err) {
+          oracleFailed = true;
+          writeOracleError(err instanceof Error ? err.message : String(err));
+          abortController.abort();
+          return { behavior: "deny" };
+        }
       }
       return { behavior: "allow" };
     };
@@ -330,6 +339,8 @@ export async function runSession(
       exitCode = 6;
     } else if (signaled) {
       exitCode = 130;
+    } else if (oracleFailed) {
+      exitCode = 2;
     }
   } catch {
     if (timedOut) exitCode = 6;

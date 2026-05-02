@@ -13,6 +13,7 @@ interface CliOverrides {
   oracleModel?: string;
   prompt?: string;
   maxTurns?: number;
+  maxBudgetUsd?: number;
   tools?: string;
   effort?: string;
   timeout?: number;
@@ -52,6 +53,9 @@ export async function buildConfig(
   if (overrides.prompt) config = { ...config, prompt: overrides.prompt };
   if (overrides.model) config = { ...config, model: overrides.model };
   if (overrides.maxTurns) config = { ...config, max_turns: overrides.maxTurns };
+  if (overrides.maxBudgetUsd !== undefined) {
+    config = { ...config, max_budget_usd: overrides.maxBudgetUsd };
+  }
   if (overrides.effort) {
     config = { ...config, effort: overrides.effort as SessionConfig["effort"] };
   }
@@ -233,6 +237,7 @@ async function main() {
     .option("--oracle-model <model>", "Synthetic user oracle model (default: claude-haiku-4-5)")
     .option("--prompt <text>", "Override the prompt from the YAML config")
     .option("--max-turns <n>", "Max agent turns (default: 50)", (v: string) => parseInt(v, 10))
+    .option("--max-budget-usd <usd>", "Max session cost in USD (no default)", (v: string) => parseFloat(v))
     .option("--tools <tools>", "Tools list, comma-separated (e.g. Read,Write,Grep)")
     .option("--effort <level>", "Thinking effort: low, medium, high, xhigh, max (default: high)")
     .option("--timeout <seconds>", "Session timeout in seconds", (v: string) => parseInt(v, 10), DEFAULT_SESSION_TIMEOUT_SECONDS)
@@ -260,6 +265,7 @@ async function main() {
           oracleModel: opts.oracleModel,
           prompt: opts.prompt,
           maxTurns: opts.maxTurns,
+          maxBudgetUsd: opts.maxBudgetUsd,
           tools: opts.tools,
           effort: opts.effort,
         });

@@ -34,12 +34,12 @@ function warnUnknownTools(
 }
 
 const ThinkingConfigSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("adaptive") }),
+  z.object({ type: z.literal("adaptive") }).strict(),
   z.object({
     type: z.literal("enabled"),
     budget_tokens: z.number().int().min(1024).optional(),
-  }),
-  z.object({ type: z.literal("disabled") }),
+  }).strict(),
+  z.object({ type: z.literal("disabled") }).strict(),
 ]);
 
 const ProjectConfigSchema = z.object({
@@ -47,19 +47,19 @@ const ProjectConfigSchema = z.object({
   skills: z.array(z.string()).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
   files: z.record(z.string(), z.string()).optional(),
-  git_init: z.boolean().default(false),
-});
+  git_init: z.boolean().optional(),
+}).strict();
 
 const UserConfigSchema = z.object({
   persona: z.string().optional(),
   oracle_model: z.string().default(DEFAULT_ORACLE_MODEL),
   max_turns: z.number().int().min(0).default(0),
-});
+}).strict();
 
 const SandboxNetworkConfigSchema = z.object({
   allowed_domains: z.array(z.string()).default([]),
   allow_local_binding: z.boolean().default(false),
-});
+}).strict();
 
 const SandboxFilesystemConfigSchema = z.object({
   deny_read: z
@@ -67,20 +67,20 @@ const SandboxFilesystemConfigSchema = z.object({
     .default(["~/.ssh", "~/.aws", "~/.config/gcloud"]),
   allow_write: z.array(z.string()).default([]),
   deny_write: z.array(z.string()).default([".env"]),
-});
+}).strict();
 
 const SandboxConfigSchema = z.object({
   enabled: z.boolean().default(true),
   network: SandboxNetworkConfigSchema.optional(),
   filesystem: SandboxFilesystemConfigSchema.optional(),
-});
+}).strict();
 
 const SettingSourceSchema = z.enum(["user", "project", "local"]);
 
 const SystemPromptPresetSchema = z.object({
   preset: z.literal("claude_code"),
   append: z.string().optional(),
-});
+}).strict();
 
 const SystemPromptSchema = z.union([z.string(), SystemPromptPresetSchema]);
 
@@ -146,7 +146,7 @@ const AgentDefinitionSchema = z.object({
 const SdkPluginConfigSchema = z.object({
   type: z.literal("local"),
   path: z.string(),
-});
+}).strict();
 
 const SdkConfigSchema = z.object({
   system_prompt: SystemPromptSchema.default({ preset: "claude_code" }),
@@ -156,13 +156,13 @@ const SdkConfigSchema = z.object({
   plugins: z.array(SdkPluginConfigSchema).optional(),
   env: z.record(z.string(), z.string()).optional(),
   setting_sources: z.array(SettingSourceSchema).optional(),
-});
+}).strict();
 
 // Top-level schema uses .optional() for nested objects — we re-parse
 // them in parseSessionConfig to apply inner field defaults correctly.
 // (Zod v4's .default({}) does not trigger inner defaults.)
 const SessionConfigRawSchema = z.object({
-  version: z.string().optional(),
+  version: z.literal("1").optional(),
   prompt: z.string(),
   model: z.string().default("claude-haiku-4-5"),
   max_turns: z.number().int().min(1).default(50),
@@ -180,7 +180,7 @@ const SessionConfigRawSchema = z.object({
   user: z.unknown().optional(),
   sdk: z.unknown().optional(),
   sandbox: z.unknown().optional(),
-});
+}).strict();
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
 export type SystemPromptConfig = z.infer<typeof SystemPromptSchema>;

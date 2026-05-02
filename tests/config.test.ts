@@ -125,6 +125,52 @@ describe("parseSessionConfig", () => {
     ).toThrow();
   });
 
+  it("rejects unknown version", () => {
+    expect(() =>
+      parseSessionConfig({ prompt: "hi", version: "2" })
+    ).toThrow(/version/);
+  });
+
+  it("rejects unknown top-level key", () => {
+    expect(() =>
+      parseSessionConfig({ prompt: "hi", typo_key: 1 })
+    ).toThrow(/typo_key/);
+  });
+
+  it("rejects unknown user.* key", () => {
+    expect(() =>
+      parseSessionConfig({ prompt: "hi", user: { personna: "typo" } })
+    ).toThrow(/personna/);
+  });
+
+  it("rejects unknown sdk.* key", () => {
+    expect(() =>
+      parseSessionConfig({ prompt: "hi", sdk: { systen_prompt: "typo" } })
+    ).toThrow(/systen_prompt/);
+  });
+
+  it("rejects unknown project.* key", () => {
+    expect(() =>
+      parseSessionConfig({ prompt: "hi", project: { skils: [] } })
+    ).toThrow(/skils/);
+  });
+
+  it("rejects unknown sandbox.* key", () => {
+    expect(() =>
+      parseSessionConfig({ prompt: "hi", sandbox: { enabld: true } })
+    ).toThrow(/enabld/);
+  });
+
+  it("accepts version omitted", () => {
+    const config = parseSessionConfig({ prompt: "hi" });
+    expect(config.version).toBeUndefined();
+  });
+
+  it("accepts version \"1\"", () => {
+    const config = parseSessionConfig({ prompt: "hi", version: "1" });
+    expect(config.version).toBe("1");
+  });
+
   it("rejects negative max_turns", () => {
     expect(() =>
       parseSessionConfig({ prompt: "hi", user: { max_turns: -1 } })
@@ -153,12 +199,12 @@ describe("parseSessionConfig", () => {
     expect(config.sdk.setting_sources).toEqual(["user", "project"]);
   });
 
-  it("defaults project.git_init to false", () => {
+  it("treats omitted project.git_init as falsy", () => {
     const config = parseSessionConfig({
       prompt: "hi",
       project: { claude_md: "test" },
     });
-    expect(config.project?.git_init).toBe(false);
+    expect(config.project?.git_init).toBeFalsy();
   });
 
   it("applies sandbox defaults when omitted", () => {

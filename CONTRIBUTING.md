@@ -64,6 +64,6 @@ test(cleanup): cover non-verbose error path
 
 ## Further Reading
 
-- [docs/spec.md](docs/spec.md) — full technical specification and design decisions
+- [scuttlerun.allium](scuttlerun.allium) — full technical specification (Allium)
 - [docs/goals.md](docs/goals.md) — project motivation, vision, and non-goals
 - [CLAUDE.md](CLAUDE.md) — architecture overview and key technical details

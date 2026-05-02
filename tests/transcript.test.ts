@@ -8,6 +8,7 @@ import {
   writeTool,
   writeOracleAsk,
   writeOracleTurn,
+  writeOracleError,
   writeFooter,
 } from "../src/transcript.js";
 
@@ -302,6 +303,24 @@ describe("transcript", () => {
       expect(entry.oracle).toBe("turn");
       expect(entry.decision).toBe("end");
       expect(entry.reasoning).toBeUndefined();
+    });
+  });
+
+  describe("writeOracleError", () => {
+    it("writes oracle: error with reason", () => {
+      writeOracleError("Oracle exhausted 4 attempts: network down");
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.oracle).toBe("error");
+      expect(entry.reason).toBe("Oracle exhausted 4 attempts: network down");
+    });
+
+    it("handles multiline reason as block scalar", () => {
+      writeOracleError("First line.\nSecond line.\nThird line.");
+      const parsed = parseYaml("conversation:\n" + output);
+      const entry = parsed.conversation[0];
+      expect(entry.reason).toContain("First line.");
+      expect(entry.reason).toContain("Third line.");
     });
   });
 
