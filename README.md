@@ -258,6 +258,7 @@ npm run dev -- examples/simple.yaml   # Run via tsx
 - [SECURITY.md](SECURITY.md) — Reporting a vulnerability
 - [SUPPORT.md](SUPPORT.md) — Where to ask questions and report bugs
 - [CHANGELOG.md](CHANGELOG.md) — Release history
+- [RELEASING.md](RELEASING.md) — How releases are cut (Conventional Commits → release-please → npm publish)
 
 ## See Also
 

@@ -62,6 +62,10 @@ test(cleanup): cover non-verbose error path
 3. Ensure `npm run lint`, `npm test`, and `npm run build` all pass.
 4. Open a pull request describing what you changed and why.
 
+## Releases
+
+Releases are fully automated by [release-please](https://github.com/googleapis/release-please): your Conventional Commit messages drive the version bump, the CHANGELOG entry, the git tag, and the npm publish. See [RELEASING.md](RELEASING.md) for the end-to-end flow.
+
 ## Further Reading
 
 - [scuttlerun.allium](scuttlerun.allium) — full technical specification (Allium)
