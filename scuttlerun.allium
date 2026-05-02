@@ -602,6 +602,13 @@ rule SessionFailsFromUncaughtException {
         -- is preserved. Coincident timeouts are handled by
         -- SessionTimesOut and take precedence over this rule when
         -- both apply.
+        --
+        -- Mid-stream SDK failures are not retried and the session is
+        -- not resumed by session_id: the failed terminal status is
+        -- final. Retry/resume granularity is intentionally out of
+        -- scope; only the oracle and StructuredOutputParse contracts
+        -- carry one-shot retries (see SyntheticUserAnswersClarifyingQuestion
+        -- and StructuredOutputParse.SchemaConformance).
 }
 
 rule SessionTimesOut {
@@ -641,6 +648,11 @@ rule StaleWorkspacesRemoved {
         -- Never touches directories without the scuttlerun-project- prefix.
         -- Never touches directories from the current or recent sessions
         -- (mtime is the gate).
+        --
+        -- workspace_cleanup_age is a project-level constant defined in
+        -- the config block; it is intentionally not exposed in
+        -- SessionInput or via environment overrides. Per-session or
+        -- per-invocation tuning is out of scope.
 }
 
 rule WorkspaceScaffoldsSkill {
@@ -809,7 +821,10 @@ invariant OnlyTextReachesOracleContext {
 
 invariant SinglePersonaPerSession {
     -- The persona supplied at session start drives every oracle call for
-    -- the entire session. There is no per-turn persona override.
+    -- the entire session. There is no per-turn persona override and no
+    -- discrimination between main-agent and subagent-origin clarifying
+    -- questions: both go through the same oracle path with the same
+    -- persona.
     for synthetic in SyntheticUsers:
         synthetic.persona = synthetic.session.input.persona
 }
@@ -1020,14 +1035,3 @@ contract StructuredOutputParse {
         -- cache-creation, cache-read) used by scuttlerun for cost
         -- accounting.
 }
-
-
--- =============================================================
--- Open questions
--- =============================================================
-
-open question "Subagent AskUserQuestion discrimination — the current spec answers main-agent and subagent-origin clarifying questions through the same path with the same persona. SPEC.md notes per-agent persona / refusal as a future consideration."
-
-open question "Agent SDK transient-failure retry — mid-stream SDK failures currently terminate the session as failed. Whether to retry (and at what granularity: from scratch vs. resume by session_id) is unresolved."
-
-open question "Configurable workspace cleanup threshold — the 7-day GC threshold is currently a constant. Whether to expose it via session config or environment is unresolved."
