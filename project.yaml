@@ -1,4 +1,5 @@
 profiles:
   - base
+  - cli
   - allium
   - public
