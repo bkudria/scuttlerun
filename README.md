@@ -251,6 +251,7 @@ npm run dev -- examples/simple.yaml   # Run via tsx
 - [CONTRIBUTING.md](CONTRIBUTING.md) — Development setup, tests, commit conventions, PR workflow
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — Community guidelines
 - [SECURITY.md](SECURITY.md) — Reporting a vulnerability
+- [SUPPORT.md](SUPPORT.md) — Where to ask questions and report bugs
 - [CHANGELOG.md](CHANGELOG.md) — Release history
 
 ## See Also
