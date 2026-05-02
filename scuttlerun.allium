@@ -186,6 +186,7 @@ entity Session {
     tool_call_count: Integer
     agent_cost: Decimal
     oracle_cost: Decimal
+    timed_out_observed: Boolean
 
     transitions status {
         pending -> running
@@ -334,7 +335,8 @@ rule SessionStarts {
         turn_count: 0,
         tool_call_count: 0,
         agent_cost: 0,
-        oracle_cost: 0
+        oracle_cost: 0,
+        timed_out_observed: false
     )
 
     @guidance
@@ -526,6 +528,7 @@ rule TurnPolicyEndsByOracle {
     when: TurnPolicyDecided(session, decision, message, reasoning)
 
     requires: session.status = running
+    requires: session.timed_out_observed = false
     requires: decision = end
     requires: reasoning != null
 
@@ -541,6 +544,7 @@ rule TurnPolicyEndsByCap {
     when: TurnPolicyDecided(session, decision, message, reasoning)
 
     requires: session.status = running
+    requires: session.timed_out_observed = false
     requires: decision = end
     requires: reasoning = null
 
@@ -555,6 +559,7 @@ rule AgentTurnExhaustsTurns {
     when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
+    requires: session.timed_out_observed = false
     requires: subtype = error_max_turns
 
     ensures: session.agent_cost = agent_cost_to_date
@@ -566,6 +571,7 @@ rule AgentTurnExhaustsBudget {
     when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
+    requires: session.timed_out_observed = false
     requires: subtype = error_max_budget_usd
 
     ensures: session.agent_cost = agent_cost_to_date
@@ -577,6 +583,7 @@ rule AgentTurnFailsAtRuntime {
     when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
+    requires: session.timed_out_observed = false
     requires: subtype = error_during_execution
 
     ensures: session.agent_cost = agent_cost_to_date
@@ -588,6 +595,7 @@ rule SessionFailsFromUncaughtException {
     when: RunnerCaughtException(session)
 
     requires: session.status = running
+    requires: session.timed_out_observed = false
 
     ensures: session.status = failed
 
@@ -599,9 +607,9 @@ rule SessionFailsFromUncaughtException {
         -- agent_cost and turn_count snapshots are not updated on
         -- this path because no result message reported new values;
         -- whatever last value the AgentTurnCompleted handlers wrote
-        -- is preserved. Coincident timeouts are handled by
-        -- SessionTimesOut and take precedence over this rule when
-        -- both apply.
+        -- is preserved. Coincident timeouts are excluded by the
+        -- `timed_out_observed` guard, which keeps this rule disjoint
+        -- from `SessionTimesOut`.
         --
         -- Mid-stream SDK failures are not retried and the session is
         -- not resumed by session_id: the failed terminal status is
@@ -611,22 +619,60 @@ rule SessionFailsFromUncaughtException {
         -- and StructuredOutputParse.SchemaConformance).
 }
 
-rule SessionTimesOut {
+rule SessionTimeoutObserved {
     when: session: Session.started_at + session.input.timeout <= now
 
     requires: session.status = running
+    requires: session.timed_out_observed = false
+
+    ensures: session.timed_out_observed = true
+    ensures: TimeoutObserved(session)
+
+    @guidance
+        -- Observer half of the timeout split. Fires on the temporal
+        -- predicate (deadline reached while the session is still
+        -- running), flips the `timed_out_observed` flag and emits the
+        -- TimeoutObserved chained trigger consumed by `SessionTimesOut`.
+        -- The `timed_out_observed = false` precondition is the standard
+        -- temporal-trigger re-fire guard. This rule does not write
+        -- `status`; the terminal transition is committed by
+        -- `SessionTimesOut` from the chained trigger.
+}
+
+rule SessionTimesOut {
+    when: TimeoutObserved(session)
+
+    requires: session.status = running
+    requires: session.timed_out_observed = true
 
     ensures: session.status = timed_out
     ensures: AgentInterrupted(session)
 
     @guidance
-        -- On timeout scuttlerun aborts the SDK abort controller and calls
-        -- queryHandle.interrupt() as a belt-and-suspenders signal. The
-        -- transcript footer is still emitted with whatever stats accrued.
-        -- The terminal status reflects the timeout regardless of whether
-        -- the for-await loop unwound normally or via an exception thrown
+        -- Committer half of the timeout split. Consumes the chained
+        -- TimeoutObserved trigger emitted by `SessionTimeoutObserved`,
+        -- writes the terminal `status = timed_out` and signals the
+        -- agent abort. On timeout scuttlerun aborts the SDK abort
+        -- controller and calls queryHandle.interrupt() as a
+        -- belt-and-suspenders signal. The transcript footer is still
+        -- emitted with whatever stats accrued. The terminal status
+        -- reflects the timeout regardless of whether the for-await
+        -- loop unwound normally or via an exception thrown
         -- mid-iteration: the runner's catch path checks the timed-out
         -- flag and resolves to timed_out either way.
+        --
+        -- The observe-then-commit split exists so the analyser sees
+        -- the status-writing rule as disjoint from the six other
+        -- rules that transition Session.status out of running:
+        -- `SessionTimesOut` requires `timed_out_observed = true`,
+        -- which only `SessionTimeoutObserved` can produce, while the
+        -- other six rules require `timed_out_observed = false`. The
+        -- shape mirrors the runner, which sets an in-memory
+        -- `timedOut` flag when the abort fires and checks it at the
+        -- top of the for-await loop to resolve the terminal status.
+        -- `timed_out_observed` is a spec-level field that exists to
+        -- make timeout precedence visible as a value-predicate guard;
+        -- it does not correspond to a persisted runtime field.
 }
 
 
