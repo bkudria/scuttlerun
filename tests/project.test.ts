@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
-import { scaffoldProject, createProjectDir } from "../src/project.js";
+import { scaffoldProject, createProjectDir, resolveSkillPath } from "../src/project.js";
 import type { ProjectConfig } from "../src/config.js";
 
 describe("createProjectDir", () => {
@@ -230,42 +230,14 @@ describe("scaffoldProject", () => {
     }
   });
 
-  it("falls back to USERPROFILE for tilde paths when HOME is unset", async () => {
+  it("rejects tilde path when HOME is unset", async () => {
     const origHome = process.env.HOME;
-    const origProfile = process.env.USERPROFILE;
     delete process.env.HOME;
-    process.env.USERPROFILE = tempDir;
     try {
       const config: ProjectConfig = { skills: ["~/fake-skill"] };
-      const result = await scaffoldProject(config, tempDir);
-      try {
-        const linkPath = join(result.projectPath, ".claude", "skills", "fake-skill");
-        const stat = await fs.lstat(linkPath);
-        expect(stat.isSymbolicLink()).toBe(true);
-        const target = await fs.readlink(linkPath);
-        expect(target).toBe(join(tempDir, "fake-skill"));
-      } finally {
-        await fs.rm(result.projectPath, { recursive: true, force: true });
-      }
+      await expect(scaffoldProject(config, tempDir)).rejects.toThrow(/HOME/);
     } finally {
       process.env.HOME = origHome;
-      if (origProfile !== undefined) process.env.USERPROFILE = origProfile;
-      else delete process.env.USERPROFILE;
-    }
-  });
-
-  it("rejects tilde path when neither HOME nor USERPROFILE is set", async () => {
-    const origHome = process.env.HOME;
-    const origProfile = process.env.USERPROFILE;
-    delete process.env.HOME;
-    delete process.env.USERPROFILE;
-    try {
-      const config: ProjectConfig = { skills: ["~/fake-skill"] };
-      await expect(scaffoldProject(config, tempDir)).rejects.toThrow("Skill path does not exist");
-    } finally {
-      process.env.HOME = origHome;
-      if (origProfile !== undefined) process.env.USERPROFILE = origProfile;
-      else delete process.env.USERPROFILE;
     }
   });
 
@@ -346,5 +318,33 @@ describe("scaffoldProject", () => {
       const after = await listScuttlerunWorkspaces();
       expect(after).toEqual(before);
     });
+  });
+});
+
+describe("resolveSkillPath", () => {
+  let origHome: string | undefined;
+
+  beforeEach(() => {
+    origHome = process.env.HOME;
+  });
+
+  afterEach(() => {
+    if (origHome === undefined) delete process.env.HOME;
+    else process.env.HOME = origHome;
+  });
+
+  it("expands ~/ when HOME is set", () => {
+    process.env.HOME = "/users/alice";
+    expect(resolveSkillPath("~/skills/foo", "/cfg")).toBe("/users/alice/skills/foo");
+  });
+
+  it("throws when HOME is unset and skill path begins with ~/", () => {
+    delete process.env.HOME;
+    expect(() => resolveSkillPath("~/skills/foo", "/cfg")).toThrow(/HOME/);
+  });
+
+  it("resolves relative paths against configDir without consulting HOME", () => {
+    delete process.env.HOME;
+    expect(resolveSkillPath("skills/foo", "/cfg")).toBe("/cfg/skills/foo");
   });
 });

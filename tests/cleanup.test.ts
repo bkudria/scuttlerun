@@ -153,4 +153,40 @@ describe("cleanOldProjects", () => {
     const cleaned = await cleanOldProjects(7);
     expect(cleaned).toBe(0);
   });
+
+  it("logs readdir failure to stderr when verbose is true", async () => {
+    const { cleanOldProjects } = await import("../src/cleanup.js");
+    mockReaddir.mockRejectedValueOnce(new Error("EPERM"));
+    const stderrWrites: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      stderrWrites.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const cleaned = await cleanOldProjects(7, { verbose: true });
+      expect(cleaned).toBe(0);
+      expect(stderrWrites.some((s) => s.includes("EPERM"))).toBe(true);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+  });
+
+  it("silently swallows readdir failure when verbose is false", async () => {
+    const { cleanOldProjects } = await import("../src/cleanup.js");
+    mockReaddir.mockRejectedValueOnce(new Error("EPERM"));
+    const stderrWrites: string[] = [];
+    const origWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      stderrWrites.push(typeof chunk === "string" ? chunk : chunk.toString());
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const cleaned = await cleanOldProjects(7);
+      expect(cleaned).toBe(0);
+      expect(stderrWrites.length).toBe(0);
+    } finally {
+      process.stderr.write = origWrite;
+    }
+  });
 });

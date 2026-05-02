@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Oracle } from "../src/oracle.js";
+import { Oracle, AskUserQuestionInputSchema } from "../src/oracle.js";
 
 // Mock the Anthropic SDK
 const mockParse = vi.fn();
@@ -653,5 +653,63 @@ describe("Oracle", () => {
       // 100 * 1/1M + 50 * 5/1M = 0.0001 + 0.00025 = 0.00035
       expect(total.cost_usd).toBeCloseTo(0.00035, 8);
     });
+  });
+});
+
+describe("AskUserQuestionInputSchema bounds", () => {
+  function makeQuestion(optionCount: number) {
+    return {
+      question: "Q?",
+      header: "H",
+      options: Array.from({ length: optionCount }, (_, i) => ({
+        label: `L${i}`,
+        description: `D${i}`,
+      })),
+      multiSelect: false,
+    };
+  }
+
+  it("rejects zero questions", () => {
+    const result = AskUserQuestionInputSchema.safeParse({ questions: [] });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects more than 4 questions", () => {
+    const result = AskUserQuestionInputSchema.safeParse({
+      questions: Array.from({ length: 5 }, () => makeQuestion(2)),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts 1..4 questions", () => {
+    for (const n of [1, 2, 3, 4]) {
+      const result = AskUserQuestionInputSchema.safeParse({
+        questions: Array.from({ length: n }, () => makeQuestion(2)),
+      });
+      expect(result.success).toBe(true);
+    }
+  });
+
+  it("rejects fewer than 2 options on a question", () => {
+    const result = AskUserQuestionInputSchema.safeParse({
+      questions: [makeQuestion(1)],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects more than 4 options on a question", () => {
+    const result = AskUserQuestionInputSchema.safeParse({
+      questions: [makeQuestion(5)],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts 2..4 options on a question", () => {
+    for (const n of [2, 3, 4]) {
+      const result = AskUserQuestionInputSchema.safeParse({
+        questions: [makeQuestion(n)],
+      });
+      expect(result.success).toBe(true);
+    }
   });
 });

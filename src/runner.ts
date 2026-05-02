@@ -464,7 +464,12 @@ export function buildSandboxEnv(
 }
 
 function buildSdkSessionPath(cwd: string, sessionId: string, sandboxHome?: string): string {
-  const home = sandboxHome || process.env.HOME || process.env.USERPROFILE || "";
+  const home = sandboxHome || process.env.HOME;
+  if (!home) {
+    throw new Error(
+      "Cannot locate SDK session file: HOME is not set. scuttlerun requires HOME to be set when sandbox is disabled.",
+    );
+  }
   let resolved: string;
   try {
     resolved = realpathSync(cwd);

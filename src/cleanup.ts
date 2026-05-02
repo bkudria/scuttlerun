@@ -39,8 +39,10 @@ export async function cleanOldProjects(
         }
       }
     }
-  } catch {
-    // Ignore readdir errors (permission issues, etc.)
+  } catch (err) {
+    if (options.verbose) {
+      process.stderr.write(`[scuttlerun] Failed to read tmpdir for cleanup: ${String(err)}\n`);
+    }
   }
 
   if (options.verbose && cleaned > 0) {

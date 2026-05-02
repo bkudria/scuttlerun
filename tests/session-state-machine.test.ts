@@ -65,7 +65,7 @@ import {
 } from "../src/project.js";
 import { cleanOldProjects as mockCleanOldProjects } from "../src/cleanup.js";
 
-function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
+function minStubConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
   return {
     prompt: "ping",
     model: "claude-haiku-4-5",
@@ -138,7 +138,7 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
       { type: "result", subtype: "success", session_id: "fsm-pr", num_turns: 0, total_cost_usd: 0 },
     ]);
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
-    const result = await runSession(minConfig());
+    const result = await runSession(minStubConfig());
     expect(result.sessionId).toBe("fsm-pr"); // SDK init was captured
     expect(stdoutOutput).toContain("session: fsm-pr"); // header emitted, indicating running
   });
@@ -160,7 +160,7 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
       { type: "result", subtype: "success", session_id: "fsm-rs", num_turns: 1, total_cost_usd: 0 },
     ]);
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
-    const result = await runSession(minConfig());
+    const result = await runSession(minStubConfig());
     expect(result.exitCode).toBe(0); // completed_success → 0
   });
 
@@ -187,7 +187,7 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
       },
     ]);
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
-    const result = await runSession(minConfig());
+    const result = await runSession(minStubConfig());
     expect(result.exitCode).toBe(7); // exhausted_turns → 7
   });
 
@@ -214,7 +214,7 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
       },
     ]);
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
-    const result = await runSession(minConfig());
+    const result = await runSession(minStubConfig());
     expect(result.exitCode).toBe(5); // exhausted_budget → 5
   });
 
@@ -241,7 +241,7 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
       },
     ]);
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
-    const result = await runSession(minConfig());
+    const result = await runSession(minStubConfig());
     expect(result.exitCode).toBe(2); // failed → 2
   });
 
@@ -270,7 +270,7 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
       },
     };
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
-    const result = await runSession(minConfig(), { timeoutSeconds: 0.05 });
+    const result = await runSession(minStubConfig(), { timeoutSeconds: 0.05 });
     expect(result.exitCode).toBe(6); // timed_out → 6
     expect(stdoutOutput).toContain("timed_out: true");
   });
@@ -327,7 +327,7 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
       ]);
       (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
 
-      const result = await runSession(minConfig());
+      const result = await runSession(minStubConfig());
       expect(result.exitCode).toBe(expectExit);
       expect(q.close).toHaveBeenCalledTimes(1);
     }

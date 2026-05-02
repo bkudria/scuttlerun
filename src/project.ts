@@ -119,7 +119,12 @@ async function validateSkillPath(originalPath: string, resolvedPath: string): Pr
 export function resolveSkillPath(skillPath: string, configDir: string): string {
   // Expand tilde
   if (skillPath.startsWith("~/")) {
-    const home = process.env.HOME || process.env.USERPROFILE || "";
+    const home = process.env.HOME;
+    if (!home) {
+      throw new Error(
+        `Cannot expand "${skillPath}": HOME is not set. scuttlerun requires HOME to resolve tilde-prefixed paths.`,
+      );
+    }
     return join(home, skillPath.slice(2));
   }
   // Resolve relative paths from config file directory

@@ -42,12 +42,15 @@ export interface QuestionInput {
 export const QuestionInputSchema = z.object({
   question: z.string(),
   header: z.string(),
-  options: z.array(z.object({ label: z.string(), description: z.string() })),
+  options: z
+    .array(z.object({ label: z.string(), description: z.string() }))
+    .min(2)
+    .max(4),
   multiSelect: z.boolean(),
 });
 
 export const AskUserQuestionInputSchema = z.object({
-  questions: z.array(QuestionInputSchema),
+  questions: z.array(QuestionInputSchema).min(1).max(4),
 });
 
 export interface AskUserQuestionParams {
