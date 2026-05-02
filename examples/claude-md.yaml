@@ -10,4 +10,3 @@ project:
     ## Development Rules
     Always write tests before production code. Create a test file first,
     then write the implementation to make the tests pass.
-

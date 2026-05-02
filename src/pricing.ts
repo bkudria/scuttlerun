@@ -34,14 +34,12 @@ export function computeCostUsd(
   cacheReadTokens: number = 0,
   defaultModel: string = ULTIMATE_FALLBACK_MODEL,
 ): number {
-  const price =
-    lookupPrice(model) ??
-    lookupPrice(defaultModel) ??
-    PRICES[ULTIMATE_FALLBACK_MODEL];
+  const price = lookupPrice(model) ?? lookupPrice(defaultModel) ?? PRICES[ULTIMATE_FALLBACK_MODEL];
   return (
-    inputTokens * price.inputPerMTok +
-    outputTokens * price.outputPerMTok +
-    cacheCreationTokens * price.inputPerMTok * CACHE_CREATION_MULTIPLIER +
-    cacheReadTokens * price.inputPerMTok * CACHE_READ_MULTIPLIER
-  ) / 1_000_000;
+    (inputTokens * price.inputPerMTok +
+      outputTokens * price.outputPerMTok +
+      cacheCreationTokens * price.inputPerMTok * CACHE_CREATION_MULTIPLIER +
+      cacheReadTokens * price.inputPerMTok * CACHE_READ_MULTIPLIER) /
+    1_000_000
+  );
 }

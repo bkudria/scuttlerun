@@ -53,10 +53,7 @@ describe("scaffoldProject", () => {
     const config: ProjectConfig = { claude_md: "Use clear language." };
     const result = await scaffoldProject(config, tempDir);
     try {
-      const content = await fs.readFile(
-        join(result.projectPath, "CLAUDE.md"),
-        "utf8",
-      );
+      const content = await fs.readFile(join(result.projectPath, "CLAUDE.md"), "utf8");
       expect(content).toBe("Use clear language.");
     } finally {
       await fs.rm(result.projectPath, { recursive: true, force: true });
@@ -67,9 +64,7 @@ describe("scaffoldProject", () => {
     const config: ProjectConfig = {};
     const result = await scaffoldProject(config, tempDir);
     try {
-      await expect(
-        fs.access(join(result.projectPath, "CLAUDE.md")),
-      ).rejects.toThrow();
+      await expect(fs.access(join(result.projectPath, "CLAUDE.md"))).rejects.toThrow();
     } finally {
       await fs.rm(result.projectPath, { recursive: true, force: true });
     }
@@ -79,12 +74,7 @@ describe("scaffoldProject", () => {
     const config: ProjectConfig = { skills: [skillDir] };
     const result = await scaffoldProject(config, tempDir);
     try {
-      const linkPath = join(
-        result.projectPath,
-        ".claude",
-        "skills",
-        basename(skillDir),
-      );
+      const linkPath = join(result.projectPath, ".claude", "skills", basename(skillDir));
       const stat = await fs.lstat(linkPath);
       expect(stat.isSymbolicLink()).toBe(true);
       const target = await fs.readlink(linkPath);
@@ -123,9 +113,7 @@ describe("scaffoldProject", () => {
     const config: ProjectConfig = { git_init: false };
     const result = await scaffoldProject(config, tempDir);
     try {
-      await expect(
-        fs.access(join(result.projectPath, ".git")),
-      ).rejects.toThrow();
+      await expect(fs.access(join(result.projectPath, ".git"))).rejects.toThrow();
     } finally {
       await fs.rm(result.projectPath, { recursive: true, force: true });
     }
@@ -153,18 +141,14 @@ describe("scaffoldProject", () => {
     const config: ProjectConfig = {
       files: { ".git/hooks/pre-commit": "#!/bin/sh\necho pwned" },
     };
-    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-      ".git/",
-    );
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(".git/");
   });
 
   it("rejects file paths targeting .git subdirectories", async () => {
     const config: ProjectConfig = {
       files: { ".git/config": "[core]\nautocrlf = true" },
     };
-    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-      ".git/",
-    );
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(".git/");
   });
 
   it("allows files named .gitignore (not inside .git/)", async () => {
@@ -201,9 +185,7 @@ describe("scaffoldProject", () => {
     const config: ProjectConfig = {
       files: { "../escape.txt": "bad" },
     };
-    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-      "escapes project directory",
-    );
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow("escapes project directory");
   });
 
   it("path traversal check resolves symlinks (realpath)", async () => {
@@ -224,9 +206,7 @@ describe("scaffoldProject", () => {
     const config: ProjectConfig = {
       files: { "foo/../../escape.txt": "bad" },
     };
-    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-      "escapes project directory",
-    );
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow("escapes project directory");
   });
 
   it("resolves tilde skill paths relative to HOME", async () => {
@@ -281,9 +261,7 @@ describe("scaffoldProject", () => {
     delete process.env.USERPROFILE;
     try {
       const config: ProjectConfig = { skills: ["~/fake-skill"] };
-      await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-        "Skill path does not exist",
-      );
+      await expect(scaffoldProject(config, tempDir)).rejects.toThrow("Skill path does not exist");
     } finally {
       process.env.HOME = origHome;
       if (origProfile !== undefined) process.env.USERPROFILE = origProfile;
@@ -293,9 +271,7 @@ describe("scaffoldProject", () => {
 
   it("rejects when skill path does not exist", async () => {
     const config: ProjectConfig = { skills: ["./nonexistent-skill"] };
-    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-      "Skill path does not exist",
-    );
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow("Skill path does not exist");
     // No partial scaffolding — .claude/skills should not be created
     // (projectPath is internal, so we verify indirectly by checking the error was thrown)
   });
@@ -304,27 +280,21 @@ describe("scaffoldProject", () => {
     const noSkillMd = join(tempDir, "no-skillmd");
     await fs.mkdir(noSkillMd, { recursive: true });
     const config: ProjectConfig = { skills: [noSkillMd] };
-    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-      "missing SKILL.md",
-    );
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow("missing SKILL.md");
   });
 
   it("rejects when skill path is a file, not a directory", async () => {
     const filePath = join(tempDir, "not-a-dir");
     await fs.writeFile(filePath, "I am a file");
     const config: ProjectConfig = { skills: [filePath] };
-    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-      "not a directory",
-    );
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow("not a directory");
   });
 
   it("does not create symlinks when a later skill is invalid", async () => {
     const config: ProjectConfig = {
       skills: [skillDir, "./does-not-exist"],
     };
-    await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-      "Skill path does not exist",
-    );
+    await expect(scaffoldProject(config, tempDir)).rejects.toThrow("Skill path does not exist");
   });
 
   // Atomicity: validation failures must leave no workspace artifacts.
@@ -339,9 +309,7 @@ describe("scaffoldProject", () => {
       const all = await fs.readdir(tmpdir());
       return all
         .filter(
-          (d) =>
-            d.startsWith("scuttlerun-project-") &&
-            !d.startsWith("scuttlerun-project-test-"),
+          (d) => d.startsWith("scuttlerun-project-") && !d.startsWith("scuttlerun-project-test-"),
         )
         .sort();
     }
@@ -352,9 +320,7 @@ describe("scaffoldProject", () => {
         skills: ["./does-not-exist"],
       };
       const before = await listScuttlerunWorkspaces();
-      await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-        "Skill path does not exist",
-      );
+      await expect(scaffoldProject(config, tempDir)).rejects.toThrow("Skill path does not exist");
       const after = await listScuttlerunWorkspaces();
       expect(after).toEqual(before);
     });
@@ -365,9 +331,7 @@ describe("scaffoldProject", () => {
         files: { ".git/hooks/pre-commit": "bad" },
       };
       const before = await listScuttlerunWorkspaces();
-      await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-        ".git/",
-      );
+      await expect(scaffoldProject(config, tempDir)).rejects.toThrow(".git/");
       const after = await listScuttlerunWorkspaces();
       expect(after).toEqual(before);
     });
@@ -378,9 +342,7 @@ describe("scaffoldProject", () => {
         files: { "../escape.txt": "bad" },
       };
       const before = await listScuttlerunWorkspaces();
-      await expect(scaffoldProject(config, tempDir)).rejects.toThrow(
-        "escapes project directory",
-      );
+      await expect(scaffoldProject(config, tempDir)).rejects.toThrow("escapes project directory");
       const after = await listScuttlerunWorkspaces();
       expect(after).toEqual(before);
     });

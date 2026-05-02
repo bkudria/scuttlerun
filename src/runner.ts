@@ -169,7 +169,7 @@ export async function runSession(
     if (config.sdk.agents) sdkOptions.agents = config.sdk.agents;
     if (config.sdk.plugins) {
       const configDir = options.configDir || process.cwd();
-      sdkOptions.plugins = config.sdk.plugins.map(p => ({
+      sdkOptions.plugins = config.sdk.plugins.map((p) => ({
         ...p,
         path: resolveSkillPath(p.path, configDir),
       }));
@@ -177,7 +177,11 @@ export async function runSession(
     // Subprocess environment: when sandbox is enabled, filter process.env
     // through an allowlist to prevent leaking secrets (API keys, tokens, etc.)
     if (sandboxHome) {
-      sdkOptions.env = buildSandboxEnv(process.env as Record<string, string | undefined>, config.sdk.env, sandboxHome);
+      sdkOptions.env = buildSandboxEnv(
+        process.env as Record<string, string | undefined>,
+        config.sdk.env,
+        sandboxHome,
+      );
     } else if (config.sdk.env) {
       sdkOptions.env = config.sdk.env;
     }
@@ -211,10 +215,7 @@ export async function runSession(
     let syntheticUser: SyntheticUser | undefined;
 
     // canUseTool callback
-    sdkOptions.canUseTool = async (
-      toolName: string,
-      input: Record<string, unknown>,
-    ) => {
+    sdkOptions.canUseTool = async (toolName: string, input: Record<string, unknown>) => {
       if (toolName === "AskUserQuestion" && syntheticUser) {
         const parsed = AskUserQuestionInputSchema.safeParse(input);
         if (!parsed.success) {
@@ -222,10 +223,7 @@ export async function runSession(
         }
         try {
           const result = await syntheticUser.handleAskUserQuestion(parsed.data);
-          writeOracleAsk(
-            result.oracleResponse.answers,
-            result.oracleResponse.reasoning,
-          );
+          writeOracleAsk(result.oracleResponse.answers, result.oracleResponse.reasoning);
           return {
             behavior: result.behavior,
             updatedInput: result.updatedInput,
@@ -288,9 +286,12 @@ export async function runSession(
               writeTool(block.name, block.input);
               toolCallCount++;
               const inp = block.input as Record<string, unknown>;
-              if (block.name === "Write" && typeof inp.file_path === "string") filesWritten.add(inp.file_path);
-              else if (block.name === "Edit" && typeof inp.file_path === "string") filesEdited.add(inp.file_path);
-              else if (block.name === "Read" && typeof inp.file_path === "string") filesRead.add(inp.file_path);
+              if (block.name === "Write" && typeof inp.file_path === "string")
+                filesWritten.add(inp.file_path);
+              else if (block.name === "Edit" && typeof inp.file_path === "string")
+                filesEdited.add(inp.file_path);
+              else if (block.name === "Read" && typeof inp.file_path === "string")
+                filesRead.add(inp.file_path);
             }
           }
           if (textParts.length > 0 && syntheticUser) {
@@ -383,34 +384,60 @@ export const SAFE_ENV_VARS: ReadonlySet<string> = new Set([
   // Required for the agent subprocess to make API calls
   "ANTHROPIC_API_KEY",
   // Paths and execution
-  "PATH", "HOME", "SHELL", "USER", "LOGNAME",
+  "PATH",
+  "HOME",
+  "SHELL",
+  "USER",
+  "LOGNAME",
   // Temp directories
-  "TMPDIR", "TEMP", "TMP",
+  "TMPDIR",
+  "TEMP",
+  "TMP",
   // Locale and encoding
-  "LANG", "LANGUAGE", "LC_ALL", "LC_COLLATE", "LC_CTYPE",
-  "LC_MESSAGES", "LC_MONETARY", "LC_NUMERIC", "LC_TIME",
+  "LANG",
+  "LANGUAGE",
+  "LC_ALL",
+  "LC_COLLATE",
+  "LC_CTYPE",
+  "LC_MESSAGES",
+  "LC_MONETARY",
+  "LC_NUMERIC",
+  "LC_TIME",
   // Terminal
-  "TERM", "COLORTERM", "TERM_PROGRAM", "FORCE_COLOR", "NO_COLOR",
+  "TERM",
+  "COLORTERM",
+  "TERM_PROGRAM",
+  "FORCE_COLOR",
+  "NO_COLOR",
   // Editor
-  "EDITOR", "VISUAL",
+  "EDITOR",
+  "VISUAL",
   // Node.js runtime
-  "NODE_PATH", "NODE_ENV", "NODE_OPTIONS", "NODE_EXTRA_CA_CERTS",
-  "NODE_NO_WARNINGS", "UV_THREADPOOL_SIZE",
+  "NODE_PATH",
+  "NODE_ENV",
+  "NODE_OPTIONS",
+  "NODE_EXTRA_CA_CERTS",
+  "NODE_NO_WARNINGS",
+  "UV_THREADPOOL_SIZE",
   // SSL/TLS certificates
-  "SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE", "REQUESTS_CA_BUNDLE",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "CURL_CA_BUNDLE",
+  "REQUESTS_CA_BUNDLE",
   // XDG base directories
-  "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
-  "XDG_RUNTIME_DIR", "XDG_STATE_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_RUNTIME_DIR",
+  "XDG_STATE_HOME",
   // macOS
-  "COMMAND_MODE", "__CF_USER_TEXT_ENCODING",
+  "COMMAND_MODE",
+  "__CF_USER_TEXT_ENCODING",
   // SDK identification
   "CLAUDE_AGENT_SDK_CLIENT_APP",
 ]);
 
-export const SAFE_ENV_PREFIXES: readonly string[] = [
-  "LC_",
-  "npm_config_",
-];
+export const SAFE_ENV_PREFIXES: readonly string[] = ["LC_", "npm_config_"];
 
 export function buildSandboxEnv(
   processEnv: Record<string, string | undefined>,

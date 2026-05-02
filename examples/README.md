@@ -16,14 +16,14 @@ Pass `--dry-run` (or `-n`) to validate and print the resolved config without run
 
 ## Feature coverage
 
-| Example | Persona | AskUserQuestion | Multi-turn | Project | Custom sandbox |
-|---------|:-------:|:---------------:|:----------:|:-------:|:--------------:|
-| [tour.yaml](tour.yaml) | ✓ | ✓ | ✓ | claude_md + skills | — |
-| [simple.yaml](simple.yaml) | — | — | — | — | — |
-| [interactive.yaml](interactive.yaml) | ✓ | ✓ | — | — | — |
-| [multi-turn.yaml](multi-turn.yaml) | ✓ | — | ✓ | — | network override |
-| [skill-use.yaml](skill-use.yaml) | ✓ | — | ✓ | skills | — |
-| [claude-md.yaml](claude-md.yaml) | — | — | — | claude_md | — |
+| Example                              | Persona | AskUserQuestion | Multi-turn |      Project       |  Custom sandbox  |
+| ------------------------------------ | :-----: | :-------------: | :--------: | :----------------: | :--------------: |
+| [tour.yaml](tour.yaml)               |    ✓    |        ✓        |     ✓      | claude_md + skills |        —         |
+| [simple.yaml](simple.yaml)           |    —    |        —        |     —      |         —          |        —         |
+| [interactive.yaml](interactive.yaml) |    ✓    |        ✓        |     —      |         —          |        —         |
+| [multi-turn.yaml](multi-turn.yaml)   |    ✓    |        —        |     ✓      |         —          | network override |
+| [skill-use.yaml](skill-use.yaml)     |    ✓    |        —        |     ✓      |       skills       |        —         |
+| [claude-md.yaml](claude-md.yaml)     |    —    |        —        |     —      |     claude_md      |        —         |
 
 ## Tour
 

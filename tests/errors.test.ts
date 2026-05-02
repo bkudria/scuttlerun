@@ -60,16 +60,12 @@ describe("formatCliError", () => {
       code: "ENOENT",
       path: "/nope.yaml",
     });
-    expect(formatCliError(err)).toBe(
-      "[scuttlerun] Config file not found: /nope.yaml",
-    );
+    expect(formatCliError(err)).toBe("[scuttlerun] Config file not found: /nope.yaml");
   });
 
   it("falls back to (unknown) when ENOENT has no path field", () => {
     const err = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
-    expect(formatCliError(err)).toBe(
-      "[scuttlerun] Config file not found: (unknown)",
-    );
+    expect(formatCliError(err)).toBe("[scuttlerun] Config file not found: (unknown)");
   });
 
   it("formats generic Error with original message", () => {

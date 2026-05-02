@@ -1,8 +1,4 @@
-import type {
-  Oracle,
-  ConversationEntry,
-  QuestionInput,
-} from "./oracle.js";
+import type { Oracle, ConversationEntry, QuestionInput } from "./oracle.js";
 import type { UserConfig } from "./config.js";
 
 const ORACLE_CONTEXT_ENTRY_LIMIT = 20;
@@ -32,11 +28,7 @@ export class SyntheticUser {
   private conversationBuffer: ConversationEntry[] = [];
   private userTurnCount = 0;
 
-  constructor(
-    oracle: Oracle,
-    config: UserConfig,
-    originalPrompt: string,
-  ) {
+  constructor(oracle: Oracle, config: UserConfig, originalPrompt: string) {
     this.oracle = oracle;
     this.config = config;
     this.originalPrompt = originalPrompt;
@@ -50,9 +42,7 @@ export class SyntheticUser {
     this.conversationBuffer.push({ role: "assistant", text });
   }
 
-  async handleAskUserQuestion(
-    input: { questions: QuestionInput[] },
-  ): Promise<CanUseToolResult> {
+  async handleAskUserQuestion(input: { questions: QuestionInput[] }): Promise<CanUseToolResult> {
     const context = this.getRecentContext();
 
     const result = await this.oracle.answerQuestions({

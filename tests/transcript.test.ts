@@ -198,10 +198,7 @@ describe("transcript", () => {
 
   describe("writeOracleAsk", () => {
     it("writes oracle ask_user entry with answers and reasoning", () => {
-      writeOracleAsk(
-        { "What language?": "Python" },
-        "User prefers Python",
-      );
+      writeOracleAsk({ "What language?": "Python" }, "User prefers Python");
       const parsed = parseYaml("conversation:\n" + output);
       const entry = parsed.conversation[0];
       expect(entry.oracle).toBe("ask_user");
@@ -236,10 +233,7 @@ describe("transcript", () => {
     });
 
     it("handles YAML-special characters in question keys", () => {
-      writeOracleAsk(
-        { "Use {braces}: yes or #no?": "yes" },
-        "Confirmed",
-      );
+      writeOracleAsk({ "Use {braces}: yes or #no?": "yes" }, "Confirmed");
       const parsed = parseYaml("conversation:\n" + output);
       const entry = parsed.conversation[0];
       expect(entry.answers["Use {braces}: yes or #no?"]).toBe("yes");

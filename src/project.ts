@@ -41,10 +41,7 @@ export async function scaffoldProject(
   if (config.settings) {
     const claudeDir = join(projectPath, ".claude");
     await fs.mkdir(claudeDir, { recursive: true });
-    await fs.writeFile(
-      join(claudeDir, "settings.json"),
-      JSON.stringify(config.settings, null, 2),
-    );
+    await fs.writeFile(join(claudeDir, "settings.json"), JSON.stringify(config.settings, null, 2));
   }
 
   // Git init before file writes so that files cannot create malicious .git/hooks/
@@ -83,35 +80,25 @@ async function validateSkills(
 // content.
 const VALIDATION_BASE = "/__scuttlerun_validation__";
 
-function validateFilePaths(
-  files: Record<string, string> | undefined,
-): void {
+function validateFilePaths(files: Record<string, string> | undefined): void {
   if (!files) return;
   for (const filePath of Object.keys(files)) {
     if (filePath === ".git" || filePath.startsWith(".git/")) {
       throw new Error(`File path targets .git/ directory: "${filePath}"`);
     }
     const resolved = resolve(VALIDATION_BASE, filePath);
-    if (
-      !resolved.startsWith(VALIDATION_BASE + "/") &&
-      resolved !== VALIDATION_BASE
-    ) {
+    if (!resolved.startsWith(VALIDATION_BASE + "/") && resolved !== VALIDATION_BASE) {
       throw new Error(`File path escapes project directory: "${filePath}"`);
     }
   }
 }
 
-async function validateSkillPath(
-  originalPath: string,
-  resolvedPath: string,
-): Promise<void> {
+async function validateSkillPath(originalPath: string, resolvedPath: string): Promise<void> {
   let stat;
   try {
     stat = await fs.stat(resolvedPath);
   } catch {
-    throw new Error(
-      `Skill path does not exist: "${originalPath}" (resolved to ${resolvedPath})`,
-    );
+    throw new Error(`Skill path does not exist: "${originalPath}" (resolved to ${resolvedPath})`);
   }
 
   if (!stat.isDirectory()) {

@@ -5,10 +5,12 @@ import { computeCostUsd } from "./pricing.js";
 
 // Schema for AskUserQuestion oracle response
 const AskUserQuestionResponseSchema = z.object({
-  answers: z.array(z.object({
-    question: z.string(),
-    answer: z.string(),
-  })),
+  answers: z.array(
+    z.object({
+      question: z.string(),
+      answer: z.string(),
+    }),
+  ),
   reasoning: z.string(),
 });
 
@@ -119,16 +121,18 @@ export class Oracle {
     this.baseDelayMs = options.baseDelayMs ?? ORACLE_DEFAULT_BASE_DELAY_MS;
   }
 
-  async answerQuestions(
-    params: AskUserQuestionParams,
-  ): Promise<AskUserQuestionResult> {
+  async answerQuestions(params: AskUserQuestionParams): Promise<AskUserQuestionResult> {
     const systemPrompt = buildAskUserQuestionSystemPrompt(params.persona);
     const userMessage = buildAskUserQuestionUserMessage(
       params.conversationContext,
       params.questions,
     );
 
-    const response = await this.callWithRetry(systemPrompt, userMessage, AskUserQuestionResponseSchema);
+    const response = await this.callWithRetry(
+      systemPrompt,
+      userMessage,
+      AskUserQuestionResponseSchema,
+    );
 
     this.trackUsage(response.usage);
 
@@ -146,13 +150,8 @@ export class Oracle {
     };
   }
 
-  async decideTurnPolicy(
-    params: TurnPolicyParams,
-  ): Promise<TurnPolicyResult> {
-    const systemPrompt = buildTurnPolicySystemPrompt(
-      params.persona,
-      params.originalPrompt,
-    );
+  async decideTurnPolicy(params: TurnPolicyParams): Promise<TurnPolicyResult> {
+    const systemPrompt = buildTurnPolicySystemPrompt(params.persona, params.originalPrompt);
     const userMessage = buildTurnPolicyUserMessage(params.conversationContext);
 
     const response = await this.callWithRetry(systemPrompt, userMessage, TurnPolicyResponseSchema);
@@ -215,7 +214,9 @@ export class Oracle {
         lastError = err;
         if (attempt === 0 && this.verbose) {
           const msg = err instanceof Error ? err.message : String(err);
-          console.error(`[scuttlerun] oracle: first attempt failed (${msg}); retrying with backoff`);
+          console.error(
+            `[scuttlerun] oracle: first attempt failed (${msg}); retrying with backoff`,
+          );
         }
         if (attempt < ORACLE_MAX_ATTEMPTS - 1) {
           const exponential = this.baseDelayMs * 2 ** attempt;
@@ -289,10 +290,7 @@ function buildAskUserQuestionUserMessage(
   return parts.join("\n");
 }
 
-function buildTurnPolicySystemPrompt(
-  persona: string | undefined,
-  originalPrompt: string,
-): string {
+function buildTurnPolicySystemPrompt(persona: string | undefined, originalPrompt: string): string {
   return `You are simulating a user in a Claude Code session. Your persona:
 
 ${persona ?? "A helpful user."}

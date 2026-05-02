@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  getKnownSdkToolNames,
-  _resetCacheForTests,
-} from "../src/sdk-tool-names.js";
+import { getKnownSdkToolNames, _resetCacheForTests } from "../src/sdk-tool-names.js";
 
 describe("getKnownSdkToolNames", () => {
   it("returns SDK tool names including canonical File* aliases", () => {

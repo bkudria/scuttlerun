@@ -63,15 +63,13 @@ describe("Oracle", () => {
     });
 
     it("retries once on API failure", async () => {
-      mockParse
-        .mockRejectedValueOnce(new Error("API error"))
-        .mockResolvedValueOnce({
-          parsed_output: {
-            answers: [{ question: "Pick one", answer: "A" }],
-            reasoning: "retry worked",
-          },
-          usage: { input_tokens: 50, output_tokens: 30 },
-        });
+      mockParse.mockRejectedValueOnce(new Error("API error")).mockResolvedValueOnce({
+        parsed_output: {
+          answers: [{ question: "Pick one", answer: "A" }],
+          reasoning: "retry worked",
+        },
+        usage: { input_tokens: 50, output_tokens: 30 },
+      });
 
       const result = await oracle.answerQuestions({
         persona: "test",
@@ -116,7 +114,7 @@ describe("Oracle", () => {
               multiSelect: false,
             },
           ],
-        })
+        }),
       ).rejects.toThrow(/exhausted.*4 attempts.*fail 4/);
       expect(mockParse).toHaveBeenCalledTimes(4);
     });
@@ -171,12 +169,10 @@ describe("Oracle", () => {
     });
 
     it("retries once on failure", async () => {
-      mockParse
-        .mockRejectedValueOnce(new Error("network"))
-        .mockResolvedValueOnce({
-          parsed_output: { decision: "end", reasoning: "done" },
-          usage: { input_tokens: 100, output_tokens: 30 },
-        });
+      mockParse.mockRejectedValueOnce(new Error("network")).mockResolvedValueOnce({
+        parsed_output: { decision: "end", reasoning: "done" },
+        usage: { input_tokens: 100, output_tokens: 30 },
+      });
 
       const result = await oracle.decideTurnPolicy({
         persona: "test",
@@ -201,7 +197,12 @@ describe("Oracle", () => {
           persona: "test",
           conversationContext: [],
           questions: [
-            { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+            {
+              question: "Q",
+              header: "H",
+              options: [{ label: "A", description: "a" }],
+              multiSelect: false,
+            },
           ],
         }),
       ).rejects.toThrow("Oracle returned no structured output");
@@ -226,7 +227,12 @@ describe("Oracle", () => {
           persona: "p",
           conversationContext: [],
           questions: [
-            { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+            {
+              question: "Q",
+              header: "H",
+              options: [{ label: "A", description: "a" }],
+              multiSelect: false,
+            },
           ],
         }),
       ).rejects.toThrow();
@@ -243,21 +249,24 @@ describe("Oracle", () => {
         sleep: () => Promise.resolve(),
       });
 
-      mockParse
-        .mockRejectedValueOnce(new Error("first failure here"))
-        .mockResolvedValueOnce({
-          parsed_output: {
-            answers: [{ question: "Q", answer: "A" }],
-            reasoning: "ok",
-          },
-          usage: { input_tokens: 10, output_tokens: 5 },
-        });
+      mockParse.mockRejectedValueOnce(new Error("first failure here")).mockResolvedValueOnce({
+        parsed_output: {
+          answers: [{ question: "Q", answer: "A" }],
+          reasoning: "ok",
+        },
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
 
       await o.answerQuestions({
         persona: "p",
         conversationContext: [],
         questions: [
-          { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+          {
+            question: "Q",
+            header: "H",
+            options: [{ label: "A", description: "a" }],
+            multiSelect: false,
+          },
         ],
       });
 
@@ -271,21 +280,24 @@ describe("Oracle", () => {
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const o = new Oracle("claude-haiku-4-5", { sleep: () => Promise.resolve() });
 
-      mockParse
-        .mockRejectedValueOnce(new Error("silent failure"))
-        .mockResolvedValueOnce({
-          parsed_output: {
-            answers: [{ question: "Q", answer: "A" }],
-            reasoning: "ok",
-          },
-          usage: { input_tokens: 10, output_tokens: 5 },
-        });
+      mockParse.mockRejectedValueOnce(new Error("silent failure")).mockResolvedValueOnce({
+        parsed_output: {
+          answers: [{ question: "Q", answer: "A" }],
+          reasoning: "ok",
+        },
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
 
       await o.answerQuestions({
         persona: "p",
         conversationContext: [],
         questions: [
-          { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+          {
+            question: "Q",
+            header: "H",
+            options: [{ label: "A", description: "a" }],
+            multiSelect: false,
+          },
         ],
       });
 
@@ -307,7 +319,12 @@ describe("Oracle", () => {
           persona: "p",
           conversationContext: [],
           questions: [
-            { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+            {
+              question: "Q",
+              header: "H",
+              options: [{ label: "A", description: "a" }],
+              multiSelect: false,
+            },
           ],
         });
       } catch (e) {
@@ -329,21 +346,24 @@ describe("Oracle", () => {
         sleep: () => Promise.resolve(),
       });
 
-      mockParse
-        .mockRejectedValueOnce("string-not-error")
-        .mockResolvedValueOnce({
-          parsed_output: {
-            answers: [{ question: "Q", answer: "A" }],
-            reasoning: "ok",
-          },
-          usage: { input_tokens: 10, output_tokens: 5 },
-        });
+      mockParse.mockRejectedValueOnce("string-not-error").mockResolvedValueOnce({
+        parsed_output: {
+          answers: [{ question: "Q", answer: "A" }],
+          reasoning: "ok",
+        },
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
 
       await o.answerQuestions({
         persona: "p",
         conversationContext: [],
         questions: [
-          { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+          {
+            question: "Q",
+            header: "H",
+            options: [{ label: "A", description: "a" }],
+            multiSelect: false,
+          },
         ],
       });
 
@@ -366,7 +386,12 @@ describe("Oracle", () => {
           persona: "p",
           conversationContext: [],
           questions: [
-            { question: "Q", header: "H", options: [{ label: "A", description: "a" }], multiSelect: false },
+            {
+              question: "Q",
+              header: "H",
+              options: [{ label: "A", description: "a" }],
+              multiSelect: false,
+            },
           ],
         });
       } catch (e) {

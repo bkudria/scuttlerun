@@ -11,9 +11,7 @@ export function formatZodError(err: z.ZodError): string {
 
 function isErrnoException(err: unknown): err is NodeJS.ErrnoException {
   return (
-    err instanceof Error &&
-    "code" in err &&
-    typeof (err as NodeJS.ErrnoException).code === "string"
+    err instanceof Error && "code" in err && typeof (err as NodeJS.ErrnoException).code === "string"
   );
 }
 

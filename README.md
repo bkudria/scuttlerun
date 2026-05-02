@@ -75,65 +75,65 @@ prompt: |
 
 ### Config Reference
 
-| Field | Type | Default |
-|-------|------|---------|
-| `version` | string | `"1"` (config schema version; only `"1"` is currently accepted) |
-| `prompt` | string | *(required)* |
-| `model` | string | `claude-haiku-4-5` |
-| `max_turns` | number | `50` |
-| `max_budget_usd` | number | — |
-| `effort` | `low` \| `medium` \| `high` \| `xhigh` \| `max` | `high` |
-| `tools` | string[] | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill]` |
-| `additional_tools` | string[] | — (appended to `tools` after defaults apply; deduped first-wins) |
-| `disallowed_tools` | string[] | — |
-| `permission_mode` | string | `bypassPermissions` |
+| Field              | Type                                            | Default                                                          |
+| ------------------ | ----------------------------------------------- | ---------------------------------------------------------------- |
+| `version`          | string                                          | `"1"` (config schema version; only `"1"` is currently accepted)  |
+| `prompt`           | string                                          | _(required)_                                                     |
+| `model`            | string                                          | `claude-haiku-4-5`                                               |
+| `max_turns`        | number                                          | `50`                                                             |
+| `max_budget_usd`   | number                                          | —                                                                |
+| `effort`           | `low` \| `medium` \| `high` \| `xhigh` \| `max` | `high`                                                           |
+| `tools`            | string[]                                        | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill]`  |
+| `additional_tools` | string[]                                        | — (appended to `tools` after defaults apply; deduped first-wins) |
+| `disallowed_tools` | string[]                                        | —                                                                |
+| `permission_mode`  | string                                          | `bypassPermissions`                                              |
 
 #### `user` (synthetic user)
 
-| Field | Type | Default |
-|-------|------|---------|
-| `user.persona` | string | — |
+| Field               | Type   | Default            |
+| ------------------- | ------ | ------------------ |
+| `user.persona`      | string | —                  |
 | `user.oracle_model` | string | `claude-haiku-4-5` |
-| `user.max_turns` | number | `0` |
+| `user.max_turns`    | number | `0`                |
 
 #### `project` (managed project scaffolding)
 
 When present, scuttlerun populates the project temp directory.
 
-| Field | Type | Default |
-|-------|------|---------|
-| `project.claude_md` | string | — |
-| `project.skills` | string[] | — |
-| `project.settings` | object | — |
-| `project.files` | Record\<string, string\> | — |
-| `project.git_init` | boolean | `false` |
+| Field               | Type                     | Default |
+| ------------------- | ------------------------ | ------- |
+| `project.claude_md` | string                   | —       |
+| `project.skills`    | string[]                 | —       |
+| `project.settings`  | object                   | —       |
+| `project.files`     | Record\<string, string\> | —       |
+| `project.git_init`  | boolean                  | `false` |
 
 `project.files` keys are relative paths written inside the temp project dir; values are the file contents. Useful for materializing fixtures, test data, or example source files alongside scaffolded CLAUDE.md/skills/settings.
 
 #### `sdk` (Agent SDK passthrough)
 
-| Field | Type | Default |
-|-------|------|---------|
-| `sdk.system_prompt` | string \| `{preset: "claude_code", append?: string}` | `{preset: "claude_code"}` |
-| `sdk.thinking` | `{type: "adaptive"}` \| `{type: "enabled"}` \| `{type: "disabled"}` | — |
-| `sdk.mcp_servers` | object | — |
-| `sdk.agents` | object | — |
-| `sdk.plugins` | `{type: "local", path: string}[]` | — |
-| `sdk.env` | Record\<string, string\> | — |
-| `sdk.setting_sources` | string[] | `["project"]` if `project:` present, else `[]` |
+| Field                 | Type                                                                | Default                                        |
+| --------------------- | ------------------------------------------------------------------- | ---------------------------------------------- |
+| `sdk.system_prompt`   | string \| `{preset: "claude_code", append?: string}`                | `{preset: "claude_code"}`                      |
+| `sdk.thinking`        | `{type: "adaptive"}` \| `{type: "enabled"}` \| `{type: "disabled"}` | —                                              |
+| `sdk.mcp_servers`     | object                                                              | —                                              |
+| `sdk.agents`          | object                                                              | —                                              |
+| `sdk.plugins`         | `{type: "local", path: string}[]`                                   | —                                              |
+| `sdk.env`             | Record\<string, string\>                                            | —                                              |
+| `sdk.setting_sources` | string[]                                                            | `["project"]` if `project:` present, else `[]` |
 
 #### `sandbox` (OS-level isolation)
 
 Enabled by default. Restricts the agent's filesystem and network access. When the sandbox is enabled, `$HOME` is redirected to `<projectDir>/.home` so tools (npm, pip, cargo) write caches inside the sandbox rather than your real home directory.
 
-| Field | Type | Default |
-|-------|------|---------|
-| `sandbox.enabled` | boolean | `true` |
-| `sandbox.network.allowed_domains` | string[] | `[]` (no network access) |
-| `sandbox.network.allow_local_binding` | boolean | `false` |
-| `sandbox.filesystem.deny_read` | string[] | `[~/.ssh, ~/.aws, ~/.config/gcloud]` |
-| `sandbox.filesystem.allow_write` | string[] | `[]` (cwd and `/tmp` are always writable) |
-| `sandbox.filesystem.deny_write` | string[] | `[.env]` |
+| Field                                 | Type     | Default                                   |
+| ------------------------------------- | -------- | ----------------------------------------- |
+| `sandbox.enabled`                     | boolean  | `true`                                    |
+| `sandbox.network.allowed_domains`     | string[] | `[]` (no network access)                  |
+| `sandbox.network.allow_local_binding` | boolean  | `false`                                   |
+| `sandbox.filesystem.deny_read`        | string[] | `[~/.ssh, ~/.aws, ~/.config/gcloud]`      |
+| `sandbox.filesystem.allow_write`      | string[] | `[]` (cwd and `/tmp` are always writable) |
+| `sandbox.filesystem.deny_write`       | string[] | `[.env]`                                  |
 
 ### Config Merging
 
@@ -151,32 +151,32 @@ scuttlerun --version
 scuttlerun --help
 ```
 
-| Option | Description |
-|--------|-------------|
-| `--model <model>` | Override agent model |
-| `--oracle-model <model>` | Override synthetic user model |
-| `--prompt <text>` | Override prompt |
-| `--max-turns <n>` | Override max agent turns |
-| `--max-budget-usd <usd>` | Override max session cost in USD |
-| `--tools <tools>` | Override tools (comma-separated) |
-| `--effort <level>` | Override effort level |
-| `--timeout <seconds>` | Session timeout (default: 300) |
-| `-v, --verbose` | Verbose logging to stderr |
-| `-n, --dry-run` | Validate and display resolved config |
+| Option                   | Description                          |
+| ------------------------ | ------------------------------------ |
+| `--model <model>`        | Override agent model                 |
+| `--oracle-model <model>` | Override synthetic user model        |
+| `--prompt <text>`        | Override prompt                      |
+| `--max-turns <n>`        | Override max agent turns             |
+| `--max-budget-usd <usd>` | Override max session cost in USD     |
+| `--tools <tools>`        | Override tools (comma-separated)     |
+| `--effort <level>`       | Override effort level                |
+| `--timeout <seconds>`    | Session timeout (default: 300)       |
+| `-v, --verbose`          | Verbose logging to stderr            |
+| `-n, --dry-run`          | Validate and display resolved config |
 
 ### Exit Codes
 
 Shared taxonomy across scuttlerun/pincenez/craboodle. Codes 3 and 4 are craboodle-only; scuttlerun does not emit them.
 
-| Code | Meaning |
-|------|---------|
-| 0 | Session completed normally |
-| 1 | Configuration error |
-| 2 | Runtime error (SDK failure, process crash, unhandled exception) |
-| 5 | Budget exceeded |
-| 6 | Timeout |
-| 7 | Max turns exceeded |
-| 130 | Interrupted (SIGINT) |
+| Code | Meaning                                                         |
+| ---- | --------------------------------------------------------------- |
+| 0    | Session completed normally                                      |
+| 1    | Configuration error                                             |
+| 2    | Runtime error (SDK failure, process crash, unhandled exception) |
+| 5    | Budget exceeded                                                 |
+| 6    | Timeout                                                         |
+| 7    | Max turns exceeded                                              |
+| 130  | Interrupted (SIGINT)                                            |
 
 ## How It Works
 

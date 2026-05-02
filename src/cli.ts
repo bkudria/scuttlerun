@@ -30,8 +30,8 @@ export function assertAnthropicApiKey(): void {
   if (!key || key.trim() === "") {
     throw new Error(
       "ANTHROPIC_API_KEY is not set. Export it before running scuttlerun:\n" +
-      "  export ANTHROPIC_API_KEY=sk-ant-...\n" +
-      "See the Setup section of README.md for details.",
+        "  export ANTHROPIC_API_KEY=sk-ant-...\n" +
+        "See the Setup section of README.md for details.",
     );
   }
 }
@@ -227,8 +227,8 @@ async function main() {
     .name("scuttlerun")
     .description(
       "Multi-turn Claude session driver.\n" +
-      "Runs headless Claude sessions with a synthetic user powered by an LLM oracle.\n" +
-      "Handles AskUserQuestion, multi-turn follow-ups, and project scaffolding.",
+        "Runs headless Claude sessions with a synthetic user powered by an LLM oracle.\n" +
+        "Handles AskUserQuestion, multi-turn follow-ups, and project scaffolding.",
     )
     .version("0.1.0")
     .argument("<session.yaml>", "Session config file (YAML). Only 'prompt' is required.")
@@ -237,11 +237,21 @@ async function main() {
     .option("--oracle-model <model>", "Synthetic user oracle model (default: claude-haiku-4-5)")
     .option("--prompt <text>", "Override the prompt from the YAML config")
     .option("--max-turns <n>", "Max agent turns (default: 50)", (v: string) => parseInt(v, 10))
-    .option("--max-budget-usd <usd>", "Max session cost in USD (no default)", (v: string) => parseFloat(v))
+    .option("--max-budget-usd <usd>", "Max session cost in USD (no default)", (v: string) =>
+      parseFloat(v),
+    )
     .option("--tools <tools>", "Tools list, comma-separated (e.g. Read,Write,Grep)")
     .option("--effort <level>", "Thinking effort: low, medium, high, xhigh, max (default: high)")
-    .option("--timeout <seconds>", "Session timeout in seconds", (v: string) => parseInt(v, 10), DEFAULT_SESSION_TIMEOUT_SECONDS)
-    .option("-v, --verbose", "Verbose logging to stderr (includes agent stderr; note: -V is --version)")
+    .option(
+      "--timeout <seconds>",
+      "Session timeout in seconds",
+      (v: string) => parseInt(v, 10),
+      DEFAULT_SESSION_TIMEOUT_SECONDS,
+    )
+    .option(
+      "-v, --verbose",
+      "Verbose logging to stderr (includes agent stderr; note: -V is --version)",
+    )
     .option("-n, --dry-run", "Validate and display the resolved config without running")
     .action(async (sessionFile: string, overrideFiles: string[], opts) => {
       try {
@@ -273,7 +283,12 @@ async function main() {
         if (opts.dryRun) {
           // Output resolved config summary as YAML
           const proj = config.project;
-          const hasProject = proj && (proj.claude_md || (proj.skills && proj.skills.length > 0) || proj.files || proj.git_init);
+          const hasProject =
+            proj &&
+            (proj.claude_md ||
+              (proj.skills && proj.skills.length > 0) ||
+              proj.files ||
+              proj.git_init);
 
           const summary: Record<string, unknown> = {
             model: config.model,
@@ -350,8 +365,7 @@ async function main() {
 // Only run CLI when executed directly
 const isDirectExecution =
   process.argv[1] &&
-  (import.meta.url === `file://${process.argv[1]}` ||
-    import.meta.url.endsWith("/dist/cli.js"));
+  (import.meta.url === `file://${process.argv[1]}` || import.meta.url.endsWith("/dist/cli.js"));
 
 if (isDirectExecution) {
   main();

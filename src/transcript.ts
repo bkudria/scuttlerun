@@ -59,10 +59,7 @@ function writeEntry(entry: Record<string, unknown>): void {
 export function writeHeader(opts: HeaderOptions): void {
   const header: Record<string, unknown> = {
     session: opts.session,
-    config:
-      opts.configPaths.length === 1
-        ? opts.configPaths[0]
-        : opts.configPaths,
+    config: opts.configPaths.length === 1 ? opts.configPaths[0] : opts.configPaths,
     project: opts.projectDir,
     transcript: opts.transcriptPath,
   };
@@ -112,18 +109,11 @@ export function writeTool(name: string, input: unknown): void {
   writeEntry(entry);
 }
 
-export function writeOracleAsk(
-  answers: Record<string, string>,
-  reasoning: string,
-): void {
+export function writeOracleAsk(answers: Record<string, string>, reasoning: string): void {
   writeEntry({ oracle: "ask_user", answers, reasoning });
 }
 
-export function writeOracleTurn(
-  decision: string,
-  message?: string,
-  reasoning?: string,
-): void {
+export function writeOracleTurn(decision: string, message?: string, reasoning?: string): void {
   const entry: Record<string, unknown> = { oracle: "turn", decision };
   if (message) entry.message = message;
   if (reasoning) entry.reasoning = reasoning;

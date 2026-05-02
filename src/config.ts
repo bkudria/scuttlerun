@@ -14,10 +14,7 @@ function dedupeAppend(base: string[], extra: string[]): string[] {
   return out;
 }
 
-function warnUnknownTools(
-  names: string[] | undefined,
-  field: string,
-): void {
+function warnUnknownTools(names: string[] | undefined, field: string): void {
   if (!names) return;
   const known = getKnownSdkToolNames();
   if (known.size === 0) return;
@@ -35,80 +32,100 @@ function warnUnknownTools(
 
 const ThinkingConfigSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("adaptive") }).strict(),
-  z.object({
-    type: z.literal("enabled"),
-    budget_tokens: z.number().int().min(1024).optional(),
-  }).strict(),
+  z
+    .object({
+      type: z.literal("enabled"),
+      budget_tokens: z.number().int().min(1024).optional(),
+    })
+    .strict(),
   z.object({ type: z.literal("disabled") }).strict(),
 ]);
 
-const ProjectConfigSchema = z.object({
-  claude_md: z.string().optional(),
-  skills: z.array(z.string()).optional(),
-  settings: z.record(z.string(), z.unknown()).optional(),
-  files: z.record(z.string(), z.string()).optional(),
-  git_init: z.boolean().optional(),
-}).strict();
+const ProjectConfigSchema = z
+  .object({
+    claude_md: z.string().optional(),
+    skills: z.array(z.string()).optional(),
+    settings: z.record(z.string(), z.unknown()).optional(),
+    files: z.record(z.string(), z.string()).optional(),
+    git_init: z.boolean().optional(),
+  })
+  .strict();
 
-const UserConfigSchema = z.object({
-  persona: z.string().optional(),
-  oracle_model: z.string().default(DEFAULT_ORACLE_MODEL),
-  max_turns: z.number().int().min(0).default(0),
-}).strict();
+const UserConfigSchema = z
+  .object({
+    persona: z.string().optional(),
+    oracle_model: z.string().default(DEFAULT_ORACLE_MODEL),
+    max_turns: z.number().int().min(0).default(0),
+  })
+  .strict();
 
-const SandboxNetworkConfigSchema = z.object({
-  allowed_domains: z.array(z.string()).default([]),
-  allow_local_binding: z.boolean().default(false),
-}).strict();
+const SandboxNetworkConfigSchema = z
+  .object({
+    allowed_domains: z.array(z.string()).default([]),
+    allow_local_binding: z.boolean().default(false),
+  })
+  .strict();
 
-const SandboxFilesystemConfigSchema = z.object({
-  deny_read: z
-    .array(z.string())
-    .default(["~/.ssh", "~/.aws", "~/.config/gcloud"]),
-  allow_write: z.array(z.string()).default([]),
-  deny_write: z.array(z.string()).default([".env"]),
-}).strict();
+const SandboxFilesystemConfigSchema = z
+  .object({
+    deny_read: z.array(z.string()).default(["~/.ssh", "~/.aws", "~/.config/gcloud"]),
+    allow_write: z.array(z.string()).default([]),
+    deny_write: z.array(z.string()).default([".env"]),
+  })
+  .strict();
 
-const SandboxConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-  network: SandboxNetworkConfigSchema.optional(),
-  filesystem: SandboxFilesystemConfigSchema.optional(),
-}).strict();
+const SandboxConfigSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    network: SandboxNetworkConfigSchema.optional(),
+    filesystem: SandboxFilesystemConfigSchema.optional(),
+  })
+  .strict();
 
 const SettingSourceSchema = z.enum(["user", "project", "local"]);
 
-const SystemPromptPresetSchema = z.object({
-  preset: z.literal("claude_code"),
-  append: z.string().optional(),
-}).strict();
+const SystemPromptPresetSchema = z
+  .object({
+    preset: z.literal("claude_code"),
+    append: z.string().optional(),
+  })
+  .strict();
 
 const SystemPromptSchema = z.union([z.string(), SystemPromptPresetSchema]);
 
 // MCP Server Config schemas matching Agent SDK types (v0.2.72)
 // .passthrough() allows unknown fields for forward compatibility
-const McpStdioServerConfigSchema = z.object({
-  type: z.literal("stdio").optional(),
-  command: z.string(),
-  args: z.array(z.string()).optional(),
-  env: z.record(z.string(), z.string()).optional(),
-}).passthrough();
+const McpStdioServerConfigSchema = z
+  .object({
+    type: z.literal("stdio").optional(),
+    command: z.string(),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+  })
+  .passthrough();
 
-const McpSSEServerConfigSchema = z.object({
-  type: z.literal("sse"),
-  url: z.string(),
-  headers: z.record(z.string(), z.string()).optional(),
-}).passthrough();
+const McpSSEServerConfigSchema = z
+  .object({
+    type: z.literal("sse"),
+    url: z.string(),
+    headers: z.record(z.string(), z.string()).optional(),
+  })
+  .passthrough();
 
-const McpHttpServerConfigSchema = z.object({
-  type: z.literal("http"),
-  url: z.string(),
-  headers: z.record(z.string(), z.string()).optional(),
-}).passthrough();
+const McpHttpServerConfigSchema = z
+  .object({
+    type: z.literal("http"),
+    url: z.string(),
+    headers: z.record(z.string(), z.string()).optional(),
+  })
+  .passthrough();
 
-const McpSdkServerConfigSchema = z.object({
-  type: z.literal("sdk"),
-  name: z.string(),
-}).passthrough();
+const McpSdkServerConfigSchema = z
+  .object({
+    type: z.literal("sdk"),
+    name: z.string(),
+  })
+  .passthrough();
 
 // Union: try SSE/HTTP/SDK first (they require type), fall back to stdio (type optional)
 const McpServerConfigSchema = z.union([
@@ -118,69 +135,75 @@ const McpServerConfigSchema = z.union([
   McpStdioServerConfigSchema,
 ]);
 
-const AgentMcpServerSpecSchema = z.union([
-  z.string(),
-  z.record(z.string(), McpServerConfigSchema),
-]);
+const AgentMcpServerSpecSchema = z.union([z.string(), z.record(z.string(), McpServerConfigSchema)]);
 
-const AgentDefinitionSchema = z.object({
-  description: z.string(),
-  prompt: z.string(),
-  tools: z.array(z.string()).optional(),
-  disallowedTools: z.array(z.string()).optional(),
-  model: z.string().optional(),
-  mcpServers: z.array(AgentMcpServerSpecSchema).optional(),
-  criticalSystemReminder_EXPERIMENTAL: z.string().optional(),
-  skills: z.array(z.string()).optional(),
-  maxTurns: z.number().int().min(1).optional(),
-  initialPrompt: z.string().optional(),
-  background: z.boolean().optional(),
-  memory: z.enum(["user", "project", "local"]).optional(),
-  effort: z.union([
-    z.enum(["low", "medium", "high", "xhigh", "max"]),
-    z.number().int(),
-  ]).optional(),
-  permissionMode: z.enum(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"]).optional(),
-}).passthrough();
+const AgentDefinitionSchema = z
+  .object({
+    description: z.string(),
+    prompt: z.string(),
+    tools: z.array(z.string()).optional(),
+    disallowedTools: z.array(z.string()).optional(),
+    model: z.string().optional(),
+    mcpServers: z.array(AgentMcpServerSpecSchema).optional(),
+    criticalSystemReminder_EXPERIMENTAL: z.string().optional(),
+    skills: z.array(z.string()).optional(),
+    maxTurns: z.number().int().min(1).optional(),
+    initialPrompt: z.string().optional(),
+    background: z.boolean().optional(),
+    memory: z.enum(["user", "project", "local"]).optional(),
+    effort: z
+      .union([z.enum(["low", "medium", "high", "xhigh", "max"]), z.number().int()])
+      .optional(),
+    permissionMode: z
+      .enum(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"])
+      .optional(),
+  })
+  .passthrough();
 
-const SdkPluginConfigSchema = z.object({
-  type: z.literal("local"),
-  path: z.string(),
-}).strict();
+const SdkPluginConfigSchema = z
+  .object({
+    type: z.literal("local"),
+    path: z.string(),
+  })
+  .strict();
 
-const SdkConfigSchema = z.object({
-  system_prompt: SystemPromptSchema.default({ preset: "claude_code" }),
-  thinking: ThinkingConfigSchema.optional(),
-  mcp_servers: z.record(z.string(), McpServerConfigSchema).optional(),
-  agents: z.record(z.string(), AgentDefinitionSchema).optional(),
-  plugins: z.array(SdkPluginConfigSchema).optional(),
-  env: z.record(z.string(), z.string()).optional(),
-  setting_sources: z.array(SettingSourceSchema).optional(),
-}).strict();
+const SdkConfigSchema = z
+  .object({
+    system_prompt: SystemPromptSchema.default({ preset: "claude_code" }),
+    thinking: ThinkingConfigSchema.optional(),
+    mcp_servers: z.record(z.string(), McpServerConfigSchema).optional(),
+    agents: z.record(z.string(), AgentDefinitionSchema).optional(),
+    plugins: z.array(SdkPluginConfigSchema).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    setting_sources: z.array(SettingSourceSchema).optional(),
+  })
+  .strict();
 
 // Top-level schema uses .optional() for nested objects — we re-parse
 // them in parseSessionConfig to apply inner field defaults correctly.
 // (Zod v4's .default({}) does not trigger inner defaults.)
-const SessionConfigRawSchema = z.object({
-  version: z.literal("1").optional(),
-  prompt: z.string(),
-  model: z.string().default("claude-haiku-4-5"),
-  max_turns: z.number().int().min(1).default(50),
-  max_budget_usd: z.number().positive().optional(),
-  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).default("high"),
-  tools: z
-    .array(z.string())
-    .default(["Read", "Write", "Edit", "Bash", "Glob", "Grep", "AskUserQuestion", "Skill"]),
-  additional_tools: z.array(z.string()).optional(),
-  disallowed_tools: z.array(z.string()).optional(),
-  project: ProjectConfigSchema.optional(),
-  permission_mode: z
-    .enum(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"])
-    .default("bypassPermissions"),
-  user: z.unknown().optional(),
-  sdk: z.unknown().optional(),
-  sandbox: z.unknown().optional(),
-}).strict();
+const SessionConfigRawSchema = z
+  .object({
+    version: z.literal("1").optional(),
+    prompt: z.string(),
+    model: z.string().default("claude-haiku-4-5"),
+    max_turns: z.number().int().min(1).default(50),
+    max_budget_usd: z.number().positive().optional(),
+    effort: z.enum(["low", "medium", "high", "xhigh", "max"]).default("high"),
+    tools: z
+      .array(z.string())
+      .default(["Read", "Write", "Edit", "Bash", "Glob", "Grep", "AskUserQuestion", "Skill"]),
+    additional_tools: z.array(z.string()).optional(),
+    disallowed_tools: z.array(z.string()).optional(),
+    project: ProjectConfigSchema.optional(),
+    permission_mode: z
+      .enum(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"])
+      .default("bypassPermissions"),
+    user: z.unknown().optional(),
+    sdk: z.unknown().optional(),
+    sandbox: z.unknown().optional(),
+  })
+  .strict();
 
 export type UserConfig = z.infer<typeof UserConfigSchema>;
 export type SystemPromptConfig = z.infer<typeof SystemPromptSchema>;
@@ -189,9 +212,7 @@ export type SdkConfig = z.infer<typeof SdkConfigSchema> & {
 };
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 export type SandboxNetworkConfig = z.infer<typeof SandboxNetworkConfigSchema>;
-export type SandboxFilesystemConfig = z.infer<
-  typeof SandboxFilesystemConfigSchema
->;
+export type SandboxFilesystemConfig = z.infer<typeof SandboxFilesystemConfigSchema>;
 export interface SandboxConfig {
   enabled: boolean;
   network: SandboxNetworkConfig;
@@ -227,12 +248,8 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
   const user = UserConfigSchema.parse(parsed.user ?? {});
   const sdkRaw = SdkConfigSchema.parse(parsed.sdk ?? {});
   const sandboxRaw = SandboxConfigSchema.parse(parsed.sandbox ?? {});
-  const sandboxNetwork = SandboxNetworkConfigSchema.parse(
-    sandboxRaw.network ?? {},
-  );
-  const sandboxFilesystem = SandboxFilesystemConfigSchema.parse(
-    sandboxRaw.filesystem ?? {},
-  );
+  const sandboxNetwork = SandboxNetworkConfigSchema.parse(sandboxRaw.network ?? {});
+  const sandboxFilesystem = SandboxFilesystemConfigSchema.parse(sandboxRaw.filesystem ?? {});
 
   // Auto-set setting_sources when project is present and not explicitly set
   let settingSources = sdkRaw.setting_sources;
@@ -268,13 +285,9 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
  * Merge raw config objects before applying defaults via parseSessionConfig.
  * Deep-merges objects, replaces arrays and scalars.
  */
-export function mergeRawConfigs(
-  ...raws: Record<string, unknown>[]
-): Record<string, unknown> {
+export function mergeRawConfigs(...raws: Record<string, unknown>[]): Record<string, unknown> {
   if (raws.length === 0) throw new Error("At least one config is required");
-  return raws.reduce((acc, override) =>
-    deepMergeObjects(acc, override),
-  );
+  return raws.reduce((acc, override) => deepMergeObjects(acc, override));
 }
 
 function deepMergeObjects(

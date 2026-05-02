@@ -35,21 +35,19 @@ describe("SyntheticUser", () => {
 
       const user = new SyntheticUser(oracle, userConfig, "test prompt");
 
-      const result = await user.handleAskUserQuestion(
-        {
-          questions: [
-            {
-              question: "What format?",
-              header: "Format",
-              options: [
-                { label: "JSON", description: "JavaScript Object Notation" },
-                { label: "YAML", description: "YAML Ain't Markup Language" },
-              ],
-              multiSelect: false,
-            },
-          ],
-        },
-      );
+      const result = await user.handleAskUserQuestion({
+        questions: [
+          {
+            question: "What format?",
+            header: "Format",
+            options: [
+              { label: "JSON", description: "JavaScript Object Notation" },
+              { label: "YAML", description: "YAML Ain't Markup Language" },
+            ],
+            multiSelect: false,
+          },
+        ],
+      });
 
       expect(result.behavior).toBe("allow");
       expect(result.updatedInput.answers).toEqual({ "What format?": "JSON" });
@@ -225,12 +223,14 @@ describe("SyntheticUser", () => {
       const user = new SyntheticUser(oracle, userConfig, "Write code");
 
       const askInput = {
-        questions: [{
-          question: "Q?",
-          header: "H",
-          options: [{ label: "A", description: "a" }],
-          multiSelect: false,
-        }],
+        questions: [
+          {
+            question: "Q?",
+            header: "H",
+            options: [{ label: "A", description: "a" }],
+            multiSelect: false,
+          },
+        ],
       };
 
       await user.handleAskUserQuestion(askInput);
@@ -259,12 +259,17 @@ describe("SyntheticUser", () => {
 
       const user = new SyntheticUser(oracle, userConfig, "test");
       const askInput = {
-        questions: [{
-          question: "Q?",
-          header: "H",
-          options: [{ label: "A", description: "a" }, { label: "B", description: "b" }],
-          multiSelect: false,
-        }],
+        questions: [
+          {
+            question: "Q?",
+            header: "H",
+            options: [
+              { label: "A", description: "a" },
+              { label: "B", description: "b" },
+            ],
+            multiSelect: false,
+          },
+        ],
       };
 
       const r1 = await user.handleAskUserQuestion(askInput);

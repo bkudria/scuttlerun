@@ -42,7 +42,9 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 vi.mock("../src/project.js", () => ({
   createProjectDir: vi.fn().mockResolvedValue("/tmp/scuttlerun-project-fsm"),
-  scaffoldProject: vi.fn().mockResolvedValue({ projectPath: "/tmp/scuttlerun-project-fsm-scaffold" }),
+  scaffoldProject: vi
+    .fn()
+    .mockResolvedValue({ projectPath: "/tmp/scuttlerun-project-fsm-scaffold" }),
   resolveSkillPath: vi.fn((p: string) => p),
 }));
 
@@ -57,7 +59,10 @@ vi.mock("node:fs", async () => {
 });
 
 import { query as mockQueryFn } from "@anthropic-ai/claude-agent-sdk";
-import { createProjectDir as mockCreateProjectDir, scaffoldProject as mockScaffoldProject } from "../src/project.js";
+import {
+  createProjectDir as mockCreateProjectDir,
+  scaffoldProject as mockScaffoldProject,
+} from "../src/project.js";
 import { cleanOldProjects as mockCleanOldProjects } from "../src/cleanup.js";
 
 function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
@@ -95,8 +100,12 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
-    (mockCreateProjectDir as ReturnType<typeof vi.fn>).mockResolvedValue("/tmp/scuttlerun-project-fsm");
-    (mockScaffoldProject as ReturnType<typeof vi.fn>).mockResolvedValue({ projectPath: "/tmp/scuttlerun-project-fsm-scaffold" });
+    (mockCreateProjectDir as ReturnType<typeof vi.fn>).mockResolvedValue(
+      "/tmp/scuttlerun-project-fsm",
+    );
+    (mockScaffoldProject as ReturnType<typeof vi.fn>).mockResolvedValue({
+      projectPath: "/tmp/scuttlerun-project-fsm-scaffold",
+    });
     (mockCleanOldProjects as ReturnType<typeof vi.fn>).mockResolvedValue(0);
     delete process.env.CLAUDECODE;
     stdoutOutput = "";
@@ -119,7 +128,13 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
   // -------------------------------------------------------------------------
   it("[transition-edge] pending -> running on AgentInitialized", async () => {
     const q = fixedMockQuery([
-      { type: "system", subtype: "init", session_id: "fsm-pr", tools: [], model: "claude-haiku-4-5" },
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "fsm-pr",
+        tools: [],
+        model: "claude-haiku-4-5",
+      },
       { type: "result", subtype: "success", session_id: "fsm-pr", num_turns: 0, total_cost_usd: 0 },
     ]);
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
@@ -135,7 +150,13 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
   // -------------------------------------------------------------------------
   it("[transition-edge] running -> completed_success on result subtype=success (single turn)", async () => {
     const q = fixedMockQuery([
-      { type: "system", subtype: "init", session_id: "fsm-rs", tools: [], model: "claude-haiku-4-5" },
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "fsm-rs",
+        tools: [],
+        model: "claude-haiku-4-5",
+      },
       { type: "result", subtype: "success", session_id: "fsm-rs", num_turns: 1, total_cost_usd: 0 },
     ]);
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
@@ -149,8 +170,21 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
   // -------------------------------------------------------------------------
   it("[transition-edge] running -> exhausted_turns on result subtype=error_max_turns", async () => {
     const q = fixedMockQuery([
-      { type: "system", subtype: "init", session_id: "fsm-rx", tools: [], model: "claude-haiku-4-5" },
-      { type: "result", subtype: "error_max_turns", session_id: "fsm-rx", is_error: true, num_turns: 50, total_cost_usd: 0 },
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "fsm-rx",
+        tools: [],
+        model: "claude-haiku-4-5",
+      },
+      {
+        type: "result",
+        subtype: "error_max_turns",
+        session_id: "fsm-rx",
+        is_error: true,
+        num_turns: 50,
+        total_cost_usd: 0,
+      },
     ]);
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
     const result = await runSession(minConfig());
@@ -163,8 +197,21 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
   // -------------------------------------------------------------------------
   it("[transition-edge] running -> exhausted_budget on result subtype=error_max_budget_usd", async () => {
     const q = fixedMockQuery([
-      { type: "system", subtype: "init", session_id: "fsm-rb", tools: [], model: "claude-haiku-4-5" },
-      { type: "result", subtype: "error_max_budget_usd", session_id: "fsm-rb", is_error: true, num_turns: 10, total_cost_usd: 1.0 },
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "fsm-rb",
+        tools: [],
+        model: "claude-haiku-4-5",
+      },
+      {
+        type: "result",
+        subtype: "error_max_budget_usd",
+        session_id: "fsm-rb",
+        is_error: true,
+        num_turns: 10,
+        total_cost_usd: 1.0,
+      },
     ]);
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
     const result = await runSession(minConfig());
@@ -177,8 +224,21 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
   // -------------------------------------------------------------------------
   it("[transition-edge] running -> failed on result subtype=error_during_execution", async () => {
     const q = fixedMockQuery([
-      { type: "system", subtype: "init", session_id: "fsm-rf", tools: [], model: "claude-haiku-4-5" },
-      { type: "result", subtype: "error_during_execution", session_id: "fsm-rf", is_error: true, num_turns: 1, total_cost_usd: 0 },
+      {
+        type: "system",
+        subtype: "init",
+        session_id: "fsm-rf",
+        tools: [],
+        model: "claude-haiku-4-5",
+      },
+      {
+        type: "result",
+        subtype: "error_during_execution",
+        session_id: "fsm-rf",
+        is_error: true,
+        num_turns: 1,
+        total_cost_usd: 0,
+      },
     ]);
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
     const result = await runSession(minConfig());
@@ -193,10 +253,20 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
     let resolveHang: (() => void) | undefined;
     const q = {
       close: vi.fn(),
-      interrupt: vi.fn(async () => { resolveHang?.(); }),
+      interrupt: vi.fn(async () => {
+        resolveHang?.();
+      }),
       [Symbol.asyncIterator]: async function* () {
-        yield { type: "system", subtype: "init", session_id: "fsm-rt", tools: [], model: "claude-haiku-4-5" };
-        await new Promise<void>((r) => { resolveHang = r; });
+        yield {
+          type: "system",
+          subtype: "init",
+          session_id: "fsm-rt",
+          tools: [],
+          model: "claude-haiku-4-5",
+        };
+        await new Promise<void>((r) => {
+          resolveHang = r;
+        });
       },
     };
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
@@ -230,10 +300,30 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
 
     for (const { subtype, expect: expectExit } of cases) {
       const q = fixedMockQuery([
-        { type: "system", subtype: "init", session_id: `fsm-term-${subtype}`, tools: [], model: "claude-haiku-4-5" },
+        {
+          type: "system",
+          subtype: "init",
+          session_id: `fsm-term-${subtype}`,
+          tools: [],
+          model: "claude-haiku-4-5",
+        },
         subtype === "success"
-          ? { type: "result", subtype: "success", session_id: `fsm-term-${subtype}`, num_turns: 1, total_cost_usd: 0 }
-          : { type: "result", subtype, session_id: `fsm-term-${subtype}`, is_error: true, num_turns: 1, total_cost_usd: 0, errors: ["x"] },
+          ? {
+              type: "result",
+              subtype: "success",
+              session_id: `fsm-term-${subtype}`,
+              num_turns: 1,
+              total_cost_usd: 0,
+            }
+          : {
+              type: "result",
+              subtype,
+              session_id: `fsm-term-${subtype}`,
+              is_error: true,
+              num_turns: 1,
+              total_cost_usd: 0,
+              errors: ["x"],
+            },
       ]);
       (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
 

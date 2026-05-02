@@ -35,7 +35,7 @@ When working with Agent SDK code (`@anthropic-ai/claude-agent-sdk`), load the `/
 
 - **ESM project** (`"type": "module"`) — all imports use `.js` extensions
 - **Zod v4** — `z.record()` requires 2 args: `z.record(z.string(), z.unknown())`. `.default({})` on objects does NOT apply inner field defaults — `parseSessionConfig()` re-parses nested objects separately
-- **Config merging** happens on raw YAML objects *before* Zod schema defaults are applied (critical for correct override behavior)
+- **Config merging** happens on raw YAML objects _before_ Zod schema defaults are applied (critical for correct override behavior)
 - **`canUseTool` callback** is the correct mechanism for AskUserQuestion handling (PreToolUse hooks don't work — confirmed by spikes)
 - Must `delete process.env.CLAUDECODE` before `query()` to avoid nested session errors
 - Oracle uses `client.messages.parse()` with `output_format` for guaranteed structured JSON output

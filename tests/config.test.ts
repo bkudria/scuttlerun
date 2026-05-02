@@ -1,8 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import {
-  parseSessionConfig,
-  mergeRawConfigs,
-} from "../src/config.js";
+import { parseSessionConfig, mergeRawConfigs } from "../src/config.js";
 
 describe("parseSessionConfig", () => {
   it("parses a minimal config with only prompt", () => {
@@ -109,9 +106,7 @@ describe("parseSessionConfig", () => {
   });
 
   it("rejects invalid effort level", () => {
-    expect(() =>
-      parseSessionConfig({ prompt: "hi", effort: "extreme" })
-    ).toThrow();
+    expect(() => parseSessionConfig({ prompt: "hi", effort: "extreme" })).toThrow();
   });
 
   it("accepts xhigh effort level", () => {
@@ -120,45 +115,35 @@ describe("parseSessionConfig", () => {
   });
 
   it("rejects invalid permission mode", () => {
-    expect(() =>
-      parseSessionConfig({ prompt: "hi", permission_mode: "yolo" })
-    ).toThrow();
+    expect(() => parseSessionConfig({ prompt: "hi", permission_mode: "yolo" })).toThrow();
   });
 
   it("rejects unknown version", () => {
-    expect(() =>
-      parseSessionConfig({ prompt: "hi", version: "2" })
-    ).toThrow(/version/);
+    expect(() => parseSessionConfig({ prompt: "hi", version: "2" })).toThrow(/version/);
   });
 
   it("rejects unknown top-level key", () => {
-    expect(() =>
-      parseSessionConfig({ prompt: "hi", typo_key: 1 })
-    ).toThrow(/typo_key/);
+    expect(() => parseSessionConfig({ prompt: "hi", typo_key: 1 })).toThrow(/typo_key/);
   });
 
   it("rejects unknown user.* key", () => {
-    expect(() =>
-      parseSessionConfig({ prompt: "hi", user: { personna: "typo" } })
-    ).toThrow(/personna/);
+    expect(() => parseSessionConfig({ prompt: "hi", user: { personna: "typo" } })).toThrow(
+      /personna/,
+    );
   });
 
   it("rejects unknown sdk.* key", () => {
-    expect(() =>
-      parseSessionConfig({ prompt: "hi", sdk: { systen_prompt: "typo" } })
-    ).toThrow(/systen_prompt/);
+    expect(() => parseSessionConfig({ prompt: "hi", sdk: { systen_prompt: "typo" } })).toThrow(
+      /systen_prompt/,
+    );
   });
 
   it("rejects unknown project.* key", () => {
-    expect(() =>
-      parseSessionConfig({ prompt: "hi", project: { skils: [] } })
-    ).toThrow(/skils/);
+    expect(() => parseSessionConfig({ prompt: "hi", project: { skils: [] } })).toThrow(/skils/);
   });
 
   it("rejects unknown sandbox.* key", () => {
-    expect(() =>
-      parseSessionConfig({ prompt: "hi", sandbox: { enabld: true } })
-    ).toThrow(/enabld/);
+    expect(() => parseSessionConfig({ prompt: "hi", sandbox: { enabld: true } })).toThrow(/enabld/);
   });
 
   it("accepts version omitted", () => {
@@ -166,15 +151,13 @@ describe("parseSessionConfig", () => {
     expect(config.version).toBeUndefined();
   });
 
-  it("accepts version \"1\"", () => {
+  it('accepts version "1"', () => {
     const config = parseSessionConfig({ prompt: "hi", version: "1" });
     expect(config.version).toBe("1");
   });
 
   it("rejects negative max_turns", () => {
-    expect(() =>
-      parseSessionConfig({ prompt: "hi", user: { max_turns: -1 } })
-    ).toThrow();
+    expect(() => parseSessionConfig({ prompt: "hi", user: { max_turns: -1 } })).toThrow();
   });
 
   it("auto-sets sdk.setting_sources to ['project'] when project is present", () => {
@@ -212,11 +195,7 @@ describe("parseSessionConfig", () => {
     expect(config.sandbox.enabled).toBe(true);
     expect(config.sandbox.network.allowed_domains).toEqual([]);
     expect(config.sandbox.network.allow_local_binding).toBe(false);
-    expect(config.sandbox.filesystem.deny_read).toEqual([
-      "~/.ssh",
-      "~/.aws",
-      "~/.config/gcloud",
-    ]);
+    expect(config.sandbox.filesystem.deny_read).toEqual(["~/.ssh", "~/.aws", "~/.config/gcloud"]);
     expect(config.sandbox.filesystem.allow_write).toEqual([]);
     expect(config.sandbox.filesystem.deny_write).toEqual([".env"]);
   });
@@ -341,10 +320,22 @@ describe("parseSessionConfig", () => {
   it("parses valid HTTP MCP server config", () => {
     const config = parseSessionConfig({
       prompt: "hi",
-      sdk: { mcp_servers: { remote: { type: "http", url: "https://example.com/mcp", headers: { Authorization: "Bearer tok" } } } },
+      sdk: {
+        mcp_servers: {
+          remote: {
+            type: "http",
+            url: "https://example.com/mcp",
+            headers: { Authorization: "Bearer tok" },
+          },
+        },
+      },
     });
     expect(config.sdk.mcp_servers).toEqual({
-      remote: { type: "http", url: "https://example.com/mcp", headers: { Authorization: "Bearer tok" } },
+      remote: {
+        type: "http",
+        url: "https://example.com/mcp",
+        headers: { Authorization: "Bearer tok" },
+      },
     });
   });
 
@@ -359,17 +350,21 @@ describe("parseSessionConfig", () => {
   });
 
   it("rejects MCP server config with invalid type", () => {
-    expect(() => parseSessionConfig({
-      prompt: "hi",
-      sdk: { mcp_servers: { bad: { type: "invalid", command: "foo" } } },
-    })).toThrow();
+    expect(() =>
+      parseSessionConfig({
+        prompt: "hi",
+        sdk: { mcp_servers: { bad: { type: "invalid", command: "foo" } } },
+      }),
+    ).toThrow();
   });
 
   it("rejects stdio MCP server config missing command", () => {
-    expect(() => parseSessionConfig({
-      prompt: "hi",
-      sdk: { mcp_servers: { bad: { type: "stdio" } } },
-    })).toThrow();
+    expect(() =>
+      parseSessionConfig({
+        prompt: "hi",
+        sdk: { mcp_servers: { bad: { type: "stdio" } } },
+      }),
+    ).toThrow();
   });
 
   it("parses valid agent definition", () => {
@@ -399,17 +394,21 @@ describe("parseSessionConfig", () => {
   });
 
   it("rejects agent definition missing required description", () => {
-    expect(() => parseSessionConfig({
-      prompt: "hi",
-      sdk: { agents: { bad: { prompt: "do stuff" } } },
-    })).toThrow();
+    expect(() =>
+      parseSessionConfig({
+        prompt: "hi",
+        sdk: { agents: { bad: { prompt: "do stuff" } } },
+      }),
+    ).toThrow();
   });
 
   it("rejects agent definition missing required prompt", () => {
-    expect(() => parseSessionConfig({
-      prompt: "hi",
-      sdk: { agents: { bad: { description: "does stuff" } } },
-    })).toThrow();
+    expect(() =>
+      parseSessionConfig({
+        prompt: "hi",
+        sdk: { agents: { bad: { description: "does stuff" } } },
+      }),
+    ).toThrow();
   });
 
   it("passes through unknown fields in MCP server config (forward compat)", () => {
@@ -471,10 +470,12 @@ describe("parseSessionConfig", () => {
   });
 
   it("rejects invalid memory scope in agent definition", () => {
-    expect(() => parseSessionConfig({
-      prompt: "hi",
-      sdk: { agents: { a: { description: "d", prompt: "p", memory: "global" } } },
-    })).toThrow();
+    expect(() =>
+      parseSessionConfig({
+        prompt: "hi",
+        sdk: { agents: { a: { description: "d", prompt: "p", memory: "global" } } },
+      }),
+    ).toThrow();
   });
 
   it("parses valid sdk.plugins array", () => {
@@ -507,17 +508,21 @@ describe("parseSessionConfig", () => {
   });
 
   it("rejects sdk.plugins entry missing path", () => {
-    expect(() => parseSessionConfig({
-      prompt: "hi",
-      sdk: { plugins: [{ type: "local" }] },
-    })).toThrow();
+    expect(() =>
+      parseSessionConfig({
+        prompt: "hi",
+        sdk: { plugins: [{ type: "local" }] },
+      }),
+    ).toThrow();
   });
 
   it("rejects sdk.plugins entry with invalid type", () => {
-    expect(() => parseSessionConfig({
-      prompt: "hi",
-      sdk: { plugins: [{ type: "remote", path: "/foo" }] },
-    })).toThrow();
+    expect(() =>
+      parseSessionConfig({
+        prompt: "hi",
+        sdk: { plugins: [{ type: "remote", path: "/foo" }] },
+      }),
+    ).toThrow();
   });
 });
 
@@ -532,18 +537,12 @@ describe("mergeRawConfigs", () => {
   });
 
   it("overrides scalar values from later configs", () => {
-    const result = mergeRawConfigs(
-      { prompt: "base", model: "haiku" },
-      { model: "sonnet" },
-    );
+    const result = mergeRawConfigs({ prompt: "base", model: "haiku" }, { model: "sonnet" });
     expect(result).toEqual({ prompt: "base", model: "sonnet" });
   });
 
   it("replaces arrays entirely (no merge)", () => {
-    const result = mergeRawConfigs(
-      { tools: ["Read", "Write"] },
-      { tools: ["Bash"] },
-    );
+    const result = mergeRawConfigs({ tools: ["Read", "Write"] }, { tools: ["Bash"] });
     expect(result).toEqual({ tools: ["Bash"] });
   });
 
@@ -574,12 +573,20 @@ describe("mergeRawConfigs", () => {
     const result = mergeRawConfigs(base, override);
     expect(result.model).toBe("sonnet");
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
-    expect("__proto__" in result && typeof result.__proto__ === "object" && result.__proto__ !== null && "polluted" in (result.__proto__ as Record<string, unknown>)).toBe(false);
+    expect(
+      "__proto__" in result &&
+        typeof result.__proto__ === "object" &&
+        result.__proto__ !== null &&
+        "polluted" in (result.__proto__ as Record<string, unknown>),
+    ).toBe(false);
   });
 
   it("skips constructor keys during merge", () => {
     const base = { prompt: "hi" };
-    const override = { constructor: { prototype: { polluted: true } }, model: "sonnet" } as Record<string, unknown>;
+    const override = { constructor: { prototype: { polluted: true } }, model: "sonnet" } as Record<
+      string,
+      unknown
+    >;
     const result = mergeRawConfigs(base, override);
     expect(result.model).toBe("sonnet");
     // constructor should not be an own property on the result
@@ -602,9 +609,7 @@ describe("mergeRawConfigs", () => {
 
 describe("parseSessionConfig tool validation", () => {
   it("warns on unknown tool names to stderr", () => {
-    const spy = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     parseSessionConfig({ prompt: "hi", tools: ["Read", "TaskCreate"] });
     const out = spy.mock.calls.map((c) => String(c[0])).join("");
     expect(out).toContain("[scuttlerun] WARNING");
@@ -613,20 +618,10 @@ describe("parseSessionConfig tool validation", () => {
   });
 
   it("does not warn on recognized SDK tool names", () => {
-    const spy = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     parseSessionConfig({
       prompt: "hi",
-      tools: [
-        "Read",
-        "Write",
-        "Bash",
-        "TodoWrite",
-        "Task",
-        "Skill",
-        "EnterPlanMode",
-      ],
+      tools: ["Read", "Write", "Bash", "TodoWrite", "Task", "Skill", "EnterPlanMode"],
     });
     const out = spy.mock.calls.map((c) => String(c[0])).join("");
     expect(out).not.toContain("WARNING");
@@ -634,9 +629,7 @@ describe("parseSessionConfig tool validation", () => {
   });
 
   it("warns on unknown tool names in disallowed_tools", () => {
-    const spy = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     parseSessionConfig({ prompt: "hi", disallowed_tools: ["TaskUpdate"] });
     const out = spy.mock.calls.map((c) => String(c[0])).join("");
     expect(out).toContain("[scuttlerun] WARNING");
@@ -646,16 +639,12 @@ describe("parseSessionConfig tool validation", () => {
   });
 
   it("emits one warning per unique unknown name", () => {
-    const spy = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     parseSessionConfig({
       prompt: "hi",
       tools: ["TaskCreate", "TaskCreate"],
     });
-    const warnings = spy.mock.calls
-      .map((c) => String(c[0]))
-      .filter((s) => s.includes("WARNING"));
+    const warnings = spy.mock.calls.map((c) => String(c[0])).filter((s) => s.includes("WARNING"));
     expect(warnings.length).toBe(1);
     spy.mockRestore();
   });
@@ -700,9 +689,7 @@ describe("additional_tools resolution", () => {
   });
 
   it("warns on unknown tool names in additional_tools", () => {
-    const spy = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     parseSessionConfig({
       prompt: "hi",
       additional_tools: ["NotATool"],
@@ -723,10 +710,7 @@ describe("additional_tools resolution", () => {
   });
 
   it("mergeRawConfigs: child's additional_tools replaces parent's", () => {
-    const result = mergeRawConfigs(
-      { additional_tools: ["A"] },
-      { additional_tools: ["B"] },
-    );
+    const result = mergeRawConfigs({ additional_tools: ["A"] }, { additional_tools: ["B"] });
     expect(result).toEqual({ additional_tools: ["B"] });
   });
 });
