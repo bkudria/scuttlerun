@@ -206,6 +206,15 @@ The output is valid YAML and machine-parseable (e.g. with `yq`).
 
 **SDK session file** — Full conversation record in Claude Code's native JSONL format at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Queryable with `jq`.
 
+## Privacy
+
+scuttlerun is a thin client around Anthropic APIs. Be aware:
+
+- **What is sent to Anthropic.** Prompts, tool inputs and outputs, conversation history, your configured persona, and oracle decisions are sent to Anthropic via the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk) (agent turns) and the [Messages API](https://docs.claude.com/en/api/messages) (synthetic-user oracle). This includes any file contents the agent reads or writes during a session. Anthropic's handling of that data is governed by their [Usage Policy](https://www.anthropic.com/legal/usage-policy) and [Privacy Policy](https://www.anthropic.com/legal/privacy).
+- **What scuttlerun itself collects.** Nothing. scuttlerun has no telemetry, analytics, crash reporting, or "phone home". The only network calls it makes are to Anthropic.
+- **What stays local.** The YAML transcript on stdout, the project temp directory under `$TMPDIR/scuttlerun-project-*`, and the SDK session JSONL under `~/.claude/projects/...` are all written to your machine only. Nothing in those locations is uploaded.
+- **Secrets.** Your `ANTHROPIC_API_KEY` is read from the environment and forwarded to the SDK; it never appears in transcripts. The default sandbox denies the agent read access to `~/.ssh`, `~/.aws`, and `~/.config/gcloud`, and denies write access to `.env`.
+
 ## Examples
 
 See [`examples/`](examples/) for complete session configs (and [`examples/README.md`](examples/README.md) for an index with a feature-coverage table):

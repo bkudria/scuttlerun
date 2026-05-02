@@ -15,3 +15,7 @@ You should receive an initial response within a few days. We will work with you 
 ## Supported Versions
 
 scuttlerun is currently unreleased and under active development. Only the `main` branch receives security fixes.
+
+## Privacy and Data Handling
+
+scuttlerun forwards prompts, tool I/O, and conversation history to Anthropic's APIs; it has no telemetry of its own and writes transcripts locally only. See the [Privacy section of the README](README.md#privacy) for the full posture.
