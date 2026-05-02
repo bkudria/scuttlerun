@@ -1,1 +1,4 @@
-profiles: [base, public]
+profiles:
+  - base
+  - allium
+  - public
