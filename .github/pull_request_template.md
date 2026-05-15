@@ -18,7 +18,6 @@ Closes #
 - [ ] `npm run lint` passes
 - [ ] `npm test` passes
 - [ ] `npm run build` passes
-- [ ] CHANGELOG.md updated under `[Unreleased]` (if user-facing)
 - [ ] Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)
 
 ## Notes for Reviewers
