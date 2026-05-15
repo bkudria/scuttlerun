@@ -1,6 +1,6 @@
 {
   "name": "scuttlerun",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Multi-turn Claude session driver",
   "keywords": [
     "claude",
