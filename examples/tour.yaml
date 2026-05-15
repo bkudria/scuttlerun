@@ -3,8 +3,7 @@
 version: "1"
 
 prompt: |
-  Ask the user one question to understand what subject they want a haiku about,
-  then write a haiku for them. If they're not satisfied, revise based on feedback.
+  Write me a haiku.
 
 max_turns: 30
 

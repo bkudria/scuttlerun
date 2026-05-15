@@ -1,8 +1,8 @@
 version: "1"
 
 prompt: |
-  Ask the user what programming language they prefer, then write
-  a hello world program in that language and save it to hello.txt
+  Ask me what programming language I prefer, then write a hello
+  world program in that language and save it to hello.txt
 
 # Allow tool use
 tools:
