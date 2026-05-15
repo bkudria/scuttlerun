@@ -1,5 +1,4 @@
 import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
-import type { SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import type { SessionConfig } from "./config.js";
@@ -251,13 +250,12 @@ export async function runSession(
       options: sdkOptions,
     });
 
-    for await (const rawMessage of queryHandle) {
+    for await (const message of queryHandle) {
       if (timedOut) break;
       if (signaled) break;
-      const message = rawMessage as Record<string, unknown>;
 
       if (message.type === "system" && message.subtype === "init" && !sessionId) {
-        sessionId = message.session_id as string;
+        sessionId = message.session_id;
         syntheticUser = new SyntheticUser(oracle, config.user, config.prompt);
 
         // Write YAML header and first user message
@@ -273,7 +271,7 @@ export async function runSession(
         // Add initial prompt to conversation buffer
         syntheticUser.addUserMessage(config.prompt);
       } else if (message.type === "assistant") {
-        const content = (message as SDKAssistantMessage).message?.content;
+        const content = message.message?.content;
         if (content && Array.isArray(content)) {
           const textParts: string[] = [];
           for (const block of content) {
@@ -285,6 +283,9 @@ export async function runSession(
             } else if (block.type === "tool_use" && block.name) {
               writeTool(block.name, block.input);
               toolCallCount++;
+              // BetaToolUseBlock.input is typed `unknown` by the SDK because
+              // tool input shapes are user-defined. We only read file_path
+              // for the built-in Read/Write/Edit tools.
               const inp = block.input as Record<string, unknown>;
               if (block.name === "Write" && typeof inp.file_path === "string")
                 filesWritten.add(inp.file_path);
@@ -299,11 +300,11 @@ export async function runSession(
           }
         }
       } else if (message.type === "result") {
-        const subtype = message.subtype as string;
+        const subtype = message.subtype;
 
         // Extract stats from result
-        resultNumTurns = (message.num_turns as number) || 0;
-        resultTotalCostUsd = (message.total_cost_usd as number) || 0;
+        resultNumTurns = message.num_turns || 0;
+        resultTotalCostUsd = message.total_cost_usd || 0;
 
         if (subtype === "success" && syntheticUser) {
           // Consult turn policy
