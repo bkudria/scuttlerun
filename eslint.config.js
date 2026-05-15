@@ -15,14 +15,8 @@ export default [
       complexity: ["error", 75],
       "max-depth": ["error", 6],
       "max-params": ["error", 6],
-      "max-lines": [
-        "error",
-        { max: 500, skipBlankLines: true, skipComments: true },
-      ],
-      "max-lines-per-function": [
-        "error",
-        { max: 280, skipBlankLines: true, skipComments: true },
-      ],
+      "max-lines": ["error", { max: 500, skipBlankLines: true, skipComments: true }],
+      "max-lines-per-function": ["error", { max: 280, skipBlankLines: true, skipComments: true }],
     },
   },
 ];
