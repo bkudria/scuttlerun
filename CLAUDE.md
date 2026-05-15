@@ -6,7 +6,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 scuttlerun is a TypeScript CLI that drives multi-turn Claude sessions programmatically using the Claude Agent SDK. It simulates a synthetic user (powered by an LLM oracle) to handle `AskUserQuestion` calls and multi-turn follow-ups, producing fully observable session transcripts.
 
-Full specification: `scuttlerun.allium`. Usage docs: `README.md`.
+Usage docs: `README.md`.
+
+### Spec, code, tests, and design intent
+
+Four peer artifacts of the same system:
+
+- `scuttlerun.allium` — behavioural contract
+- `src/` — mechanism (implementation)
+- `tests/` — verification
+- `docs/goals.md` — design intent
+
+Changing any one obliges checking and updating the others; conflicts between them are reconciled, not decided unilaterally.
 
 ## Commands
 
