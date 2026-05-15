@@ -38,7 +38,7 @@ The `publish` job needs:
 
 - A configured **trusted publisher** on the `scuttlerun` package's npm settings page, pointing at this repo and the `release-please.yml` workflow.
 - `id-token: write` permission on the workflow (already set) so the OIDC handshake can issue a short-lived publish credential and sign provenance.
-- npm CLI ≥ 11.5.1 and Node.js ≥ 22.14.0 in the runner (the workflow upgrades npm in-job).
+- npm CLI ≥ 11.5.1 and Node.js ≥ 22.14.0 in the runner (the workflow pins Node 24, which bundles npm 11.x).
 
 Trusted publishing has one limitation: it cannot perform the _very first_ publish of a package. The initial `0.0.1` placeholder release was published manually from a maintainer's machine to claim the npm name; every release from `0.1.0` onward uses OIDC.
 
