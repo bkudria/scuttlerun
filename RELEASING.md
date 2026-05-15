@@ -6,7 +6,7 @@ scuttlerun uses [release-please](https://github.com/googleapis/release-please) t
 
 1. **Commits land on `main`.** Every PR uses [Conventional Commits](https://www.conventionalcommits.org/) (enforced by commitlint via the Husky `commit-msg` hook).
 2. **release-please opens (or updates) a release PR.** On every push to `main`, [`.github/workflows/release-please.yml`](.github/workflows/release-please.yml) runs. It scans commits since the last release and maintains a single open PR titled `chore(main): release <version>`.
-3. **The release PR proposes a version bump and CHANGELOG update.** release-please derives the next version from the unreleased commits (see mapping below) and rewrites `CHANGELOG.md`'s `[Unreleased]` section into a dated release section. It also bumps `package.json`'s `version` and updates `.release-please-manifest.json`.
+3. **The release PR proposes a version bump and CHANGELOG update.** release-please derives the next version from the unreleased commits (see mapping below) and prepends a new dated release section to `CHANGELOG.md`. It also bumps `package.json`'s `version` and updates `.release-please-manifest.json`.
 4. **A maintainer merges the release PR.** That merge is the release trigger:
    - release-please creates the git tag (e.g. `v0.2.0`) and a GitHub Release.
    - The `publish` job in the same workflow runs `npm publish --access public`. Authentication is via npm [trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) — no long-lived token. With OIDC, npm automatically generates [provenance attestations](https://docs.npmjs.com/generating-provenance-statements).

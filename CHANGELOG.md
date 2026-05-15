@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Release sections below are generated automatically by release-please from Conventional Commit messages.
+
 ## [0.1.0](https://github.com/bkudria/scuttlerun/compare/v0.0.1...v0.1.0) (2026-05-15)
 
 
@@ -25,16 +27,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **runner:** close SDK query even when footer emission throws ([014c49a](https://github.com/bkudria/scuttlerun/commit/014c49a1944da9b77ee3a97dc112e25f8bd5ce8b))
 * **runner:** finalise transcript on exception path ([fd7da09](https://github.com/bkudria/scuttlerun/commit/fd7da09dbbb701608e78516d3aa412caddc30a6c))
 * **runner:** suppress oracle_turn entry on cap-driven termination ([36c119d](https://github.com/bkudria/scuttlerun/commit/36c119d82c1c8b1b2e6fd5307bc75dca1f6e4b8a))
-
-## [Unreleased]
-
-### Added
-
-- Initial release.
-- TypeScript CLI driving multi-turn Claude sessions programmatically via the Claude Agent SDK.
-- Synthetic user powered by an LLM oracle (Haiku by default) that handles `AskUserQuestion` calls and turn-policy decisions.
-- YAML-driven session config with deep-merging of multiple files; CLI flag overrides for model, prompt, tools, effort, timeout, max turns, and verbose logging.
-- Streaming YAML transcript on stdout, plus preserved SDK session JSONL for full-fidelity replay.
-- OS-level sandbox (filesystem + network restrictions) enabled by default, with `$HOME` redirected inside the project temp dir.
-- Managed project scaffolding (`project.claude_md`, `project.skills`, `project.settings`, `project.files`, `project.git_init`).
-- Exit-code taxonomy (0 success, 1 config error, 2 runtime, 5 budget, 6 timeout, 7 max-turns, 130 SIGINT) and budget/timeout enforcement with pricing-aware oracle usage tracking.
