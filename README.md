@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/scuttlerun.svg)](https://www.npmjs.com/package/scuttlerun)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **Unreleased.** scuttlerun is under active development and its API, config format, and behavior may change without notice.
+> **0.x.** scuttlerun is in active development; minor versions may include breaking changes to the CLI surface, config schema, or transcript format until 1.0.
 >
 > **CLI-only.** scuttlerun is intended to be used as a command-line tool. There is no supported programmatic API; modules under `dist/` are implementation details and may change without notice.
 
