@@ -181,6 +181,7 @@ entity Session {
 
     status: pending | running | completed_success
           | exhausted_turns | exhausted_budget | failed | timed_out
+          | interrupted
 
     turn_count: Integer
     tool_call_count: Integer
@@ -195,11 +196,13 @@ entity Session {
         running -> exhausted_budget
         running -> failed
         running -> timed_out
-        terminal: completed_success, exhausted_turns, exhausted_budget, failed, timed_out
+        running -> interrupted
+        terminal: completed_success, exhausted_turns, exhausted_budget, failed, timed_out, interrupted
     }
 
     is_terminated: status in {completed_success, exhausted_turns,
-                              exhausted_budget, failed, timed_out}
+                              exhausted_budget, failed, timed_out,
+                              interrupted}
     total_cost: agent_cost + oracle_cost
 
     transcript: Transcript with session = this
@@ -216,6 +219,7 @@ entity Session {
         --   exhausted_budget  → 5
         --   timed_out         → 6
         --   exhausted_turns   → 7
+        --   interrupted       → 130 (SIGINT/SIGTERM)
         -- Code 1 (configuration error) is emitted before a Session exists
         -- and so is not represented here. Codes 3 and 4 belong to upstream
         -- tooling in the scuttlerun/pincenez/craboodle taxonomy and are
@@ -309,7 +313,7 @@ entity TranscriptEntry {
     transcript: Transcript
     sequence: Integer
     kind: user_message | assistant_text | thinking
-        | tool_call | oracle_ask | oracle_turn
+        | tool_call | oracle_ask | oracle_turn | oracle_error
 }
 
 
@@ -435,8 +439,9 @@ rule SyntheticUserAnswersClarifyingQuestion {
         -- reasoning. Tool uses, tool results and thinking blocks never
         -- appear in oracle prompts.
         --
-        -- The oracle's call may be retried once on failure before the
-        -- session is terminated as a runtime error.
+        -- The oracle's call is retried with bounded exponential backoff
+        -- on transient failures before the session is terminated as a
+        -- runtime error.
 }
 
 
@@ -615,8 +620,9 @@ rule SessionFailsFromUncaughtException {
         -- not resumed by session_id: the failed terminal status is
         -- final. Retry/resume granularity is intentionally out of
         -- scope; only the oracle and StructuredOutputParse contracts
-        -- carry one-shot retries (see SyntheticUserAnswersClarifyingQuestion
-        -- and StructuredOutputParse.SchemaConformance).
+        -- carry bounded retries with backoff (see
+        -- SyntheticUserAnswersClarifyingQuestion and
+        -- StructuredOutputParse.SchemaConformance).
 }
 
 rule SessionTimeoutObserved {
@@ -673,6 +679,28 @@ rule SessionTimesOut {
         -- `timed_out_observed` is a spec-level field that exists to
         -- make timeout precedence visible as a value-predicate guard;
         -- it does not correspond to a persisted runtime field.
+}
+
+rule SessionInterruptedByOperator {
+    when: OperatorSignalReceived(session)
+
+    requires: session.status = running
+    requires: session.timed_out_observed = false
+
+    ensures: session.status = interrupted
+    ensures: AgentInterrupted(session)
+
+    @guidance
+        -- The operator interrupted the running session by sending
+        -- SIGINT or SIGTERM to the scuttlerun process. scuttlerun aborts
+        -- the SDK abort controller and calls queryHandle.interrupt() to
+        -- stop the in-flight turn, then commits the terminal status.
+        -- The transcript footer is still emitted with whatever stats
+        -- accrued. Coincident timeouts are excluded by the
+        -- `timed_out_observed` guard, which keeps this rule disjoint
+        -- from `SessionTimesOut` and from the failure paths: if the
+        -- timeout observer has already fired, the session resolves to
+        -- timed_out regardless of any later signal.
 }
 
 
@@ -894,6 +922,7 @@ surface CommandLineInvocation {
 
     provides:
         SessionRequested(caller, session.input, session.started_at)
+        OperatorSignalReceived(session)
 
     @guarantee Headless
         -- The CLI runs without an interactive TTY: stdin is closed for
@@ -1073,8 +1102,9 @@ contract StructuredOutputParse {
 
     @invariant SchemaConformance
         -- The returned parsed_output conforms to the requested schema.
-        -- The call is retried once on failure before reporting a
-        -- structured-output error to the caller.
+        -- The call is retried with bounded exponential backoff on
+        -- failure before reporting a structured-output error to the
+        -- caller.
 
     @invariant UsageReported
         -- The response carries token-usage counts (input, output,
