@@ -4,7 +4,7 @@ Thanks for using scuttlerun. This page lists where to go for different kinds of 
 
 ## Questions and discussion
 
-Open a [GitHub issue](https://github.com/bkudria/scuttlerun/issues) with the `question` label, or start a [GitHub Discussion](https://github.com/bkudria/scuttlerun/discussions) if discussions are enabled on the repo. Please search existing issues first.
+Open a [GitHub issue](https://github.com/bkudria/scuttlerun/issues) with the `question` label. Please search existing issues first.
 
 ## Bug reports
 
