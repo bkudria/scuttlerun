@@ -238,6 +238,16 @@ describe("transcript", () => {
       expect(output).toContain("path:");
     });
 
+    it("handles missing taskId in TaskUpdate", () => {
+      writeTool("TaskUpdate", {});
+      expect(output).toContain("task_id:");
+    });
+
+    it("handles missing taskId in TaskGet", () => {
+      writeTool("TaskGet", {});
+      expect(output).toContain("task_id:");
+    });
+
     it("handles missing command in Bash", () => {
       writeTool("Bash", {});
       expect(output).toContain("command:");
