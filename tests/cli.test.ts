@@ -1,5 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { assertAnthropicApiKey, buildConfig } from "../src/cli.js";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { assertAnthropicApiKey, buildConfig, getCliVersion } from "../src/cli.js";
 
 describe("buildConfig", () => {
   it("parses a YAML file into a SessionConfig", async () => {
@@ -97,5 +99,12 @@ describe("assertAnthropicApiKey", () => {
   it("throws when ANTHROPIC_API_KEY is whitespace only", () => {
     process.env.ANTHROPIC_API_KEY = "   ";
     expect(() => assertAnthropicApiKey()).toThrow(/ANTHROPIC_API_KEY/);
+  });
+});
+
+describe("getCliVersion", () => {
+  it("returns the version declared in package.json", () => {
+    const pkg = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { version: string };
+    expect(getCliVersion()).toBe(pkg.version);
   });
 });
