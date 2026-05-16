@@ -101,6 +101,19 @@ export function writeTool(name: string, input: unknown): void {
     case "TodoWrite":
       entry.todos = inp.todos ?? [];
       break;
+    case "TaskCreate":
+      entry.subject = String(inp.subject ?? "");
+      entry.description = String(inp.description ?? "");
+      break;
+    case "TaskUpdate":
+      entry.task_id = String(inp.taskId ?? "");
+      if (inp.status !== undefined) entry.status = String(inp.status);
+      break;
+    case "TaskList":
+      break;
+    case "TaskGet":
+      entry.task_id = String(inp.taskId ?? "");
+      break;
     default:
       entry.input = inp;
       break;
