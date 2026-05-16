@@ -610,10 +610,10 @@ describe("mergeRawConfigs", () => {
 describe("parseSessionConfig tool validation", () => {
   it("warns on unknown tool names to stderr", () => {
     const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    parseSessionConfig({ prompt: "hi", tools: ["Read", "TaskCreate"] });
+    parseSessionConfig({ prompt: "hi", tools: ["Read", "NotARealTool"] });
     const out = spy.mock.calls.map((c) => String(c[0])).join("");
     expect(out).toContain("[scuttlerun] WARNING");
-    expect(out).toContain("TaskCreate");
+    expect(out).toContain("NotARealTool");
     spy.mockRestore();
   });
 
@@ -630,10 +630,10 @@ describe("parseSessionConfig tool validation", () => {
 
   it("warns on unknown tool names in disallowed_tools", () => {
     const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    parseSessionConfig({ prompt: "hi", disallowed_tools: ["TaskUpdate"] });
+    parseSessionConfig({ prompt: "hi", disallowed_tools: ["NotARealTool"] });
     const out = spy.mock.calls.map((c) => String(c[0])).join("");
     expect(out).toContain("[scuttlerun] WARNING");
-    expect(out).toContain("TaskUpdate");
+    expect(out).toContain("NotARealTool");
     expect(out).toContain("disallowed_tools");
     spy.mockRestore();
   });
@@ -642,7 +642,7 @@ describe("parseSessionConfig tool validation", () => {
     const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     parseSessionConfig({
       prompt: "hi",
-      tools: ["TaskCreate", "TaskCreate"],
+      tools: ["NotARealTool", "NotARealTool"],
     });
     const warnings = spy.mock.calls.map((c) => String(c[0])).filter((s) => s.includes("WARNING"));
     expect(warnings.length).toBe(1);

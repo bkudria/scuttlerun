@@ -173,6 +173,59 @@ describe("transcript", () => {
       expect(output).toContain("todos:");
     });
 
+    it("writes TaskCreate with subject and description", () => {
+      writeTool("TaskCreate", {
+        subject: "Fix math.py",
+        description: "Replace the broken add() with the correct implementation",
+      });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("TaskCreate");
+      expect(parsed.conversation[0].subject).toBe("Fix math.py");
+      expect(parsed.conversation[0].description).toBe(
+        "Replace the broken add() with the correct implementation",
+      );
+      expect(parsed.conversation[0].input).toBeUndefined();
+    });
+
+    it("handles missing TaskCreate fields gracefully", () => {
+      writeTool("TaskCreate", {});
+      expect(output).toContain("subject:");
+      expect(output).toContain("description:");
+    });
+
+    it("writes TaskUpdate with task_id and status", () => {
+      writeTool("TaskUpdate", { taskId: "task-42", status: "in_progress" });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("TaskUpdate");
+      expect(parsed.conversation[0].task_id).toBe("task-42");
+      expect(parsed.conversation[0].status).toBe("in_progress");
+      expect(parsed.conversation[0].input).toBeUndefined();
+    });
+
+    it("writes TaskUpdate without status when omitted", () => {
+      writeTool("TaskUpdate", { taskId: "task-42" });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("TaskUpdate");
+      expect(parsed.conversation[0].task_id).toBe("task-42");
+      expect(parsed.conversation[0].status).toBeUndefined();
+    });
+
+    it("writes TaskList with no extra fields", () => {
+      writeTool("TaskList", {});
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("TaskList");
+      expect(parsed.conversation[0].input).toBeUndefined();
+      expect(parsed.conversation[0].task_id).toBeUndefined();
+    });
+
+    it("writes TaskGet with task_id", () => {
+      writeTool("TaskGet", { taskId: "task-42" });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].tool).toBe("TaskGet");
+      expect(parsed.conversation[0].task_id).toBe("task-42");
+      expect(parsed.conversation[0].input).toBeUndefined();
+    });
+
     it("writes unknown tools with input as YAML mapping", () => {
       writeTool("Agent", { prompt: "do something" });
       const parsed = parseYaml("conversation:\n" + output);
@@ -183,6 +236,16 @@ describe("transcript", () => {
     it("handles missing file_path in Read/Write/Edit", () => {
       writeTool("Read", {});
       expect(output).toContain("path:");
+    });
+
+    it("handles missing taskId in TaskUpdate", () => {
+      writeTool("TaskUpdate", {});
+      expect(output).toContain("task_id:");
+    });
+
+    it("handles missing taskId in TaskGet", () => {
+      writeTool("TaskGet", {});
+      expect(output).toContain("task_id:");
     });
 
     it("handles missing command in Bash", () => {

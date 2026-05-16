@@ -13,13 +13,13 @@ describe("getKnownSdkToolNames", () => {
     expect(names.has("Skill")).toBe(true);
   });
 
-  it("does not include harness-only Task* names", () => {
+  it("includes SDK Task* tool names", () => {
     _resetCacheForTests();
     const names = getKnownSdkToolNames();
-    expect(names.has("TaskCreate")).toBe(false);
-    expect(names.has("TaskUpdate")).toBe(false);
-    expect(names.has("TaskList")).toBe(false);
-    expect(names.has("TaskGet")).toBe(false);
+    expect(names.has("TaskCreate")).toBe(true);
+    expect(names.has("TaskUpdate")).toBe(true);
+    expect(names.has("TaskList")).toBe(true);
+    expect(names.has("TaskGet")).toBe(true);
   });
 
   it("never throws even when the SDK layout is unexpected", () => {
