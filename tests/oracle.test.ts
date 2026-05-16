@@ -243,7 +243,7 @@ describe("Oracle", () => {
     });
 
     it("logs first failure to stderr when verbose", async () => {
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       const o = new Oracle("claude-haiku-4-5", {
         verbose: true,
         sleep: () => Promise.resolve(),
@@ -270,14 +270,14 @@ describe("Oracle", () => {
         ],
       });
 
-      expect(errorSpy).toHaveBeenCalled();
-      const logged = errorSpy.mock.calls.flat().join(" ");
+      expect(stderrSpy).toHaveBeenCalled();
+      const logged = stderrSpy.mock.calls.flat().join(" ");
       expect(logged).toContain("first failure here");
-      errorSpy.mockRestore();
+      stderrSpy.mockRestore();
     });
 
     it("does not log when verbose is false", async () => {
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       const o = new Oracle("claude-haiku-4-5", { sleep: () => Promise.resolve() });
 
       mockParse.mockRejectedValueOnce(new Error("silent failure")).mockResolvedValueOnce({
@@ -301,8 +301,8 @@ describe("Oracle", () => {
         ],
       });
 
-      expect(errorSpy).not.toHaveBeenCalled();
-      errorSpy.mockRestore();
+      expect(stderrSpy).not.toHaveBeenCalled();
+      stderrSpy.mockRestore();
     });
 
     it("wraps exhausted error with attempt count and underlying message", async () => {
@@ -340,7 +340,7 @@ describe("Oracle", () => {
     });
 
     it("logs first failure to stderr when verbose with non-Error throw", async () => {
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       const o = new Oracle("claude-haiku-4-5", {
         verbose: true,
         sleep: () => Promise.resolve(),
@@ -367,9 +367,9 @@ describe("Oracle", () => {
         ],
       });
 
-      const logged = errorSpy.mock.calls.flat().join(" ");
+      const logged = stderrSpy.mock.calls.flat().join(" ");
       expect(logged).toContain("string-not-error");
-      errorSpy.mockRestore();
+      stderrSpy.mockRestore();
     });
 
     it("wraps exhausted error when all attempts throw non-Error values", async () => {

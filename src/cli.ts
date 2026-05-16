@@ -3,10 +3,22 @@
 import { Command } from "commander";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseSessionConfig, mergeRawConfigs, type SessionConfig } from "./config.js";
 import { runSession, DEFAULT_SESSION_TIMEOUT_SECONDS } from "./runner.js";
 import { formatCliError } from "./errors.js";
+
+/**
+ * Read the CLI version from package.json so --version stays in sync with
+ * the manifest across releases. Exported for testing.
+ */
+export function getCliVersion(): string {
+  const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), "../package.json");
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version: string };
+  return pkg.version;
+}
 
 interface CliOverrides {
   model?: string;
@@ -230,7 +242,7 @@ async function main() {
         "Runs headless Claude sessions with a synthetic user powered by an LLM oracle.\n" +
         "Handles AskUserQuestion, multi-turn follow-ups, and project scaffolding.",
     )
-    .version("0.1.0")
+    .version(getCliVersion())
     .argument("<session.yaml>", "Session config file (YAML). Only 'prompt' is required.")
     .argument("[override.yaml...]", "Additional YAML files to deep-merge (last wins)")
     .option("--model <model>", "Agent model (default: claude-haiku-4-5)")
