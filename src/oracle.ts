@@ -217,8 +217,8 @@ export class Oracle {
         lastError = err;
         if (attempt === 0 && this.verbose) {
           const msg = err instanceof Error ? err.message : String(err);
-          console.error(
-            `[scuttlerun] oracle: first attempt failed (${msg}); retrying with backoff`,
+          process.stderr.write(
+            `[scuttlerun] oracle: first attempt failed (${msg}); retrying with backoff\n`,
           );
         }
         if (attempt < ORACLE_MAX_ATTEMPTS - 1) {
