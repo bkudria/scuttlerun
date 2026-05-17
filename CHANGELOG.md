@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Release sections below are generated automatically by release-please from Conventional Commit messages.
 
+## [0.2.1](https://github.com/bkudria/scuttlerun/compare/v0.2.0...v0.2.1) (2026-05-17)
+
+
+### Bug Fixes
+
+* **cli:** read version from package.json instead of hardcoded literal ([7fa039a](https://github.com/bkudria/scuttlerun/commit/7fa039a33be91a62e3a4565e2b1a393263a01534))
+* **oracle:** write retry status to process.stderr instead of console.error ([ca42196](https://github.com/bkudria/scuttlerun/commit/ca4219660f259b6c00aadd733089dcce8422c07e))
+
 ## [0.2.0](https://github.com/bkudria/scuttlerun/compare/v0.1.0...v0.2.0) (2026-05-15)
 
 
