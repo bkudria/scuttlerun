@@ -978,8 +978,14 @@ surface StreamingTranscript {
         -- `timed_out`
         -- (Boolean) appears only when truthy; and `files_written`,
         -- `files_edited`, `files_read` each appear only when their
-        -- respective list is non-empty. Multi-line strings use
-        -- block-literal style.
+        -- respective list is non-empty. Long single-line strings render
+        -- in block-folded (`>`) style; multi-line strings render in
+        -- block-literal (`|`) style. Lines exceeding 80 columns in the
+        -- final output are wrapped — by the YAML serializer for
+        -- block-folded scalars and by hard-wrapping at word boundaries
+        -- for block-literal scalars. Strings without any whitespace
+        -- break point are preserved verbatim even when longer than 80
+        -- columns.
 
     @guarantee InspectableMidSession
         -- A reader joining mid-session sees the preamble plus all entries

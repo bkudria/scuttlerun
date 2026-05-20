@@ -132,13 +132,6 @@ describe("transcript", () => {
       expect(parsed.conversation[0].command).toBe("echo hello && pwd");
     });
 
-    it("does not truncate long Bash commands", () => {
-      const longCmd = "a".repeat(200);
-      writeTool("Bash", { command: longCmd });
-      const parsed = parseYaml("conversation:\n" + output);
-      expect(parsed.conversation[0].command).toBe(longCmd);
-    });
-
     it("writes Glob with single-quoted pattern", () => {
       writeTool("Glob", { pattern: "**/*.ts" });
       const parsed = parseYaml("conversation:\n" + output);
@@ -313,14 +306,15 @@ describe("transcript", () => {
       expect(entry.reasoning).toContain("They also have a .py file in the project.");
     });
 
-    it("handles long reasoning without line wrapping", () => {
+    it("wraps long reasoning to fit 80 cols", () => {
       writeOracleAsk(
         { "Language?": "Python" },
         "As a Python enthusiast who prefers simple, readable code, Python is the natural choice. It aligns perfectly with the stated preference for simplicity.",
       );
+      const longest = Math.max(...output.split("\n").map((l) => l.length));
+      expect(longest).toBeLessThanOrEqual(80);
       const parsed = parseYaml("conversation:\n" + output);
-      const entry = parsed.conversation[0];
-      expect(entry.reasoning).toContain("Python is the natural choice");
+      expect(parsed.conversation[0].reasoning).toContain("Python is the natural choice");
     });
   });
 
@@ -547,6 +541,50 @@ describe("transcript", () => {
         totalCostUsd: 0,
       });
       expect(output).not.toContain("timed_out");
+    });
+  });
+
+  describe("line wrapping", () => {
+    it("renders long single-line strings as block-folded (`>`)", () => {
+      const text = "a long single-line string ".repeat(8).trim();
+      writeAssistant(text);
+      expect(output).toMatch(/assistant: >-?\n/);
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].assistant).toBe(text);
+    });
+
+    it("keeps short single-line strings as plain scalars", () => {
+      writeAssistant("Hi");
+      expect(output).not.toMatch(/assistant: >-?\n/);
+      expect(output).toContain("assistant: Hi");
+    });
+
+    it("wraps final output to fit 80 cols (block-folded single-line strings)", () => {
+      const text = "x ".repeat(80).trim();
+      writeAssistant(text);
+      const longest = Math.max(...output.split("\n").map((l) => l.length));
+      expect(longest).toBeLessThanOrEqual(80);
+    });
+
+    it("hard-wraps long lines inside multi-line strings before block-literal serialization", () => {
+      const longInternal =
+        "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega extra padding words here";
+      writeUser(`First line\n${longInternal}\nLast line`);
+      const longest = Math.max(...output.split("\n").map((l) => l.length));
+      expect(longest).toBeLessThanOrEqual(80);
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].user).toContain("First line");
+      expect(parsed.conversation[0].user).toContain("Last line");
+      for (const line of parsed.conversation[0].user.split("\n")) {
+        expect(line.length).toBeLessThanOrEqual(72);
+      }
+    });
+
+    it("leaves unbreakable strings (no whitespace) unwrapped", () => {
+      const blob = "a".repeat(200);
+      writeTool("Bash", { command: blob });
+      const parsed = parseYaml("conversation:\n" + output);
+      expect(parsed.conversation[0].command).toBe(blob);
     });
   });
 });

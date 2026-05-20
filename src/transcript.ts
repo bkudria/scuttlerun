@@ -1,4 +1,37 @@
 import { Document, Scalar, visit } from "yaml";
+import wrap from "word-wrap";
+
+const LINE_WIDTH = 80;
+const ENTRY_PREFIX_WIDTH = 4;
+const DOC_LINE_WIDTH = LINE_WIDTH - ENTRY_PREFIX_WIDTH;
+const HEADER_FOOTER_LINE_WIDTH = LINE_WIDTH;
+const HARD_WRAP_WIDTH = 72;
+const FOLD_THRESHOLD = 64;
+
+function hardWrapLines(text: string): string {
+  return text
+    .split("\n")
+    .map((line) =>
+      line.length <= HARD_WRAP_WIDTH
+        ? line
+        : wrap(line, { width: HARD_WRAP_WIDTH, indent: "", trim: true, cut: false }),
+    )
+    .join("\n");
+}
+
+function applyWrapStyles(doc: Document): void {
+  visit(doc, {
+    Scalar(_key, node) {
+      if (typeof node.value !== "string") return;
+      if (node.value.includes("\n")) {
+        node.value = hardWrapLines(node.value);
+        node.type = Scalar.BLOCK_LITERAL;
+      } else if (node.value.length > FOLD_THRESHOLD) {
+        node.type = Scalar.BLOCK_FOLDED;
+      }
+    },
+  });
+}
 
 export interface HeaderOptions {
   session: string;
@@ -37,14 +70,8 @@ function write(text: string): void {
  */
 function writeEntry(entry: Record<string, unknown>): void {
   const doc = new Document(entry);
-  visit(doc, {
-    Scalar(_key, node) {
-      if (typeof node.value === "string" && node.value.includes("\n")) {
-        node.type = Scalar.BLOCK_LITERAL;
-      }
-    },
-  });
-  const raw = doc.toString({ lineWidth: 0 });
+  applyWrapStyles(doc);
+  const raw = doc.toString({ lineWidth: DOC_LINE_WIDTH });
   const lines = raw.replace(/\n$/, "").split("\n");
   const indented = lines
     .map((line, i) => {
@@ -65,7 +92,8 @@ export function writeHeader(opts: HeaderOptions): void {
   };
   const doc = new Document(header);
   doc.directives!.docStart = true;
-  write(doc.toString({ lineWidth: 0 }));
+  applyWrapStyles(doc);
+  write(doc.toString({ lineWidth: HEADER_FOOTER_LINE_WIDTH }));
   write("\nconversation:\n");
 }
 
@@ -165,5 +193,6 @@ export function writeFooter(stats: FooterStats): void {
     footer.oracle_usage = stats.oracleUsage;
   }
   const doc = new Document(footer);
-  write("\n" + doc.toString({ lineWidth: 0 }));
+  applyWrapStyles(doc);
+  write("\n" + doc.toString({ lineWidth: HEADER_FOOTER_LINE_WIDTH }));
 }
