@@ -39,9 +39,6 @@ export async function runSession(
 ): Promise<RunResult> {
   const { timeoutSeconds = DEFAULT_SESSION_TIMEOUT_SECONDS, verbose = false } = options;
 
-  // Prevent nested session errors
-  delete process.env.CLAUDECODE;
-
   // Clean old project directories in the background; best-effort, not on the critical path.
   cleanOldProjects(WORKSPACE_CLEANUP_AGE_DAYS, { verbose }).catch(() => {});
 
@@ -184,6 +181,9 @@ export async function runSession(
       );
     } else if (config.sdk.env) {
       sdkOptions.env = config.sdk.env;
+    } else {
+      // Inherit parent env minus CLAUDECODE, which the SDK rejects as a nested session
+      sdkOptions.env = { ...process.env, CLAUDECODE: undefined };
     }
 
     // Sandbox settings
