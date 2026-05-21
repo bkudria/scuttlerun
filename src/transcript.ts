@@ -91,6 +91,7 @@ export function writeHeader(opts: HeaderOptions): void {
     transcript: opts.transcriptPath,
   };
   const doc = new Document(header);
+  /* v8 ignore next 3 -- yaml Document always has directives; defensive guard */
   if (!doc.directives) {
     throw new Error("Document constructed without directives");
   }
