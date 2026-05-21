@@ -166,17 +166,19 @@ scuttlerun --help
 
 ### Exit Codes
 
-Shared taxonomy across scuttlerun/pincenez/craboodle. Codes 3 and 4 are craboodle-only; scuttlerun does not emit them.
+This table is the canonical reference for the scuttlerun/pincenez/craboodle exit-code taxonomy. Each tool emits a subset; pincenez and craboodle link here for the full set. Source: [`src/exit-codes.ts`](src/exit-codes.ts).
 
-| Code | Meaning                                                         |
-| ---- | --------------------------------------------------------------- |
-| 0    | Session completed normally                                      |
-| 1    | Configuration error                                             |
-| 2    | Runtime error (SDK failure, process crash, unhandled exception) |
-| 5    | Budget exceeded                                                 |
-| 6    | Timeout                                                         |
-| 7    | Max turns exceeded                                              |
-| 130  | Interrupted (SIGINT)                                            |
+| Code | Meaning                                                         | Emitted by                      |
+| ---- | --------------------------------------------------------------- | ------------------------------- |
+| 0    | Success                                                         | scuttlerun, pincenez, craboodle |
+| 1    | Configuration / input error                                     | scuttlerun, pincenez, craboodle |
+| 2    | Runtime error (SDK failure, process crash, unhandled exception) | scuttlerun, pincenez, craboodle |
+| 3    | Threshold failure (`min_pass_rate` ratchet)                     | craboodle                       |
+| 4    | Infrastructure / dependency error                               | craboodle                       |
+| 5    | Budget exceeded                                                 | scuttlerun, craboodle           |
+| 6    | Timeout                                                         | scuttlerun                      |
+| 7    | Max turns exceeded                                              | scuttlerun                      |
+| 130  | Interrupted (SIGINT)                                            | scuttlerun, pincenez, craboodle |
 
 ## How It Works
 

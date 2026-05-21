@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { parseSessionConfig, mergeRawConfigs, type SessionConfig } from "./config.js";
 import { runSession, DEFAULT_SESSION_TIMEOUT_SECONDS } from "./runner.js";
 import { formatCliError } from "./errors.js";
+import { EXIT_SUCCESS, EXIT_CONFIG_ERROR, EXIT_SIGINT } from "./exit-codes.js";
 
 /**
  * Read the CLI version from package.json so --version stays in sync with
@@ -329,7 +330,7 @@ async function main() {
           };
 
           process.stdout.write(stringifyYaml(summary));
-          process.exit(0);
+          process.exit(EXIT_SUCCESS);
         }
 
         assertAnthropicApiKey();
@@ -339,7 +340,7 @@ async function main() {
         const handleSignal = () => {
           signalCount++;
           if (signalCount === 1) signalController.abort();
-          else process.exit(130);
+          else process.exit(EXIT_SIGINT);
         };
         process.on("SIGINT", handleSignal);
         process.on("SIGTERM", handleSignal);
@@ -360,7 +361,7 @@ async function main() {
         }
       } catch (err) {
         process.stderr.write(formatCliError(err) + "\n");
-        process.exit(1);
+        process.exit(EXIT_CONFIG_ERROR);
       }
     });
 

@@ -7,6 +7,14 @@ import { SyntheticUser } from "./synthetic-user.js";
 import { scaffoldProject, createProjectDir, resolveSkillPath } from "./project.js";
 import { cleanOldProjects, WORKSPACE_CLEANUP_AGE_DAYS } from "./cleanup.js";
 import {
+  EXIT_SUCCESS,
+  EXIT_RUNTIME_ERROR,
+  EXIT_BUDGET_EXCEEDED,
+  EXIT_TIMEOUT,
+  EXIT_MAX_TURNS,
+  EXIT_SIGINT,
+} from "./exit-codes.js";
+import {
   writeHeader,
   writeUser,
   writeThinking,
@@ -90,7 +98,7 @@ export async function runSession(
 
   // Track stats
   let toolCallCount = 0;
-  let exitCode = 0;
+  let exitCode: number = EXIT_SUCCESS;
   let oracleFailed = false;
   const startTime = Date.now();
   let resultNumTurns = 0;
@@ -325,30 +333,30 @@ export async function runSession(
             resolveNextAction?.({ type: "continue", message: decision.message });
           } else {
             resolveNextAction?.({ type: "end" });
-            exitCode = 0;
+            exitCode = EXIT_SUCCESS;
           }
         } else {
           // Error subtypes
           resolveNextAction?.({ type: "end" });
-          if (subtype === "error_max_turns") exitCode = 7;
-          else if (subtype === "error_max_budget_usd") exitCode = 5;
-          else exitCode = 2;
+          if (subtype === "error_max_turns") exitCode = EXIT_MAX_TURNS;
+          else if (subtype === "error_max_budget_usd") exitCode = EXIT_BUDGET_EXCEEDED;
+          else exitCode = EXIT_RUNTIME_ERROR;
         }
       }
     }
 
     // Check for timeout
     if (timedOut) {
-      exitCode = 6;
+      exitCode = EXIT_TIMEOUT;
     } else if (signaled) {
-      exitCode = 130;
+      exitCode = EXIT_SIGINT;
     } else if (oracleFailed) {
-      exitCode = 2;
+      exitCode = EXIT_RUNTIME_ERROR;
     }
   } catch {
-    if (timedOut) exitCode = 6;
-    else if (signaled) exitCode = 130;
-    else exitCode = 2;
+    if (timedOut) exitCode = EXIT_TIMEOUT;
+    else if (signaled) exitCode = EXIT_SIGINT;
+    else exitCode = EXIT_RUNTIME_ERROR;
   } finally {
     // Always finalise the transcript on every termination path
     // (happy, timeout, exception) — see spec rule SessionFinalises and
