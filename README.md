@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/scuttlerun.svg)](https://www.npmjs.com/package/scuttlerun)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> **0.x.** scuttlerun is in active development; minor versions may include breaking changes to the CLI surface, config schema, or transcript format until 1.0.
+> **0.x.** scuttlerun is in active development; minor versions may include breaking changes until 1.0.
 >
 > **CLI-only.** scuttlerun is intended to be used as a command-line tool. There is no supported programmatic API; modules under `dist/` are implementation details and may change without notice.
 
@@ -164,7 +164,7 @@ scuttlerun --help
 | `-v, --verbose`          | Verbose logging to stderr            |
 | `-n, --dry-run`          | Validate and display resolved config |
 
-### Exit Codes
+## Exit Codes
 
 This table is the canonical reference for the scuttlerun/pincenez/craboodle exit-code taxonomy. Each tool emits a subset; pincenez and craboodle link here for the full set. Source: [`src/exit-codes.ts`](src/exit-codes.ts).
 
@@ -266,3 +266,7 @@ npm run dev -- examples/simple.yaml   # Run via tsx
 
 - [docs/goals.md](docs/goals.md) — Project motivation, vision, and non-goals
 - [scuttlerun.allium](scuttlerun.allium) — Full specification (Allium)
+
+## License
+
+[MIT](LICENSE)
