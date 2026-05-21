@@ -107,7 +107,6 @@ describe("Session.status transition graph (scuttlerun.allium)", () => {
       projectPath: "/tmp/scuttlerun-project-fsm-scaffold",
     });
     (mockCleanOldProjects as ReturnType<typeof vi.fn>).mockResolvedValue(0);
-    delete process.env.CLAUDECODE;
     stdoutOutput = "";
     process.stdout.write = ((chunk: string) => {
       stdoutOutput += chunk;

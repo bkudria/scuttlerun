@@ -112,7 +112,6 @@ describe("runSession", () => {
       projectPath: "/tmp/scuttlerun-project-scaffold123",
     });
     (mockCleanOldProjects as ReturnType<typeof vi.fn>).mockResolvedValue(0);
-    delete process.env.CLAUDECODE;
     stdoutOutput = "";
     process.stdout.write = ((chunk: string) => {
       stdoutOutput += chunk;
@@ -575,36 +574,60 @@ describe("runSession", () => {
     expect(mockQuery.interrupt).toHaveBeenCalled();
   });
 
-  it("deletes process.env.CLAUDECODE before calling query", async () => {
-    process.env.CLAUDECODE = "1";
+  it("passes env to query() with CLAUDECODE unset and does not mutate process.env", async () => {
+    process.env.CLAUDECODE = "from-parent";
+    process.env.SCUTTLERUN_TEST_VAR = "preserved";
 
-    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(() => {
-      // At this point, CLAUDECODE should be deleted
-      expect(process.env.CLAUDECODE).toBeUndefined();
-      return createMockQuery([
-        {
-          type: "system",
-          subtype: "init",
-          session_id: "s6",
-          tools: [],
-          model: "claude-haiku-4-5",
-        },
-        {
-          type: "result",
-          subtype: "success",
-          session_id: "s6",
-          stop_reason: "end_turn",
-          is_error: false,
-          num_turns: 1,
-          total_cost_usd: 0.001,
-          duration_ms: 1000,
-          usage: { input_tokens: 50, output_tokens: 20 },
-          result: "Done",
-        },
-      ]);
-    });
+    let capturedOptions: Record<string, unknown> | undefined;
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
+      (opts: Record<string, Record<string, unknown>>) => {
+        capturedOptions = opts.options;
+        return createMockQuery([
+          {
+            type: "system",
+            subtype: "init",
+            session_id: "s6",
+            tools: [],
+            model: "claude-haiku-4-5",
+          },
+          {
+            type: "result",
+            subtype: "success",
+            session_id: "s6",
+            stop_reason: "end_turn",
+            is_error: false,
+            num_turns: 1,
+            total_cost_usd: 0.001,
+            duration_ms: 1000,
+            usage: { input_tokens: 50, output_tokens: 20 },
+            result: "Done",
+          },
+        ]);
+      },
+    );
 
-    await runSession(minConfig());
+    await runSession(
+      minConfig({
+        sandbox: {
+          enabled: false,
+          network: { allowed_domains: [], allow_local_binding: false },
+          filesystem: { deny_read: [], allow_write: [], deny_write: [] },
+        },
+      }),
+    );
+
+    // Non-mutation: parent process.env is preserved
+    expect(process.env.CLAUDECODE).toBe("from-parent");
+    expect(process.env.SCUTTLERUN_TEST_VAR).toBe("preserved");
+
+    // Per-call: SDK options.env strips CLAUDECODE while preserving other vars
+    const env = capturedOptions?.env as Record<string, string | undefined>;
+    expect(env).toBeDefined();
+    expect(env.CLAUDECODE).toBeUndefined();
+    expect(env.SCUTTLERUN_TEST_VAR).toBe("preserved");
+
+    delete process.env.CLAUDECODE;
+    delete process.env.SCUTTLERUN_TEST_VAR;
   });
 
   it("sets HOME to sandbox home dir when sandbox is enabled", async () => {
@@ -644,7 +667,9 @@ describe("runSession", () => {
     expect(env.HOME).toBe("/tmp/scuttlerun-project-test123/.home");
   });
 
-  it("does not set env when sandbox is disabled and no sdk.env", async () => {
+  it("inherits process.env with CLAUDECODE cleared when sandbox is disabled and no sdk.env", async () => {
+    process.env.SCUTTLERUN_INHERIT_TEST = "inherited-value";
+
     let capturedOptions: Record<string, unknown> | undefined;
 
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
@@ -688,7 +713,12 @@ describe("runSession", () => {
       }),
     );
 
-    expect(capturedOptions?.env).toBeUndefined();
+    const env = capturedOptions?.env as Record<string, string | undefined>;
+    expect(env).toBeDefined();
+    expect(env.CLAUDECODE).toBeUndefined();
+    expect(env.SCUTTLERUN_INHERIT_TEST).toBe("inherited-value");
+
+    delete process.env.SCUTTLERUN_INHERIT_TEST;
   });
 
   it("prints tool use blocks from assistant messages", async () => {
@@ -2034,7 +2064,6 @@ describe("scuttlerun.allium invariants and rule obligations", () => {
       projectPath: "/tmp/scuttlerun-project-scaffold123",
     });
     (mockCleanOldProjects as ReturnType<typeof vi.fn>).mockResolvedValue(0);
-    delete process.env.CLAUDECODE;
     stdoutOutput = "";
     process.stdout.write = ((chunk: string) => {
       stdoutOutput += chunk;
