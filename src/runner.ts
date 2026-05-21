@@ -104,7 +104,8 @@ export async function runSession(
 
   try {
     // Build the async generator for multi-turn input
-    let resolveNextAction: ((action: { type: string; message?: string }) => void) | undefined;
+    type SyntheticAction = { type: "continue"; message: string } | { type: "end" };
+    let resolveNextAction: ((action: SyntheticAction) => void) | undefined;
 
     async function* inputGenerator() {
       // Yield initial prompt
@@ -120,7 +121,7 @@ export async function runSession(
 
       // Multi-turn loop
       while (true) {
-        const action = await new Promise<{ type: string; message?: string }>((resolve) => {
+        const action = await new Promise<SyntheticAction>((resolve) => {
           resolveNextAction = resolve;
         });
         if (action.type === "end") {
@@ -131,7 +132,7 @@ export async function runSession(
           session_id: "",
           message: {
             role: "user" as const,
-            content: [{ type: "text" as const, text: action.message! }],
+            content: [{ type: "text" as const, text: action.message }],
           },
           parent_tool_use_id: null,
         };
