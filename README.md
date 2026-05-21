@@ -18,6 +18,16 @@ The closest alternatives each leave a gap that scuttlerun fills:
 
 scuttlerun is a thin orchestration layer on top of the Agent SDK that adds those pieces. It is a **session driver, not an eval framework** — it produces transcripts; scoring/grading composes downstream (see [docs/goals.md](docs/goals.md) for the full positioning).
 
+## Where scuttlerun fits
+
+scuttlerun is one tool in a small UNIX-style pipeline for evaluating Claude sessions:
+
+- **scuttlerun** drives a headless Claude session and emits a YAML transcript on stdout.
+- **[pincenez](https://github.com/bkudria/pincenez)** takes that transcript (or any text) plus a checks file and emits structured YAML verdicts.
+- **[craboodle](https://github.com/bkudria/craboodle)** orchestrates many scuttlerun + pincenez invocations across a directory of eval scenarios, averaging across repetitions.
+
+scuttlerun composes by pipe — `scuttlerun session.yaml | pincenez checks.yaml` — but is independently useful for any task that needs a scripted, observable Claude session, with or without downstream grading.
+
 ![Demo: scuttlerun running an interactive session, with the synthetic user answering an AskUserQuestion call](assets/demo.gif)
 
 > Source: [`assets/demo.tape`](assets/demo.tape) (re-record with `vhs assets/demo.tape`).

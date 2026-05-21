@@ -8,6 +8,15 @@ scuttlerun is a TypeScript CLI that drives multi-turn Claude sessions programmat
 
 Usage docs: `README.md`.
 
+### Downstream consumers
+
+scuttlerun is the session-driver end of a three-tool pipeline. Two downstream tools pair with it:
+
+- **[pincenez](https://github.com/bkudria/pincenez)** grades scuttlerun transcripts (or any text) against YAML checks files using an LLM judge.
+- **[craboodle](https://github.com/bkudria/craboodle)** is the typical orchestrator — it invokes scuttlerun + pincenez across a directory of eval scenarios.
+
+scuttlerun is intentionally usable standalone; the pipeline framing should not leak into the CLI surface or config schema.
+
 ### Spec, code, tests, and design intent
 
 Four peer artifacts of the same system:
