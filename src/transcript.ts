@@ -91,7 +91,10 @@ export function writeHeader(opts: HeaderOptions): void {
     transcript: opts.transcriptPath,
   };
   const doc = new Document(header);
-  doc.directives!.docStart = true;
+  if (!doc.directives) {
+    throw new Error("Document constructed without directives");
+  }
+  doc.directives.docStart = true;
   applyWrapStyles(doc);
   write(doc.toString({ lineWidth: HEADER_FOOTER_LINE_WIDTH }));
   write("\nconversation:\n");

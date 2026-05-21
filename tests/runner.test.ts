@@ -436,9 +436,10 @@ describe("runSession", () => {
 
     // Verify canUseTool was passed to query
     expect(capturedCanUseTool).toBeDefined();
+    if (!capturedCanUseTool) throw new Error("capturedCanUseTool not set");
 
     // Non-AskUserQuestion tools should be allowed
-    const allowResult = (await capturedCanUseTool!("Read", {})) as { behavior: string };
+    const allowResult = (await capturedCanUseTool("Read", {})) as { behavior: string };
     expect(allowResult.behavior).toBe("allow");
   });
 
@@ -475,9 +476,10 @@ describe("runSession", () => {
 
     await runSession(minConfig());
     expect(capturedCanUseTool).toBeDefined();
+    if (!capturedCanUseTool) throw new Error("capturedCanUseTool not set");
 
     // Malformed AskUserQuestion input should be denied
-    const denyResult = (await capturedCanUseTool!("AskUserQuestion", { garbage: true })) as {
+    const denyResult = (await capturedCanUseTool("AskUserQuestion", { garbage: true })) as {
       behavior: string;
     };
     expect(denyResult.behavior).toBe("deny");
@@ -1216,7 +1218,8 @@ describe("runSession", () => {
               model: "claude-haiku-4-5",
             };
             // After init, syntheticUser is created — call canUseTool
-            const askResult = (await capturedCanUseTool!("AskUserQuestion", {
+            if (!capturedCanUseTool) throw new Error("capturedCanUseTool not set");
+            const askResult = (await capturedCanUseTool("AskUserQuestion", {
               questions: [
                 {
                   question: "What language?",
@@ -1272,7 +1275,8 @@ describe("runSession", () => {
               tools: ["AskUserQuestion"],
               model: "claude-haiku-4-5",
             };
-            await capturedCanUseTool!("AskUserQuestion", {
+            if (!capturedCanUseTool) throw new Error("capturedCanUseTool not set");
+            await capturedCanUseTool("AskUserQuestion", {
               questions: [
                 {
                   question: "Q?",
@@ -1332,7 +1336,8 @@ describe("runSession", () => {
               tools: ["AskUserQuestion"],
               model: "claude-haiku-4-5",
             };
-            askResult = (await capturedCanUseTool!("AskUserQuestion", {
+            if (!capturedCanUseTool) throw new Error("capturedCanUseTool not set");
+            askResult = (await capturedCanUseTool("AskUserQuestion", {
               questions: [
                 {
                   question: "What language?",
