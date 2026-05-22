@@ -16,7 +16,7 @@ The closest alternatives each leave a gap that scuttlerun fills:
 - **`claude -p` / Claude Code one-shot mode** — single-turn only; cannot answer `AskUserQuestion`, cannot follow up, cannot drive a back-and-forth conversation.
 - **Raw [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk)** — gives you the loop, but no synthetic user, no YAML-driven session config, no built-in transcript format, no project scaffolding, no sandboxing defaults.
 
-scuttlerun is a thin orchestration layer on top of the Agent SDK that adds those pieces. It is a **session driver, not an eval framework** — it produces transcripts; scoring/grading composes downstream (see [docs/goals.md](docs/goals.md) for the full positioning).
+scuttlerun is a thin orchestration layer on top of the Agent SDK that adds those pieces. It is a **session driver, not an eval framework** — it produces transcripts; scoring/grading composes downstream (see [GOALS.md](GOALS.md) for the full positioning).
 
 ## Where scuttlerun fits
 
@@ -274,7 +274,7 @@ npm run dev -- examples/simple.yaml   # Run via tsx
 
 ## See Also
 
-- [docs/goals.md](docs/goals.md) — Project motivation, vision, and non-goals
+- [GOALS.md](GOALS.md) — Project motivation, vision, and non-goals
 - [scuttlerun.allium](scuttlerun.allium) — Full specification (Allium)
 
 ## License

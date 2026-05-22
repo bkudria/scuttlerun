@@ -45,4 +45,4 @@ Pass `--dry-run` (or `-n`) to validate and print the resolved config without run
 
 - Main [README](../README.md) — installation, config reference, exit codes
 - [scuttlerun.allium](../scuttlerun.allium) — full specification (Allium)
-- [docs/goals.md](../docs/goals.md) — project motivation and non-goals
+- [GOALS.md](../GOALS.md) — project motivation and non-goals

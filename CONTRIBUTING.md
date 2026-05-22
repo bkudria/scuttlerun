@@ -69,5 +69,5 @@ Releases are fully automated by [release-please](https://github.com/googleapis/r
 ## Further Reading
 
 - [scuttlerun.allium](scuttlerun.allium) — full technical specification (Allium)
-- [docs/goals.md](docs/goals.md) — project motivation, vision, and non-goals
+- [GOALS.md](GOALS.md) — project motivation, vision, and non-goals
 - [CLAUDE.md](CLAUDE.md) — architecture overview and key technical details
