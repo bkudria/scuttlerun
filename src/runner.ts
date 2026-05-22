@@ -1,11 +1,11 @@
-import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
-import { mkdirSync, realpathSync } from "node:fs";
-import { join } from "node:path";
-import type { SessionConfig } from "./config.js";
-import { Oracle, AskUserQuestionInputSchema } from "./oracle.js";
-import { SyntheticUser } from "./synthetic-user.js";
-import { scaffoldProject, createProjectDir, resolveSkillPath } from "./project.js";
-import { cleanOldProjects, WORKSPACE_CLEANUP_AGE_DAYS } from "./cleanup.js";
+import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
+import { mkdirSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
+import type { SessionConfig } from './config.js';
+import { Oracle, AskUserQuestionInputSchema } from './oracle.js';
+import { SyntheticUser } from './synthetic-user.js';
+import { scaffoldProject, createProjectDir, resolveSkillPath } from './project.js';
+import { cleanOldProjects, WORKSPACE_CLEANUP_AGE_DAYS } from './cleanup.js';
 import {
   EXIT_SUCCESS,
   EXIT_RUNTIME_ERROR,
@@ -13,7 +13,7 @@ import {
   EXIT_TIMEOUT,
   EXIT_MAX_TURNS,
   EXIT_SIGINT,
-} from "./exit-codes.js";
+} from './exit-codes.js';
 import {
   writeHeader,
   writeUser,
@@ -24,7 +24,7 @@ import {
   writeOracleTurn,
   writeOracleError,
   writeFooter,
-} from "./transcript.js";
+} from './transcript.js';
 
 export const DEFAULT_SESSION_TIMEOUT_SECONDS = 300;
 
@@ -70,7 +70,7 @@ export async function runSession(
 
   // When sandbox is enabled, redirect HOME into the project dir so tools
   // (npm, pip, cargo, etc.) write caches there instead of ~/
-  const sandboxHome = config.sandbox.enabled ? join(cwd, ".home") : undefined;
+  const sandboxHome = config.sandbox.enabled ? join(cwd, '.home') : undefined;
   if (sandboxHome) {
     mkdirSync(sandboxHome, { recursive: true });
   }
@@ -93,7 +93,7 @@ export async function runSession(
       abortController.abort();
       queryHandle?.interrupt().catch(() => {});
     };
-    options.signal.addEventListener("abort", onExternalAbort);
+    options.signal.addEventListener('abort', onExternalAbort);
   }
 
   // Track stats
@@ -109,17 +109,17 @@ export async function runSession(
 
   try {
     // Build the async generator for multi-turn input
-    type SyntheticAction = { type: "continue"; message: string } | { type: "end" };
+    type SyntheticAction = { type: 'continue'; message: string } | { type: 'end' };
     let resolveNextAction: ((action: SyntheticAction) => void) | undefined;
 
     async function* inputGenerator() {
       // Yield initial prompt
       yield {
-        type: "user" as const,
-        session_id: "",
+        type: 'user' as const,
+        session_id: '',
         message: {
-          role: "user" as const,
-          content: [{ type: "text" as const, text: config.prompt }],
+          role: 'user' as const,
+          content: [{ type: 'text' as const, text: config.prompt }],
         },
         parent_tool_use_id: null,
       };
@@ -129,15 +129,15 @@ export async function runSession(
         const action = await new Promise<SyntheticAction>((resolve) => {
           resolveNextAction = resolve;
         });
-        if (action.type === "end") {
+        if (action.type === 'end') {
           return;
         }
         yield {
-          type: "user" as const,
-          session_id: "",
+          type: 'user' as const,
+          session_id: '',
           message: {
-            role: "user" as const,
-            content: [{ type: "text" as const, text: action.message }],
+            role: 'user' as const,
+            content: [{ type: 'text' as const, text: action.message }],
           },
           parent_tool_use_id: null,
         };
@@ -148,7 +148,7 @@ export async function runSession(
     const sdkOptions: Record<string, unknown> = {
       cwd,
       permissionMode: config.permission_mode,
-      allowDangerouslySkipPermissions: config.permission_mode === "bypassPermissions",
+      allowDangerouslySkipPermissions: config.permission_mode === 'bypassPermissions',
       tools: config.tools,
       maxTurns: config.max_turns,
       abortController,
@@ -159,11 +159,11 @@ export async function runSession(
     sdkOptions.model = config.model;
     if (config.max_budget_usd) sdkOptions.maxBudgetUsd = config.max_budget_usd;
     const sp = config.sdk.system_prompt;
-    if (typeof sp === "string") {
+    if (typeof sp === 'string') {
       sdkOptions.systemPrompt = [sp, SYSTEM_PROMPT_DYNAMIC_BOUNDARY];
     } else {
       sdkOptions.systemPrompt = {
-        type: "preset" as const,
+        type: 'preset' as const,
         preset: sp.preset,
         ...(sp.append && { append: sp.append }),
       };
@@ -205,7 +205,7 @@ export async function runSession(
           allowLocalBinding: config.sandbox.network.allow_local_binding,
         },
         filesystem: {
-          allowWrite: [cwd, "/tmp", ...config.sandbox.filesystem.allow_write],
+          allowWrite: [cwd, '/tmp', ...config.sandbox.filesystem.allow_write],
           denyRead: config.sandbox.filesystem.deny_read,
           denyWrite: config.sandbox.filesystem.deny_write,
         },
@@ -224,10 +224,10 @@ export async function runSession(
 
     // canUseTool callback
     sdkOptions.canUseTool = async (toolName: string, input: Record<string, unknown>) => {
-      if (toolName === "AskUserQuestion" && syntheticUser) {
+      if (toolName === 'AskUserQuestion' && syntheticUser) {
         const parsed = AskUserQuestionInputSchema.safeParse(input);
         if (!parsed.success) {
-          return { behavior: "deny" };
+          return { behavior: 'deny' };
         }
         try {
           const result = await syntheticUser.handleAskUserQuestion(parsed.data);
@@ -240,10 +240,10 @@ export async function runSession(
           oracleFailed = true;
           writeOracleError(err instanceof Error ? err.message : String(err));
           abortController.abort();
-          return { behavior: "deny" };
+          return { behavior: 'deny' };
         }
       }
-      return { behavior: "allow" };
+      return { behavior: 'allow' };
     };
 
     // Start timeout
@@ -263,7 +263,7 @@ export async function runSession(
       if (timedOut) break;
       if (signaled) break;
 
-      if (message.type === "system" && message.subtype === "init" && !sessionId) {
+      if (message.type === 'system' && message.subtype === 'init' && !sessionId) {
         sessionId = message.session_id;
         syntheticUser = new SyntheticUser(oracle, config.user, config.prompt);
 
@@ -279,43 +279,43 @@ export async function runSession(
 
         // Add initial prompt to conversation buffer
         syntheticUser.addUserMessage(config.prompt);
-      } else if (message.type === "assistant") {
+      } else if (message.type === 'assistant') {
         const content = message.message?.content;
         if (content && Array.isArray(content)) {
           const textParts: string[] = [];
           for (const block of content) {
-            if (block.type === "thinking" && block.thinking) {
+            if (block.type === 'thinking' && block.thinking) {
               writeThinking(block.thinking);
-            } else if (block.type === "text" && block.text) {
+            } else if (block.type === 'text' && block.text) {
               writeAssistant(block.text);
               textParts.push(block.text);
-            } else if (block.type === "tool_use" && block.name) {
+            } else if (block.type === 'tool_use' && block.name) {
               writeTool(block.name, block.input);
               toolCallCount++;
               // BetaToolUseBlock.input is typed `unknown` by the SDK because
               // tool input shapes are user-defined. We only read file_path
               // for the built-in Read/Write/Edit tools.
               const inp = block.input as Record<string, unknown>;
-              if (block.name === "Write" && typeof inp.file_path === "string")
+              if (block.name === 'Write' && typeof inp.file_path === 'string')
                 filesWritten.add(inp.file_path);
-              else if (block.name === "Edit" && typeof inp.file_path === "string")
+              else if (block.name === 'Edit' && typeof inp.file_path === 'string')
                 filesEdited.add(inp.file_path);
-              else if (block.name === "Read" && typeof inp.file_path === "string")
+              else if (block.name === 'Read' && typeof inp.file_path === 'string')
                 filesRead.add(inp.file_path);
             }
           }
           if (textParts.length > 0 && syntheticUser) {
-            syntheticUser.addAssistantMessage(textParts.join("\n"));
+            syntheticUser.addAssistantMessage(textParts.join('\n'));
           }
         }
-      } else if (message.type === "result") {
+      } else if (message.type === 'result') {
         const subtype = message.subtype;
 
         // Extract stats from result
         resultNumTurns = message.num_turns || 0;
         resultTotalCostUsd = message.total_cost_usd || 0;
 
-        if (subtype === "success" && syntheticUser) {
+        if (subtype === 'success' && syntheticUser) {
           // Consult turn policy
           const decision = await syntheticUser.decideTurn();
 
@@ -327,19 +327,19 @@ export async function runSession(
             writeOracleTurn(decision.decision, decision.message, decision.reasoning);
           }
 
-          if (decision.decision === "continue" && decision.message) {
+          if (decision.decision === 'continue' && decision.message) {
             syntheticUser.addUserMessage(decision.message);
             writeUser(decision.message);
-            resolveNextAction?.({ type: "continue", message: decision.message });
+            resolveNextAction?.({ type: 'continue', message: decision.message });
           } else {
-            resolveNextAction?.({ type: "end" });
+            resolveNextAction?.({ type: 'end' });
             exitCode = EXIT_SUCCESS;
           }
         } else {
           // Error subtypes
-          resolveNextAction?.({ type: "end" });
-          if (subtype === "error_max_turns") exitCode = EXIT_MAX_TURNS;
-          else if (subtype === "error_max_budget_usd") exitCode = EXIT_BUDGET_EXCEEDED;
+          resolveNextAction?.({ type: 'end' });
+          if (subtype === 'error_max_turns') exitCode = EXIT_MAX_TURNS;
+          else if (subtype === 'error_max_budget_usd') exitCode = EXIT_BUDGET_EXCEEDED;
           else exitCode = EXIT_RUNTIME_ERROR;
         }
       }
@@ -382,7 +382,7 @@ export async function runSession(
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (queryHandle) queryHandle.close();
       if (options.signal && onExternalAbort) {
-        options.signal.removeEventListener("abort", onExternalAbort);
+        options.signal.removeEventListener('abort', onExternalAbort);
       }
     }
   }
@@ -392,62 +392,62 @@ export async function runSession(
 
 export const SAFE_ENV_VARS: ReadonlySet<string> = new Set([
   // Required for the agent subprocess to make API calls
-  "ANTHROPIC_API_KEY",
+  'ANTHROPIC_API_KEY',
   // Paths and execution
-  "PATH",
-  "HOME",
-  "SHELL",
-  "USER",
-  "LOGNAME",
+  'PATH',
+  'HOME',
+  'SHELL',
+  'USER',
+  'LOGNAME',
   // Temp directories
-  "TMPDIR",
-  "TEMP",
-  "TMP",
+  'TMPDIR',
+  'TEMP',
+  'TMP',
   // Locale and encoding
-  "LANG",
-  "LANGUAGE",
-  "LC_ALL",
-  "LC_COLLATE",
-  "LC_CTYPE",
-  "LC_MESSAGES",
-  "LC_MONETARY",
-  "LC_NUMERIC",
-  "LC_TIME",
+  'LANG',
+  'LANGUAGE',
+  'LC_ALL',
+  'LC_COLLATE',
+  'LC_CTYPE',
+  'LC_MESSAGES',
+  'LC_MONETARY',
+  'LC_NUMERIC',
+  'LC_TIME',
   // Terminal
-  "TERM",
-  "COLORTERM",
-  "TERM_PROGRAM",
-  "FORCE_COLOR",
-  "NO_COLOR",
+  'TERM',
+  'COLORTERM',
+  'TERM_PROGRAM',
+  'FORCE_COLOR',
+  'NO_COLOR',
   // Editor
-  "EDITOR",
-  "VISUAL",
+  'EDITOR',
+  'VISUAL',
   // Node.js runtime
-  "NODE_PATH",
-  "NODE_ENV",
-  "NODE_OPTIONS",
-  "NODE_EXTRA_CA_CERTS",
-  "NODE_NO_WARNINGS",
-  "UV_THREADPOOL_SIZE",
+  'NODE_PATH',
+  'NODE_ENV',
+  'NODE_OPTIONS',
+  'NODE_EXTRA_CA_CERTS',
+  'NODE_NO_WARNINGS',
+  'UV_THREADPOOL_SIZE',
   // SSL/TLS certificates
-  "SSL_CERT_FILE",
-  "SSL_CERT_DIR",
-  "CURL_CA_BUNDLE",
-  "REQUESTS_CA_BUNDLE",
+  'SSL_CERT_FILE',
+  'SSL_CERT_DIR',
+  'CURL_CA_BUNDLE',
+  'REQUESTS_CA_BUNDLE',
   // XDG base directories
-  "XDG_CACHE_HOME",
-  "XDG_CONFIG_HOME",
-  "XDG_DATA_HOME",
-  "XDG_RUNTIME_DIR",
-  "XDG_STATE_HOME",
+  'XDG_CACHE_HOME',
+  'XDG_CONFIG_HOME',
+  'XDG_DATA_HOME',
+  'XDG_RUNTIME_DIR',
+  'XDG_STATE_HOME',
   // macOS
-  "COMMAND_MODE",
-  "__CF_USER_TEXT_ENCODING",
+  'COMMAND_MODE',
+  '__CF_USER_TEXT_ENCODING',
   // SDK identification
-  "CLAUDE_AGENT_SDK_CLIENT_APP",
+  'CLAUDE_AGENT_SDK_CLIENT_APP',
 ]);
 
-export const SAFE_ENV_PREFIXES: readonly string[] = ["LC_", "npm_config_"];
+export const SAFE_ENV_PREFIXES: readonly string[] = ['LC_', 'npm_config_'];
 
 export function buildSandboxEnv(
   processEnv: Record<string, string | undefined>,
@@ -477,7 +477,7 @@ function buildSdkSessionPath(cwd: string, sessionId: string, sandboxHome?: strin
   const home = sandboxHome || process.env.HOME;
   if (!home) {
     throw new Error(
-      "Cannot locate SDK session file: HOME is not set. scuttlerun requires HOME to be set when sandbox is disabled.",
+      'Cannot locate SDK session file: HOME is not set. scuttlerun requires HOME to be set when sandbox is disabled.',
     );
   }
   let resolved: string;
@@ -486,6 +486,6 @@ function buildSdkSessionPath(cwd: string, sessionId: string, sandboxHome?: strin
   } catch {
     resolved = cwd;
   }
-  const encodedCwd = resolved.replace(/[/_]/g, "-");
+  const encodedCwd = resolved.replace(/[/_]/g, '-');
   return `${home}/.claude/projects/${encodedCwd}/${sessionId}.jsonl`;
 }

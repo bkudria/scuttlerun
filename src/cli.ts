@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 
-import { Command } from "commander";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { readFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { parseSessionConfig, mergeRawConfigs, type SessionConfig } from "./config.js";
-import { runSession, DEFAULT_SESSION_TIMEOUT_SECONDS } from "./runner.js";
-import { formatCliError } from "./errors.js";
-import { EXIT_SUCCESS, EXIT_CONFIG_ERROR, EXIT_SIGINT } from "./exit-codes.js";
+import { Command } from 'commander';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseSessionConfig, mergeRawConfigs, type SessionConfig } from './config.js';
+import { runSession, DEFAULT_SESSION_TIMEOUT_SECONDS } from './runner.js';
+import { formatCliError } from './errors.js';
+import { EXIT_SUCCESS, EXIT_CONFIG_ERROR, EXIT_SIGINT } from './exit-codes.js';
 
 /**
  * Read the CLI version from package.json so --version stays in sync with
  * the manifest across releases. Exported for testing.
  */
 export function getCliVersion(): string {
-  const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), "../package.json");
-  const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version: string };
+  const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), '../package.json');
+  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { version: string };
   return pkg.version;
 }
 
@@ -40,11 +40,11 @@ interface CliOverrides {
  */
 export function assertAnthropicApiKey(): void {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key || key.trim() === "") {
+  if (!key || key.trim() === '') {
     throw new Error(
-      "ANTHROPIC_API_KEY is not set. Export it before running scuttlerun:\n" +
-        "  export ANTHROPIC_API_KEY=sk-ant-...\n" +
-        "See the Setup section of README.md for details.",
+      'ANTHROPIC_API_KEY is not set. Export it before running scuttlerun:\n' +
+        '  export ANTHROPIC_API_KEY=sk-ant-...\n' +
+        'See the Setup section of README.md for details.',
     );
   }
 }
@@ -70,10 +70,10 @@ export async function buildConfig(
     config = { ...config, max_budget_usd: overrides.maxBudgetUsd };
   }
   if (overrides.effort) {
-    config = { ...config, effort: overrides.effort as SessionConfig["effort"] };
+    config = { ...config, effort: overrides.effort as SessionConfig['effort'] };
   }
   if (overrides.tools) {
-    config = { ...config, tools: overrides.tools.split(",").map((t) => t.trim()) };
+    config = { ...config, tools: overrides.tools.split(',').map((t) => t.trim()) };
   }
   if (overrides.oracleModel) {
     config = {
@@ -237,35 +237,35 @@ async function main() {
   const program = new Command();
 
   program
-    .name("scuttlerun")
+    .name('scuttlerun')
     .description(
-      "Multi-turn Claude session driver.\n" +
-        "Runs headless Claude sessions with a synthetic user powered by an LLM oracle.\n" +
-        "Handles AskUserQuestion, multi-turn follow-ups, and project scaffolding.",
+      'Multi-turn Claude session driver.\n' +
+        'Runs headless Claude sessions with a synthetic user powered by an LLM oracle.\n' +
+        'Handles AskUserQuestion, multi-turn follow-ups, and project scaffolding.',
     )
     .version(getCliVersion())
-    .argument("<session.yaml>", "Session config file (YAML). Only 'prompt' is required.")
-    .argument("[override.yaml...]", "Additional YAML files to deep-merge (last wins)")
-    .option("--model <model>", "Agent model (default: claude-haiku-4-5)")
-    .option("--oracle-model <model>", "Synthetic user oracle model (default: claude-haiku-4-5)")
-    .option("--prompt <text>", "Override the prompt from the YAML config")
-    .option("--max-turns <n>", "Max agent turns (default: 50)", (v: string) => parseInt(v, 10))
-    .option("--max-budget-usd <usd>", "Max session cost in USD (no default)", (v: string) =>
+    .argument('<session.yaml>', "Session config file (YAML). Only 'prompt' is required.")
+    .argument('[override.yaml...]', 'Additional YAML files to deep-merge (last wins)')
+    .option('--model <model>', 'Agent model (default: claude-haiku-4-5)')
+    .option('--oracle-model <model>', 'Synthetic user oracle model (default: claude-haiku-4-5)')
+    .option('--prompt <text>', 'Override the prompt from the YAML config')
+    .option('--max-turns <n>', 'Max agent turns (default: 50)', (v: string) => parseInt(v, 10))
+    .option('--max-budget-usd <usd>', 'Max session cost in USD (no default)', (v: string) =>
       parseFloat(v),
     )
-    .option("--tools <tools>", "Tools list, comma-separated (e.g. Read,Write,Grep)")
-    .option("--effort <level>", "Thinking effort: low, medium, high, xhigh, max (default: high)")
+    .option('--tools <tools>', 'Tools list, comma-separated (e.g. Read,Write,Grep)')
+    .option('--effort <level>', 'Thinking effort: low, medium, high, xhigh, max (default: high)')
     .option(
-      "--timeout <seconds>",
-      "Session timeout in seconds",
+      '--timeout <seconds>',
+      'Session timeout in seconds',
       (v: string) => parseInt(v, 10),
       DEFAULT_SESSION_TIMEOUT_SECONDS,
     )
     .option(
-      "-v, --verbose",
-      "Verbose logging to stderr (includes agent stderr; note: -V is --version)",
+      '-v, --verbose',
+      'Verbose logging to stderr (includes agent stderr; note: -V is --version)',
     )
-    .option("-n, --dry-run", "Validate and display the resolved config without running")
+    .option('-n, --dry-run', 'Validate and display the resolved config without running')
     .action(async (sessionFile: string, overrideFiles: string[], opts) => {
       try {
         // Read all YAML files
@@ -279,7 +279,7 @@ async function main() {
           // Use the first file's directory for resolving relative paths (e.g. skill paths)
           if (configPaths.length === 0) configDir = dirname(resolved);
           configPaths.push(resolved);
-          const content = await readFile(resolved, "utf8");
+          const content = await readFile(resolved, 'utf8');
           yamlContents.push(content);
         }
 
@@ -342,8 +342,8 @@ async function main() {
           if (signalCount === 1) signalController.abort();
           else process.exit(EXIT_SIGINT);
         };
-        process.on("SIGINT", handleSignal);
-        process.on("SIGTERM", handleSignal);
+        process.on('SIGINT', handleSignal);
+        process.on('SIGTERM', handleSignal);
 
         try {
           const result = await runSession(config, {
@@ -356,16 +356,16 @@ async function main() {
 
           process.exit(result.exitCode);
         } finally {
-          process.off("SIGINT", handleSignal);
-          process.off("SIGTERM", handleSignal);
+          process.off('SIGINT', handleSignal);
+          process.off('SIGTERM', handleSignal);
         }
       } catch (err) {
-        process.stderr.write(formatCliError(err) + "\n");
+        process.stderr.write(formatCliError(err) + '\n');
         process.exit(EXIT_CONFIG_ERROR);
       }
     });
 
-  program.addHelpText("after", HELP_TEXT);
+  program.addHelpText('after', HELP_TEXT);
 
   // Show help when no arguments are provided
   if (process.argv.length <= 2) {
@@ -378,7 +378,7 @@ async function main() {
 // Only run CLI when executed directly
 const isDirectExecution =
   process.argv[1] &&
-  (import.meta.url === `file://${process.argv[1]}` || import.meta.url.endsWith("/dist/cli.js"));
+  (import.meta.url === `file://${process.argv[1]}` || import.meta.url.endsWith('/dist/cli.js'));
 
 if (isDirectExecution) {
   main();

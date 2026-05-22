@@ -1,5 +1,5 @@
 # Minimal scuttlerun session — single-turn, no follow-ups
-version: "1"
+version: '1'
 
 prompt: |
   Write a haiku about the ocean and save it to ocean.txt

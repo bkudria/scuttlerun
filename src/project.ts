@@ -1,9 +1,9 @@
-import { promises as fs } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, basename, dirname, resolve } from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import type { ProjectConfig } from "./config.js";
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, basename, dirname, resolve } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import type { ProjectConfig } from './config.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -12,7 +12,7 @@ export interface ScaffoldResult {
 }
 
 export async function createProjectDir(): Promise<string> {
-  return fs.mkdtemp(join(tmpdir(), "scuttlerun-project-"));
+  return fs.mkdtemp(join(tmpdir(), 'scuttlerun-project-'));
 }
 
 export async function scaffoldProject(
@@ -24,14 +24,14 @@ export async function scaffoldProject(
   const resolvedSkills = await validateSkills(config.skills, _configDir);
   validateFilePaths(config.files);
 
-  const projectPath = await fs.mkdtemp(join(tmpdir(), "scuttlerun-project-"));
+  const projectPath = await fs.mkdtemp(join(tmpdir(), 'scuttlerun-project-'));
 
   if (config.claude_md) {
-    await fs.writeFile(join(projectPath, "CLAUDE.md"), config.claude_md);
+    await fs.writeFile(join(projectPath, 'CLAUDE.md'), config.claude_md);
   }
 
   if (resolvedSkills.length > 0) {
-    const skillsDir = join(projectPath, ".claude", "skills");
+    const skillsDir = join(projectPath, '.claude', 'skills');
     await fs.mkdir(skillsDir, { recursive: true });
     for (const { resolved } of resolvedSkills) {
       await fs.symlink(resolved, join(skillsDir, basename(resolved)));
@@ -39,14 +39,14 @@ export async function scaffoldProject(
   }
 
   if (config.settings) {
-    const claudeDir = join(projectPath, ".claude");
+    const claudeDir = join(projectPath, '.claude');
     await fs.mkdir(claudeDir, { recursive: true });
-    await fs.writeFile(join(claudeDir, "settings.json"), JSON.stringify(config.settings, null, 2));
+    await fs.writeFile(join(claudeDir, 'settings.json'), JSON.stringify(config.settings, null, 2));
   }
 
   // Git init before file writes so that files cannot create malicious .git/hooks/
   if (config.git_init) {
-    await execFileAsync("git", ["init"], { cwd: projectPath });
+    await execFileAsync('git', ['init'], { cwd: projectPath });
   }
 
   if (config.files) {
@@ -78,16 +78,16 @@ async function validateSkills(
 // depending on the project directory existing yet. Any prefix-comparable
 // absolute path works; pick something unlikely to collide with real
 // content.
-const VALIDATION_BASE = "/__scuttlerun_validation__";
+const VALIDATION_BASE = '/__scuttlerun_validation__';
 
 function validateFilePaths(files: Record<string, string> | undefined): void {
   if (!files) return;
   for (const filePath of Object.keys(files)) {
-    if (filePath === ".git" || filePath.startsWith(".git/")) {
+    if (filePath === '.git' || filePath.startsWith('.git/')) {
       throw new Error(`File path targets .git/ directory: "${filePath}"`);
     }
     const resolved = resolve(VALIDATION_BASE, filePath);
-    if (!resolved.startsWith(VALIDATION_BASE + "/") && resolved !== VALIDATION_BASE) {
+    if (!resolved.startsWith(VALIDATION_BASE + '/') && resolved !== VALIDATION_BASE) {
       throw new Error(`File path escapes project directory: "${filePath}"`);
     }
   }
@@ -108,7 +108,7 @@ async function validateSkillPath(originalPath: string, resolvedPath: string): Pr
   }
 
   try {
-    await fs.access(join(resolvedPath, "SKILL.md"));
+    await fs.access(join(resolvedPath, 'SKILL.md'));
   } catch {
     throw new Error(
       `Skill directory is missing SKILL.md: "${originalPath}" (resolved to ${resolvedPath})`,
@@ -118,7 +118,7 @@ async function validateSkillPath(originalPath: string, resolvedPath: string): Pr
 
 export function resolveSkillPath(skillPath: string, configDir: string): string {
   // Expand tilde
-  if (skillPath.startsWith("~/")) {
+  if (skillPath.startsWith('~/')) {
     const home = process.env.HOME;
     if (!home) {
       throw new Error(

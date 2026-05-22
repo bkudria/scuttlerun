@@ -78,7 +78,7 @@ scuttlerun examples/multi-turn.yaml --timeout 120 --model claude-sonnet-4-6
 Sessions are defined in YAML. Only `prompt` is required — everything else has defaults.
 
 ```yaml
-version: "1"
+version: '1'
 prompt: |
   Write a haiku about the ocean and save it to ocean.txt
 ```

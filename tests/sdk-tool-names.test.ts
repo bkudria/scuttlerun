@@ -1,28 +1,28 @@
-import { describe, it, expect } from "vitest";
-import { getKnownSdkToolNames, _resetCacheForTests } from "../src/sdk-tool-names.js";
+import { describe, it, expect } from 'vitest';
+import { getKnownSdkToolNames, _resetCacheForTests } from '../src/sdk-tool-names.js';
 
-describe("getKnownSdkToolNames", () => {
-  it("returns SDK tool names including canonical File* aliases", () => {
+describe('getKnownSdkToolNames', () => {
+  it('returns SDK tool names including canonical File* aliases', () => {
     _resetCacheForTests();
     const names = getKnownSdkToolNames();
-    expect(names.has("Bash")).toBe(true);
-    expect(names.has("Read")).toBe(true);
-    expect(names.has("Write")).toBe(true);
-    expect(names.has("Edit")).toBe(true);
-    expect(names.has("TodoWrite")).toBe(true);
-    expect(names.has("Skill")).toBe(true);
+    expect(names.has('Bash')).toBe(true);
+    expect(names.has('Read')).toBe(true);
+    expect(names.has('Write')).toBe(true);
+    expect(names.has('Edit')).toBe(true);
+    expect(names.has('TodoWrite')).toBe(true);
+    expect(names.has('Skill')).toBe(true);
   });
 
-  it("includes SDK Task* tool names", () => {
+  it('includes SDK Task* tool names', () => {
     _resetCacheForTests();
     const names = getKnownSdkToolNames();
-    expect(names.has("TaskCreate")).toBe(true);
-    expect(names.has("TaskUpdate")).toBe(true);
-    expect(names.has("TaskList")).toBe(true);
-    expect(names.has("TaskGet")).toBe(true);
+    expect(names.has('TaskCreate')).toBe(true);
+    expect(names.has('TaskUpdate')).toBe(true);
+    expect(names.has('TaskList')).toBe(true);
+    expect(names.has('TaskGet')).toBe(true);
   });
 
-  it("never throws even when the SDK layout is unexpected", () => {
+  it('never throws even when the SDK layout is unexpected', () => {
     _resetCacheForTests();
     expect(() => getKnownSdkToolNames()).not.toThrow();
   });

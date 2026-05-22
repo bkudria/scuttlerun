@@ -1,9 +1,9 @@
 ---
 name: Bug report
 about: Report a problem with scuttlerun
-title: ""
+title: ''
 labels: bug
-assignees: ""
+assignees: ''
 ---
 
 ## Description

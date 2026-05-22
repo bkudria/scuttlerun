@@ -1,4 +1,4 @@
-version: "1"
+version: '1'
 
 prompt: |
   Write a function called isPrime that checks if a number is prime.
