@@ -24,7 +24,7 @@ Four peer artifacts of the same system:
 - `scuttlerun.allium` — behavioural contract
 - `src/` — mechanism (implementation)
 - `tests/` — verification
-- `docs/goals.md` — design intent
+- `GOALS.md` — design intent
 
 Changing any one obliges checking and updating the others; conflicts between them are reconciled, not decided unilaterally.
 
