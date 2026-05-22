@@ -176,7 +176,7 @@ scuttlerun --help
 
 ## Exit Codes
 
-This table is the canonical reference for the scuttlerun/pincenez/craboodle exit-code taxonomy. Each tool emits a subset; pincenez and craboodle link here for the full set. Source: [`src/exit-codes.ts`](src/exit-codes.ts).
+This table is the canonical reference for the scuttlerun/pincenez/craboodle exit-code taxonomy. Each tool emits a subset; pincenez and craboodle link here for the full set. Each tool's [`src/exit-codes.ts`](src/exit-codes.ts) defines only the codes that tool itself emits — see also [pincenez/src/exit-codes.ts](https://github.com/bkudria/pincenez/blob/main/src/exit-codes.ts) and [craboodle/src/exit-codes.ts](https://github.com/bkudria/craboodle/blob/main/src/exit-codes.ts).
 
 | Code | Meaning                                                         | Emitted by                      |
 | ---- | --------------------------------------------------------------- | ------------------------------- |
