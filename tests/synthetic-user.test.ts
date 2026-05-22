@@ -243,6 +243,82 @@ describe('SyntheticUser', () => {
     });
   });
 
+  describe('oracle context truncation warning', () => {
+    it('emits a one-time stderr warning when the conversation buffer first exceeds the entry limit', async () => {
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        const mockAnswer = oracle.answerQuestions as ReturnType<typeof vi.fn>;
+        mockAnswer.mockResolvedValue({
+          answers: { 'Q?': 'A' },
+          reasoning: 'r',
+          usage: { input_tokens: 50, output_tokens: 20 },
+        });
+
+        const user = new SyntheticUser(oracle, userConfig, 'test prompt');
+        for (let i = 0; i < 25; i++) {
+          user.addUserMessage(`message ${i}`);
+        }
+
+        const askInput = {
+          questions: [
+            {
+              question: 'Q?',
+              header: 'H',
+              options: [{ label: 'A', description: 'a' }],
+              multiSelect: false,
+            },
+          ],
+        };
+
+        await user.handleAskUserQuestion(askInput);
+        await user.handleAskUserQuestion(askInput);
+
+        const truncationCalls = stderrSpy.mock.calls.filter(
+          (call) => typeof call[0] === 'string' && call[0].includes('oracle context truncated'),
+        );
+        expect(truncationCalls).toHaveLength(1);
+        expect(truncationCalls[0][0]).toContain('25');
+      } finally {
+        stderrSpy.mockRestore();
+      }
+    });
+
+    it('does not emit a warning when the conversation buffer stays at or below the entry limit', async () => {
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      try {
+        const mockAnswer = oracle.answerQuestions as ReturnType<typeof vi.fn>;
+        mockAnswer.mockResolvedValue({
+          answers: { 'Q?': 'A' },
+          reasoning: 'r',
+          usage: { input_tokens: 50, output_tokens: 20 },
+        });
+
+        const user = new SyntheticUser(oracle, userConfig, 'test prompt');
+        for (let i = 0; i < 20; i++) {
+          user.addUserMessage(`message ${i}`);
+        }
+
+        await user.handleAskUserQuestion({
+          questions: [
+            {
+              question: 'Q?',
+              header: 'H',
+              options: [{ label: 'A', description: 'a' }],
+              multiSelect: false,
+            },
+          ],
+        });
+
+        const truncationCalls = stderrSpy.mock.calls.filter(
+          (call) => typeof call[0] === 'string' && call[0].includes('oracle context truncated'),
+        );
+        expect(truncationCalls).toHaveLength(0);
+      } finally {
+        stderrSpy.mockRestore();
+      }
+    });
+  });
+
   // [invariant.SubagentQuestionsNotDistinguished]
   // Clarifying questions originating from a subagent and from the main agent are
   // answered by the same oracle path with the same persona. The current spec does
