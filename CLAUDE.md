@@ -55,7 +55,7 @@ When working with Agent SDK code (`@anthropic-ai/claude-agent-sdk`), load the `/
 - **Zod v4** — `z.record()` requires 2 args: `z.record(z.string(), z.unknown())`. `.default({})` on objects does NOT apply inner field defaults — `parseSessionConfig()` re-parses nested objects separately
 - **Config merging** happens on raw YAML objects _before_ Zod schema defaults are applied (critical for correct override behavior)
 - **`canUseTool` callback** is the correct mechanism for AskUserQuestion handling (PreToolUse hooks don't work — confirmed by spikes)
-- Must `delete process.env.CLAUDECODE` before `query()` to avoid nested session errors
+- Must override `CLAUDECODE` in the SDK's `env` option (e.g. `env: { ...process.env, CLAUDECODE: undefined }`) before `query()` to avoid nested session errors. The default branch in `runner.ts:194` does this; the sandbox branch achieves the same effect by exclusion from the `SAFE_ENV_VARS` allowlist. Avoid `delete process.env.CLAUDECODE` in production code — that mutates the parent process's env; the spread-with-override pattern is local to the SDK call.
 - Oracle uses `client.messages.parse()` with `output_format` for guaranteed structured JSON output
 - Timeout uses `AbortController` (passed to SDK via `sdkOptions.abortController`) + `queryHandle.interrupt()` + a `timedOut` flag checked at the top of the `for await` loop (the `for await` doesn't respond to abort signals mid-iteration, so the flag break + SDK-driven iterator end are what actually stop the loop)
 
