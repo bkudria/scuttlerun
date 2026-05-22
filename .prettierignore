@@ -1,6 +1,5 @@
 dist/
 coverage/
 node_modules/
-*.lock
 package-lock.json
 CHANGELOG.md
