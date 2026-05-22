@@ -17,16 +17,14 @@ scuttlerun is the session-driver end of a three-tool pipeline. Two downstream to
 
 scuttlerun is intentionally usable standalone; the pipeline framing should not leak into the CLI surface or config schema.
 
-### Spec, code, tests, and design intent
+## Authoritative artifacts
 
-Four peer artifacts of the same system:
+`scuttlerun.allium`, `src/`, `tests/`, and `GOALS.md` are co-equal peer artifacts of the same system — the behavioural contract, the mechanism, the verification, and the design intent. The four must reflect each other. Changing any one obliges checking and updating the others; conflicts between them are reconciled, not decided unilaterally.
 
-- `scuttlerun.allium` — behavioural contract
-- `src/` — mechanism (implementation)
-- `tests/` — verification
-- `GOALS.md` — design intent
-
-Changing any one obliges checking and updating the others; conflicts between them are reconciled, not decided unilaterally.
+- `scuttlerun.allium` — what the system must do (Allium spec; authoritative contract)
+- `src/` — how it does it (TypeScript implementation)
+- `tests/` — proof it does what the spec says (vitest suite under `tests/`)
+- `GOALS.md` — why the system exists in this shape (design intent and principles)
 
 ## Commands
 
