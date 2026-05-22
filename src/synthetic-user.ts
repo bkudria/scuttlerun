@@ -27,6 +27,7 @@ export class SyntheticUser {
   private originalPrompt: string;
   private conversationBuffer: ConversationEntry[] = [];
   private userTurnCount = 0;
+  private hasWarnedTruncation = false;
 
   constructor(oracle: Oracle, config: UserConfig, originalPrompt: string) {
     this.oracle = oracle;
@@ -97,6 +98,12 @@ export class SyntheticUser {
   private getRecentContext(): ConversationEntry[] {
     if (this.conversationBuffer.length <= ORACLE_CONTEXT_ENTRY_LIMIT) {
       return [...this.conversationBuffer];
+    }
+    if (!this.hasWarnedTruncation) {
+      process.stderr.write(
+        `[scuttlerun] oracle context truncated: ${ORACLE_CONTEXT_ENTRY_LIMIT} of ${this.conversationBuffer.length} entries forwarded to oracle; earlier entries dropped\n`,
+      );
+      this.hasWarnedTruncation = true;
     }
     return this.conversationBuffer.slice(-ORACLE_CONTEXT_ENTRY_LIMIT);
   }
