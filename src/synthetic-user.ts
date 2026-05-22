@@ -1,10 +1,10 @@
-import type { Oracle, ConversationEntry, QuestionInput } from "./oracle.js";
-import type { UserConfig } from "./config.js";
+import type { Oracle, ConversationEntry, QuestionInput } from './oracle.js';
+import type { UserConfig } from './config.js';
 
 const ORACLE_CONTEXT_ENTRY_LIMIT = 20;
 
 export interface CanUseToolResult {
-  behavior: "allow";
+  behavior: 'allow';
   updatedInput: {
     questions: QuestionInput[];
     answers: Record<string, string>;
@@ -16,7 +16,7 @@ export interface CanUseToolResult {
 }
 
 export interface TurnDecision {
-  decision: "continue" | "end";
+  decision: 'continue' | 'end';
   message?: string;
   reasoning?: string;
 }
@@ -35,11 +35,11 @@ export class SyntheticUser {
   }
 
   addUserMessage(text: string): void {
-    this.conversationBuffer.push({ role: "user", text });
+    this.conversationBuffer.push({ role: 'user', text });
   }
 
   addAssistantMessage(text: string): void {
-    this.conversationBuffer.push({ role: "assistant", text });
+    this.conversationBuffer.push({ role: 'assistant', text });
   }
 
   async handleAskUserQuestion(input: { questions: QuestionInput[] }): Promise<CanUseToolResult> {
@@ -52,7 +52,7 @@ export class SyntheticUser {
     });
 
     return {
-      behavior: "allow",
+      behavior: 'allow',
       updatedInput: {
         questions: input.questions,
         answers: result.answers,
@@ -67,12 +67,12 @@ export class SyntheticUser {
   async decideTurn(): Promise<TurnDecision> {
     // No follow-ups when max_turns is 0
     if (this.config.max_turns === 0) {
-      return { decision: "end" };
+      return { decision: 'end' };
     }
 
     // Check max turns
     if (this.userTurnCount >= this.config.max_turns) {
-      return { decision: "end" };
+      return { decision: 'end' };
     }
 
     const context = this.getRecentContext();
@@ -83,7 +83,7 @@ export class SyntheticUser {
       conversationContext: context,
     });
 
-    if (result.decision === "continue") {
+    if (result.decision === 'continue') {
       this.userTurnCount++;
     }
 

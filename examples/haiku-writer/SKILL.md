@@ -1,6 +1,6 @@
 ---
 name: haiku-writer
-description: "Use when writing haikus"
+description: 'Use when writing haikus'
 ---
 
 # Haiku Writer

@@ -1,6 +1,6 @@
 # Flagship tour: combines persona + AskUserQuestion + multi-turn + project scaffolding.
 # Run with: scuttlerun examples/tour.yaml
-version: "1"
+version: '1'
 
 prompt: |
   Write me a haiku.

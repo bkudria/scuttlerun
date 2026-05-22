@@ -3,7 +3,7 @@ name: OSSF Scorecard
 on:
   branch_protection_rule:
   schedule:
-    - cron: "32 7 * * 1"
+    - cron: '32 7 * * 1'
   push:
     branches: [main]
 

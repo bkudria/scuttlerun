@@ -1,5 +1,5 @@
-import { Document, Scalar, visit } from "yaml";
-import wrap from "word-wrap";
+import { Document, Scalar, visit } from 'yaml';
+import wrap from 'word-wrap';
 
 const LINE_WIDTH = 80;
 const ENTRY_PREFIX_WIDTH = 4;
@@ -10,20 +10,20 @@ const FOLD_THRESHOLD = 64;
 
 function hardWrapLines(text: string): string {
   return text
-    .split("\n")
+    .split('\n')
     .map((line) =>
       line.length <= HARD_WRAP_WIDTH
         ? line
-        : wrap(line, { width: HARD_WRAP_WIDTH, indent: "", trim: true, cut: false }),
+        : wrap(line, { width: HARD_WRAP_WIDTH, indent: '', trim: true, cut: false }),
     )
-    .join("\n");
+    .join('\n');
 }
 
 function applyWrapStyles(doc: Document): void {
   visit(doc, {
     Scalar(_key, node) {
-      if (typeof node.value !== "string") return;
-      if (node.value.includes("\n")) {
+      if (typeof node.value !== 'string') return;
+      if (node.value.includes('\n')) {
         node.value = hardWrapLines(node.value);
         node.type = Scalar.BLOCK_LITERAL;
       } else if (node.value.length > FOLD_THRESHOLD) {
@@ -72,15 +72,15 @@ function writeEntry(entry: Record<string, unknown>): void {
   const doc = new Document(entry);
   applyWrapStyles(doc);
   const raw = doc.toString({ lineWidth: DOC_LINE_WIDTH });
-  const lines = raw.replace(/\n$/, "").split("\n");
+  const lines = raw.replace(/\n$/, '').split('\n');
   const indented = lines
     .map((line, i) => {
       if (i === 0) return `  - ${line}`;
-      if (line === "") return "";
+      if (line === '') return '';
       return `    ${line}`;
     })
-    .join("\n");
-  write(indented + "\n\n");
+    .join('\n');
+  write(indented + '\n\n');
 }
 
 export function writeHeader(opts: HeaderOptions): void {
@@ -93,12 +93,12 @@ export function writeHeader(opts: HeaderOptions): void {
   const doc = new Document(header);
   /* v8 ignore next 3 -- yaml Document always has directives; defensive guard */
   if (!doc.directives) {
-    throw new Error("Document constructed without directives");
+    throw new Error('Document constructed without directives');
   }
   doc.directives.docStart = true;
   applyWrapStyles(doc);
   write(doc.toString({ lineWidth: HEADER_FOOTER_LINE_WIDTH }));
-  write("\nconversation:\n");
+  write('\nconversation:\n');
 }
 
 export function writeUser(text: string): void {
@@ -118,33 +118,33 @@ export function writeTool(name: string, input: unknown): void {
   const entry: Record<string, unknown> = { tool: name };
 
   switch (name) {
-    case "Read":
-    case "Write":
-    case "Edit":
-      entry.path = String(inp.file_path ?? "");
+    case 'Read':
+    case 'Write':
+    case 'Edit':
+      entry.path = String(inp.file_path ?? '');
       break;
-    case "Bash":
-      entry.command = String(inp.command ?? "");
+    case 'Bash':
+      entry.command = String(inp.command ?? '');
       break;
-    case "Glob":
-    case "Grep":
-      entry.pattern = String(inp.pattern ?? "");
+    case 'Glob':
+    case 'Grep':
+      entry.pattern = String(inp.pattern ?? '');
       break;
-    case "TodoWrite":
+    case 'TodoWrite':
       entry.todos = inp.todos ?? [];
       break;
-    case "TaskCreate":
-      entry.subject = String(inp.subject ?? "");
-      entry.description = String(inp.description ?? "");
+    case 'TaskCreate':
+      entry.subject = String(inp.subject ?? '');
+      entry.description = String(inp.description ?? '');
       break;
-    case "TaskUpdate":
-      entry.task_id = String(inp.taskId ?? "");
+    case 'TaskUpdate':
+      entry.task_id = String(inp.taskId ?? '');
       if (inp.status !== undefined) entry.status = String(inp.status);
       break;
-    case "TaskList":
+    case 'TaskList':
       break;
-    case "TaskGet":
-      entry.task_id = String(inp.taskId ?? "");
+    case 'TaskGet':
+      entry.task_id = String(inp.taskId ?? '');
       break;
     default:
       entry.input = inp;
@@ -155,18 +155,18 @@ export function writeTool(name: string, input: unknown): void {
 }
 
 export function writeOracleAsk(answers: Record<string, string>, reasoning: string): void {
-  writeEntry({ oracle: "ask_user", answers, reasoning });
+  writeEntry({ oracle: 'ask_user', answers, reasoning });
 }
 
 export function writeOracleTurn(decision: string, message?: string, reasoning?: string): void {
-  const entry: Record<string, unknown> = { oracle: "turn", decision };
+  const entry: Record<string, unknown> = { oracle: 'turn', decision };
   if (message) entry.message = message;
   if (reasoning) entry.reasoning = reasoning;
   writeEntry(entry);
 }
 
 export function writeOracleError(reason: string): void {
-  writeEntry({ oracle: "error", reason });
+  writeEntry({ oracle: 'error', reason });
 }
 
 export function writeFooter(stats: FooterStats): void {
@@ -198,5 +198,5 @@ export function writeFooter(stats: FooterStats): void {
   }
   const doc = new Document(footer);
   applyWrapStyles(doc);
-  write("\n" + doc.toString({ lineWidth: HEADER_FOOTER_LINE_WIDTH }));
+  write('\n' + doc.toString({ lineWidth: HEADER_FOOTER_LINE_WIDTH }));
 }

@@ -1,7 +1,7 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { z } from "zod";
-import { computeCostUsd } from "./pricing.js";
+import Anthropic from '@anthropic-ai/sdk';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { z } from 'zod';
+import { computeCostUsd } from './pricing.js';
 
 // Schema for AskUserQuestion oracle response
 const AskUserQuestionResponseSchema = z.object({
@@ -15,20 +15,20 @@ const AskUserQuestionResponseSchema = z.object({
 });
 
 // Schema for turn policy oracle response
-const TurnPolicyResponseSchema = z.discriminatedUnion("decision", [
+const TurnPolicyResponseSchema = z.discriminatedUnion('decision', [
   z.object({
-    decision: z.literal("continue"),
+    decision: z.literal('continue'),
     message: z.string(),
     reasoning: z.string(),
   }),
   z.object({
-    decision: z.literal("end"),
+    decision: z.literal('end'),
     reasoning: z.string(),
   }),
 ]);
 
 export interface ConversationEntry {
-  role: "user" | "assistant";
+  role: 'user' | 'assistant';
   text: string;
 }
 
@@ -72,7 +72,7 @@ export interface TurnPolicyParams {
 }
 
 export interface TurnPolicyResult {
-  decision: "continue" | "end";
+  decision: 'continue' | 'end';
   message?: string;
   reasoning: string;
   usage: { input_tokens: number; output_tokens: number };
@@ -164,7 +164,7 @@ export class Oracle {
     const parsed = response.parsed_output;
     return {
       decision: parsed.decision,
-      message: parsed.decision === "continue" ? parsed.message : undefined,
+      message: parsed.decision === 'continue' ? parsed.message : undefined,
       reasoning: parsed.reasoning,
       usage: {
         input_tokens: response.usage.input_tokens,
@@ -206,11 +206,11 @@ export class Oracle {
           model: this.model,
           max_tokens: 1024,
           system: systemPrompt,
-          messages: [{ role: "user" as const, content: userMessage }],
+          messages: [{ role: 'user' as const, content: userMessage }],
           output_config: { format: zodOutputFormat(schema) },
         });
         if (!response.parsed_output) {
-          throw new Error("Oracle returned no structured output");
+          throw new Error('Oracle returned no structured output');
         }
         return { parsed_output: response.parsed_output, usage: response.usage };
       } catch (err) {
@@ -254,7 +254,7 @@ function buildAskUserQuestionSystemPrompt(persona: string | undefined): string {
   return `You are simulating a user in a Claude Code session. You must answer
 the agent's clarifying questions consistent with the following persona:
 
-${persona ?? "A helpful user who provides reasonable answers."}
+${persona ?? 'A helpful user who provides reasonable answers.'}
 
 Given the conversation so far and the questions below, select the most
 appropriate answers. Return one entry per question in the answers array,
@@ -269,34 +269,34 @@ function buildAskUserQuestionUserMessage(
   const parts: string[] = [];
 
   if (context.length > 0) {
-    parts.push("## Conversation so far\n");
+    parts.push('## Conversation so far\n');
     for (const entry of context) {
       parts.push(`**${entry.role}:** ${entry.text}\n`);
     }
   }
 
-  parts.push("\n## Questions to answer\n");
+  parts.push('\n## Questions to answer\n');
   for (const q of questions) {
     parts.push(`### ${q.question}`);
     if (q.options.length > 0) {
-      parts.push("Options:");
+      parts.push('Options:');
       for (const opt of q.options) {
         parts.push(`- **${opt.label}**: ${opt.description}`);
       }
     }
     if (q.multiSelect) {
-      parts.push("(Multiple selections allowed)");
+      parts.push('(Multiple selections allowed)');
     }
-    parts.push("");
+    parts.push('');
   }
 
-  return parts.join("\n");
+  return parts.join('\n');
 }
 
 function buildTurnPolicySystemPrompt(persona: string | undefined, originalPrompt: string): string {
   return `You are simulating a user in a Claude Code session. Your persona:
 
-${persona ?? "A helpful user."}
+${persona ?? 'A helpful user.'}
 
 The original task was: ${originalPrompt}
 
@@ -310,14 +310,14 @@ If continuing, write the follow-up message the user would send.`;
 
 function buildTurnPolicyUserMessage(context: ConversationEntry[]): string {
   if (context.length === 0) {
-    return "No conversation yet. Should the user follow up or end the session?";
+    return 'No conversation yet. Should the user follow up or end the session?';
   }
 
-  const parts: string[] = ["## Conversation so far\n"];
+  const parts: string[] = ['## Conversation so far\n'];
   for (const entry of context) {
     parts.push(`**${entry.role}:** ${entry.text}\n`);
   }
-  parts.push("\nShould the user send a follow-up message, or is the task complete?");
+  parts.push('\nShould the user send a follow-up message, or is the task complete?');
 
-  return parts.join("\n");
+  return parts.join('\n');
 }

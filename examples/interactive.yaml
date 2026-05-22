@@ -1,4 +1,4 @@
-version: "1"
+version: '1'
 
 prompt: |
   Ask me what programming language I prefer, then write a hello

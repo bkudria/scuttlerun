@@ -1,8 +1,8 @@
-import { readdir, stat, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { readdir, stat, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-const PREFIX = "scuttlerun-project-";
+const PREFIX = 'scuttlerun-project-';
 const MS_PER_DAY = 86_400_000;
 
 export const WORKSPACE_CLEANUP_AGE_DAYS = 7;

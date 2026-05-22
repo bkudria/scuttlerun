@@ -1,7 +1,7 @@
-import { z } from "zod";
-import { getKnownSdkToolNames } from "./sdk-tool-names.js";
+import { z } from 'zod';
+import { getKnownSdkToolNames } from './sdk-tool-names.js';
 
-export const DEFAULT_ORACLE_MODEL = "claude-haiku-4-5";
+export const DEFAULT_ORACLE_MODEL = 'claude-haiku-4-5';
 
 function dedupeAppend(base: string[], extra: string[]): string[] {
   const seen = new Set<string>();
@@ -25,20 +25,20 @@ function warnUnknownTools(names: string[] | undefined, field: string): void {
     process.stderr.write(
       `[scuttlerun] WARNING: Unknown tool name "${name}" in ${field}: list. ` +
         `The SDK will silently ignore it. Known SDK tool names: ` +
-        `${[...known].sort().join(", ")}\n`,
+        `${[...known].sort().join(', ')}\n`,
     );
   }
 }
 
-const ThinkingConfigSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("adaptive") }).strict(),
+const ThinkingConfigSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('adaptive') }).strict(),
   z
     .object({
-      type: z.literal("enabled"),
+      type: z.literal('enabled'),
       budget_tokens: z.number().int().min(1024).optional(),
     })
     .strict(),
-  z.object({ type: z.literal("disabled") }).strict(),
+  z.object({ type: z.literal('disabled') }).strict(),
 ]);
 
 const ProjectConfigSchema = z
@@ -68,9 +68,9 @@ const SandboxNetworkConfigSchema = z
 
 const SandboxFilesystemConfigSchema = z
   .object({
-    deny_read: z.array(z.string()).default(["~/.ssh", "~/.aws", "~/.config/gcloud"]),
+    deny_read: z.array(z.string()).default(['~/.ssh', '~/.aws', '~/.config/gcloud']),
     allow_write: z.array(z.string()).default([]),
-    deny_write: z.array(z.string()).default([".env"]),
+    deny_write: z.array(z.string()).default(['.env']),
   })
   .strict();
 
@@ -82,11 +82,11 @@ const SandboxConfigSchema = z
   })
   .strict();
 
-const SettingSourceSchema = z.enum(["user", "project", "local"]);
+const SettingSourceSchema = z.enum(['user', 'project', 'local']);
 
 const SystemPromptPresetSchema = z
   .object({
-    preset: z.literal("claude_code"),
+    preset: z.literal('claude_code'),
     append: z.string().optional(),
   })
   .strict();
@@ -97,7 +97,7 @@ const SystemPromptSchema = z.union([z.string(), SystemPromptPresetSchema]);
 // .passthrough() allows unknown fields for forward compatibility
 const McpStdioServerConfigSchema = z
   .object({
-    type: z.literal("stdio").optional(),
+    type: z.literal('stdio').optional(),
     command: z.string(),
     args: z.array(z.string()).optional(),
     env: z.record(z.string(), z.string()).optional(),
@@ -106,7 +106,7 @@ const McpStdioServerConfigSchema = z
 
 const McpSSEServerConfigSchema = z
   .object({
-    type: z.literal("sse"),
+    type: z.literal('sse'),
     url: z.string(),
     headers: z.record(z.string(), z.string()).optional(),
   })
@@ -114,7 +114,7 @@ const McpSSEServerConfigSchema = z
 
 const McpHttpServerConfigSchema = z
   .object({
-    type: z.literal("http"),
+    type: z.literal('http'),
     url: z.string(),
     headers: z.record(z.string(), z.string()).optional(),
   })
@@ -122,7 +122,7 @@ const McpHttpServerConfigSchema = z
 
 const McpSdkServerConfigSchema = z
   .object({
-    type: z.literal("sdk"),
+    type: z.literal('sdk'),
     name: z.string(),
   })
   .passthrough();
@@ -150,26 +150,26 @@ const AgentDefinitionSchema = z
     maxTurns: z.number().int().min(1).optional(),
     initialPrompt: z.string().optional(),
     background: z.boolean().optional(),
-    memory: z.enum(["user", "project", "local"]).optional(),
+    memory: z.enum(['user', 'project', 'local']).optional(),
     effort: z
-      .union([z.enum(["low", "medium", "high", "xhigh", "max"]), z.number().int()])
+      .union([z.enum(['low', 'medium', 'high', 'xhigh', 'max']), z.number().int()])
       .optional(),
     permissionMode: z
-      .enum(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"])
+      .enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk'])
       .optional(),
   })
   .passthrough();
 
 const SdkPluginConfigSchema = z
   .object({
-    type: z.literal("local"),
+    type: z.literal('local'),
     path: z.string(),
   })
   .strict();
 
 const SdkConfigSchema = z
   .object({
-    system_prompt: SystemPromptSchema.default({ preset: "claude_code" }),
+    system_prompt: SystemPromptSchema.default({ preset: 'claude_code' }),
     thinking: ThinkingConfigSchema.optional(),
     mcp_servers: z.record(z.string(), McpServerConfigSchema).optional(),
     agents: z.record(z.string(), AgentDefinitionSchema).optional(),
@@ -184,21 +184,21 @@ const SdkConfigSchema = z
 // (Zod v4's .default({}) does not trigger inner defaults.)
 const SessionConfigRawSchema = z
   .object({
-    version: z.literal("1").optional(),
+    version: z.literal('1').optional(),
     prompt: z.string(),
-    model: z.string().default("claude-haiku-4-5"),
+    model: z.string().default('claude-haiku-4-5'),
     max_turns: z.number().int().min(1).default(50),
     max_budget_usd: z.number().positive().optional(),
-    effort: z.enum(["low", "medium", "high", "xhigh", "max"]).default("high"),
+    effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('high'),
     tools: z
       .array(z.string())
-      .default(["Read", "Write", "Edit", "Bash", "Glob", "Grep", "AskUserQuestion", "Skill"]),
+      .default(['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep', 'AskUserQuestion', 'Skill']),
     additional_tools: z.array(z.string()).optional(),
     disallowed_tools: z.array(z.string()).optional(),
     project: ProjectConfigSchema.optional(),
     permission_mode: z
-      .enum(["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"])
-      .default("bypassPermissions"),
+      .enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk'])
+      .default('bypassPermissions'),
     user: z.unknown().optional(),
     sdk: z.unknown().optional(),
     sandbox: z.unknown().optional(),
@@ -225,11 +225,11 @@ export interface SessionConfig {
   model: string;
   max_turns: number;
   max_budget_usd?: number;
-  effort: "low" | "medium" | "high" | "xhigh" | "max";
+  effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   tools: string[];
   disallowed_tools?: string[];
   project?: ProjectConfig;
-  permission_mode: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk";
+  permission_mode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk';
   user: UserConfig;
   sdk: SdkConfig;
   sandbox: SandboxConfig;
@@ -238,9 +238,9 @@ export interface SessionConfig {
 export function parseSessionConfig(raw: unknown): SessionConfig {
   const parsed = SessionConfigRawSchema.parse(raw);
 
-  warnUnknownTools(parsed.tools, "tools");
-  warnUnknownTools(parsed.additional_tools, "additional_tools");
-  warnUnknownTools(parsed.disallowed_tools, "disallowed_tools");
+  warnUnknownTools(parsed.tools, 'tools');
+  warnUnknownTools(parsed.additional_tools, 'additional_tools');
+  warnUnknownTools(parsed.disallowed_tools, 'disallowed_tools');
 
   const resolvedTools = dedupeAppend(parsed.tools, parsed.additional_tools ?? []);
 
@@ -254,7 +254,7 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
   // Auto-set setting_sources when project is present and not explicitly set
   let settingSources = sdkRaw.setting_sources;
   if (settingSources === undefined) {
-    settingSources = parsed.project ? ["project"] : [];
+    settingSources = parsed.project ? ['project'] : [];
   }
 
   return {
@@ -286,7 +286,7 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
  * Deep-merges objects, replaces arrays and scalars.
  */
 export function mergeRawConfigs(...raws: Record<string, unknown>[]): Record<string, unknown> {
-  if (raws.length === 0) throw new Error("At least one config is required");
+  if (raws.length === 0) throw new Error('At least one config is required');
   return raws.reduce((acc, override) => deepMergeObjects(acc, override));
 }
 
@@ -297,16 +297,16 @@ function deepMergeObjects(
   const result: Record<string, unknown> = { ...base };
 
   for (const [key, value] of Object.entries(override)) {
-    if (key === "__proto__" || key === "constructor") continue;
+    if (key === '__proto__' || key === 'constructor') continue;
     const baseValue = base[key];
 
     if (Array.isArray(value)) {
       result[key] = value;
     } else if (
       value !== null &&
-      typeof value === "object" &&
+      typeof value === 'object' &&
       baseValue !== null &&
-      typeof baseValue === "object" &&
+      typeof baseValue === 'object' &&
       !Array.isArray(baseValue)
     ) {
       result[key] = deepMergeObjects(
