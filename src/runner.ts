@@ -172,12 +172,26 @@ export async function runSession(
     if (config.sdk.thinking) sdkOptions.thinking = config.sdk.thinking;
     if (config.sdk.mcp_servers) sdkOptions.mcpServers = config.sdk.mcp_servers;
     if (config.sdk.agents) sdkOptions.agents = config.sdk.agents;
-    if (config.sdk.plugins) {
+    const projectPlugins = config.project?.plugins ?? [];
+    const sdkPlugins = config.sdk.plugins ?? [];
+    if (projectPlugins.length > 0 || sdkPlugins.length > 0) {
       const configDir = options.configDir || process.cwd();
-      sdkOptions.plugins = config.sdk.plugins.map((p) => ({
-        ...p,
-        path: resolveSkillPath(p.path, configDir),
-      }));
+      const resolved = [
+        ...projectPlugins.map((p) => ({
+          type: 'local' as const,
+          path: resolveSkillPath(p, configDir),
+        })),
+        ...sdkPlugins.map((p) => ({
+          ...p,
+          path: resolveSkillPath(p.path, configDir),
+        })),
+      ];
+      const seen = new Set<string>();
+      sdkOptions.plugins = resolved.filter((p) => {
+        if (seen.has(p.path)) return false;
+        seen.add(p.path);
+        return true;
+      });
     }
     // Subprocess environment: when sandbox is enabled, filter process.env
     // through an allowlist to prevent leaking secrets (API keys, tokens, etc.)
