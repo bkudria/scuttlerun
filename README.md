@@ -93,7 +93,7 @@ prompt: |
 | `max_turns`        | number                                          | `50`                                                             |
 | `max_budget_usd`   | number                                          | —                                                                |
 | `effort`           | `low` \| `medium` \| `high` \| `xhigh` \| `max` | `high`                                                           |
-| `tools`            | string[]                                        | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill]`  |
+| `tools`            | string[]                                        | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill, Agent]` |
 | `additional_tools` | string[]                                        | — (appended to `tools` after defaults apply; deduped first-wins) |
 | `disallowed_tools` | string[]                                        | —                                                                |
 | `permission_mode`  | string                                          | `bypassPermissions`                                              |
