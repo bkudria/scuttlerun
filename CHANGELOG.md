@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Release sections below are generated automatically by release-please from Conventional Commit messages.
 
+## [0.3.0](https://github.com/bkudria/scuttlerun/compare/v0.2.1...v0.3.0) (2026-05-23)
+
+
+### Features
+
+* **synthetic-user:** warn once on oracle context truncation ([#29](https://github.com/bkudria/scuttlerun/issues/29)) ([16c9f81](https://github.com/bkudria/scuttlerun/commit/16c9f81f02e68a6f2e74f50396348aa0835d95a5))
+
 ## [0.2.1](https://github.com/bkudria/scuttlerun/compare/v0.2.0...v0.2.1) (2026-05-17)
 
 
