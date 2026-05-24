@@ -327,8 +327,8 @@ function recordToolFile(
   const inp = input as Record<string, unknown>;
   if (typeof inp.file_path !== 'string') return;
   if (name === 'Write') files.written.add(inp.file_path);
-  else if (name === 'Edit') files.edited.add(inp.file_path);
-  else if (name === 'Read') files.read.add(inp.file_path);
+  if (name === 'Edit') files.edited.add(inp.file_path);
+  if (name === 'Read') files.read.add(inp.file_path);
 }
 
 interface BuildSdkOptionsCtx {
