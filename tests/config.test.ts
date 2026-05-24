@@ -21,6 +21,7 @@ describe('parseSessionConfig', () => {
       'Grep',
       'AskUserQuestion',
       'Skill',
+      'Agent',
     ]);
     expect(config.model).toBe('claude-haiku-4-5');
     expect(config.permission_mode).toBe('bypassPermissions');
@@ -660,6 +661,7 @@ describe('additional_tools resolution', () => {
     'Grep',
     'AskUserQuestion',
     'Skill',
+    'Agent',
   ];
 
   it('appends additional_tools to the default tools when tools is absent', () => {

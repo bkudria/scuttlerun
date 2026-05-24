@@ -85,18 +85,18 @@ prompt: |
 
 ### Config Reference
 
-| Field              | Type                                            | Default                                                          |
-| ------------------ | ----------------------------------------------- | ---------------------------------------------------------------- |
-| `version`          | string                                          | `"1"` (config schema version; only `"1"` is currently accepted)  |
-| `prompt`           | string                                          | _(required)_                                                     |
-| `model`            | string                                          | `claude-haiku-4-5`                                               |
-| `max_turns`        | number                                          | `50`                                                             |
-| `max_budget_usd`   | number                                          | —                                                                |
-| `effort`           | `low` \| `medium` \| `high` \| `xhigh` \| `max` | `high`                                                           |
-| `tools`            | string[]                                        | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill]`  |
-| `additional_tools` | string[]                                        | — (appended to `tools` after defaults apply; deduped first-wins) |
-| `disallowed_tools` | string[]                                        | —                                                                |
-| `permission_mode`  | string                                          | `bypassPermissions`                                              |
+| Field              | Type                                            | Default                                                                |
+| ------------------ | ----------------------------------------------- | ---------------------------------------------------------------------- |
+| `version`          | string                                          | `"1"` (config schema version; only `"1"` is currently accepted)        |
+| `prompt`           | string                                          | _(required)_                                                           |
+| `model`            | string                                          | `claude-haiku-4-5`                                                     |
+| `max_turns`        | number                                          | `50`                                                                   |
+| `max_budget_usd`   | number                                          | —                                                                      |
+| `effort`           | `low` \| `medium` \| `high` \| `xhigh` \| `max` | `high`                                                                 |
+| `tools`            | string[]                                        | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill, Agent]` |
+| `additional_tools` | string[]                                        | — (appended to `tools` after defaults apply; deduped first-wins)       |
+| `disallowed_tools` | string[]                                        | —                                                                      |
+| `permission_mode`  | string                                          | `bypassPermissions`                                                    |
 
 #### `user` (synthetic user)
 
