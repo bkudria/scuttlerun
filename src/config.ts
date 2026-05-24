@@ -45,6 +45,7 @@ const ProjectConfigSchema = z
   .object({
     claude_md: z.string().optional(),
     skills: z.array(z.string()).optional(),
+    plugins: z.array(z.string()).optional(),
     settings: z.record(z.string(), z.unknown()).optional(),
     files: z.record(z.string(), z.string()).optional(),
     git_init: z.boolean().optional(),

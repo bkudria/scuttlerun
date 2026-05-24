@@ -107,9 +107,33 @@ value SessionInput {
 value ProjectTemplate {
     claude_md: String?
     skills: List<String>
+    plugins: List<String>
     settings: Map<String, Any>?
     files: Map<String, String>?
     git_init: Boolean
+
+    @guidance
+        -- plugins is the preferred caller surface for loading local
+        -- plugins into the agent session. Each entry is a path string
+        -- to a plugin directory (the directory containing
+        -- .claude-plugin/plugin.json).
+        --
+        -- At session-start, each project.plugins entry is translated
+        -- into a raw SDK plugin spec of shape (type: local, path: P)
+        -- where P is the resolved absolute path. The resolved entries
+        -- are concatenated with any caller-supplied raw sdk.plugins
+        -- entries (project entries first), and duplicates are removed
+        -- by resolved path on a first-wins basis. The order shape
+        -- mirrors the tools / additional_tools precedence model
+        -- documented on SessionInput.
+        --
+        -- Unlike project.skills, project.plugins does NOT scaffold
+        -- workspace symlinks under .claude/plugins/ and does NOT read
+        -- the plugin manifest at scaffold time. The translation is
+        -- purely a shape-level rewrite of the caller's SessionInput
+        -- before the Agent SDK is invoked. Per-plugin validation
+        -- (whether the path exists, whether it is a valid plugin) is
+        -- delegated to the Agent SDK.
 }
 
 value Sandbox {

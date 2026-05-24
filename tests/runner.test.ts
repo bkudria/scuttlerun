@@ -1763,6 +1763,98 @@ describe('runSession', () => {
     expect(mockResolveSkillPath).toHaveBeenCalledWith('./rel', process.cwd());
   });
 
+  it('translates project.plugins entries into sdk.plugins forwarded to query', async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
+      (opts: Record<string, Record<string, unknown>>) => {
+        capturedOptions = opts.options;
+        return createMockQuery([
+          {
+            type: 'system',
+            subtype: 'init',
+            session_id: 's-proj-plugins',
+            tools: [],
+            model: 'claude-haiku-4-5',
+          },
+          {
+            type: 'result',
+            subtype: 'success',
+            session_id: 's-proj-plugins',
+            num_turns: 1,
+            total_cost_usd: 0,
+          },
+        ]);
+      },
+    );
+
+    await runSession(
+      minConfig({
+        project: {
+          plugins: ['~/code/plugin-a', './rel-plugin'],
+        },
+      }),
+      { configDir: '/tmp/cfg' },
+    );
+
+    expect(mockResolveSkillPath).toHaveBeenCalledWith('~/code/plugin-a', '/tmp/cfg');
+    expect(mockResolveSkillPath).toHaveBeenCalledWith('./rel-plugin', '/tmp/cfg');
+    expect(capturedOptions?.plugins).toEqual([
+      { type: 'local', path: '~/code/plugin-a' },
+      { type: 'local', path: './rel-plugin' },
+    ]);
+  });
+
+  it('merges project.plugins with sdk.plugins, deduping by resolved path (first-wins)', async () => {
+    let capturedOptions: Record<string, unknown> | undefined;
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
+      (opts: Record<string, Record<string, unknown>>) => {
+        capturedOptions = opts.options;
+        return createMockQuery([
+          {
+            type: 'system',
+            subtype: 'init',
+            session_id: 's-merge-plugins',
+            tools: [],
+            model: 'claude-haiku-4-5',
+          },
+          {
+            type: 'result',
+            subtype: 'success',
+            session_id: 's-merge-plugins',
+            num_turns: 1,
+            total_cost_usd: 0,
+          },
+        ]);
+      },
+    );
+
+    await runSession(
+      minConfig({
+        project: {
+          // project.plugins entries come first → canonical
+          plugins: ['/abs/plugin-a', '/abs/plugin-b'],
+        },
+        sdk: {
+          system_prompt: { preset: 'claude_code' as const },
+          // /abs/plugin-a duplicates project entry → dropped
+          // /abs/plugin-c is unique → preserved
+          plugins: [
+            { type: 'local', path: '/abs/plugin-a' },
+            { type: 'local', path: '/abs/plugin-c' },
+          ],
+          setting_sources: [],
+        },
+      }),
+      { configDir: '/tmp/cfg' },
+    );
+
+    expect(capturedOptions?.plugins).toEqual([
+      { type: 'local', path: '/abs/plugin-a' },
+      { type: 'local', path: '/abs/plugin-b' },
+      { type: 'local', path: '/abs/plugin-c' },
+    ]);
+  });
+
   it('passes claude_code preset as default systemPrompt', async () => {
     let capturedOptions: Record<string, unknown> | undefined;
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(

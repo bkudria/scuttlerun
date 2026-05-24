@@ -525,6 +525,41 @@ describe('parseSessionConfig', () => {
       }),
     ).toThrow();
   });
+
+  it('parses valid project.plugins string array', () => {
+    const config = parseSessionConfig({
+      prompt: 'hi',
+      project: {
+        plugins: ['/absolute/path/to/plugin', '~/my-plugin'],
+      },
+    });
+    expect(config.project?.plugins).toEqual(['/absolute/path/to/plugin', '~/my-plugin']);
+  });
+
+  it('defaults project.plugins to undefined when not specified', () => {
+    const config = parseSessionConfig({
+      prompt: 'hi',
+      project: { claude_md: 'test' },
+    });
+    expect(config.project?.plugins).toBeUndefined();
+  });
+
+  it('accepts empty project.plugins array', () => {
+    const config = parseSessionConfig({
+      prompt: 'hi',
+      project: { plugins: [] },
+    });
+    expect(config.project?.plugins).toEqual([]);
+  });
+
+  it('rejects non-string entries in project.plugins', () => {
+    expect(() =>
+      parseSessionConfig({
+        prompt: 'hi',
+        project: { plugins: [{ type: 'local', path: '/foo' }] },
+      }),
+    ).toThrow();
+  });
 });
 
 describe('mergeRawConfigs', () => {

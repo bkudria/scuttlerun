@@ -44,6 +44,12 @@ Session Config (YAML):
         Use clear, descriptive variable names.
       skills:                           # Symlinked into <tempdir>/.claude/skills/
         - ~/.claude/skills/my-skill     #   Supports ~ and relative paths
+      plugins:                          # Preferred surface for loading plugins
+        - ~/code/my-plugin              #   Translated at runtime to
+                                        #   sdk.plugins: [{type: local, path: ...}]
+                                        #   Supports ~ and relative paths
+                                        #   Merged with sdk.plugins; dedupe first-wins
+                                        #   by resolved path
       settings: {}                      # Written to <tempdir>/.claude/settings.json
       files:                            # Written to <tempdir>/<path> (key=path, value=content)
         app.py: |
@@ -93,9 +99,11 @@ Session Config (YAML):
         type: adaptive                  #   adaptive | enabled | disabled
       mcp_servers: {}                   # MCP server definitions (optional)
       agents: {}                        # Subagent definitions (optional)
-      plugins:                          # Plugins to load (optional)
-        - type: local                   #   Local plugin directory
-          path: ~/code/my-plugin        #   Supports ~ and relative paths
+      plugins:                          # Raw SDK plugin entries (escape hatch)
+        - type: local                   #   Prefer project.plugins above for
+          path: ~/code/my-plugin        #   the common local-plugin case
+                                        #   Merged with project.plugins; dedupe
+                                        #   first-wins by resolved path
       env: {}                           # Environment variables (optional)
       setting_sources:                  # Settings to load (optional)
         - project                       #   Auto-set to [project] when project: present
