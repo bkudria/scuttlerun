@@ -144,94 +144,12 @@ export async function runSession(
       }
     }
 
-    // Build SDK options
-    const sdkOptions: Record<string, unknown> = {
+    const sdkOptions = buildSdkOptions(config, options, {
       cwd,
-      permissionMode: config.permission_mode,
-      allowDangerouslySkipPermissions: config.permission_mode === 'bypassPermissions',
-      tools: config.tools,
-      maxTurns: config.max_turns,
+      sandboxHome,
       abortController,
-      effort: config.effort,
-      settingSources: config.sdk.setting_sources,
-    };
-
-    sdkOptions.model = config.model;
-    if (config.max_budget_usd) sdkOptions.maxBudgetUsd = config.max_budget_usd;
-    const sp = config.sdk.system_prompt;
-    if (typeof sp === 'string') {
-      sdkOptions.systemPrompt = [sp, SYSTEM_PROMPT_DYNAMIC_BOUNDARY];
-    } else {
-      sdkOptions.systemPrompt = {
-        type: 'preset' as const,
-        preset: sp.preset,
-        ...(sp.append && { append: sp.append }),
-      };
-    }
-    if (config.disallowed_tools) sdkOptions.disallowedTools = config.disallowed_tools;
-    if (config.sdk.thinking) sdkOptions.thinking = config.sdk.thinking;
-    if (config.sdk.mcp_servers) sdkOptions.mcpServers = config.sdk.mcp_servers;
-    if (config.sdk.agents) sdkOptions.agents = config.sdk.agents;
-    const projectPlugins = config.project?.plugins ?? [];
-    const sdkPlugins = config.sdk.plugins ?? [];
-    if (projectPlugins.length > 0 || sdkPlugins.length > 0) {
-      const configDir = options.configDir || process.cwd();
-      const resolved = [
-        ...projectPlugins.map((p) => ({
-          type: 'local' as const,
-          path: resolveSkillPath(p, configDir),
-        })),
-        ...sdkPlugins.map((p) => ({
-          ...p,
-          path: resolveSkillPath(p.path, configDir),
-        })),
-      ];
-      const seen = new Set<string>();
-      sdkOptions.plugins = resolved.filter((p) => {
-        if (seen.has(p.path)) return false;
-        seen.add(p.path);
-        return true;
-      });
-    }
-    // Subprocess environment: when sandbox is enabled, filter process.env
-    // through an allowlist to prevent leaking secrets (API keys, tokens, etc.)
-    if (sandboxHome) {
-      sdkOptions.env = buildSandboxEnv(
-        process.env as Record<string, string | undefined>,
-        config.sdk.env,
-        sandboxHome,
-      );
-    } else if (config.sdk.env) {
-      sdkOptions.env = config.sdk.env;
-    } else {
-      // Inherit parent env minus CLAUDECODE, which the SDK rejects as a nested session
-      sdkOptions.env = { ...process.env, CLAUDECODE: undefined };
-    }
-
-    // Sandbox settings
-    if (config.sandbox.enabled) {
-      sdkOptions.sandbox = {
-        enabled: true,
-        autoAllowBashIfSandboxed: true,
-        allowUnsandboxedCommands: false,
-        network: {
-          allowedDomains: config.sandbox.network.allowed_domains,
-          allowLocalBinding: config.sandbox.network.allow_local_binding,
-        },
-        filesystem: {
-          allowWrite: [cwd, '/tmp', ...config.sandbox.filesystem.allow_write],
-          denyRead: config.sandbox.filesystem.deny_read,
-          denyWrite: config.sandbox.filesystem.deny_write,
-        },
-      };
-    }
-
-    // Stderr capture
-    if (verbose) {
-      sdkOptions.stderr = (data: string) => {
-        process.stderr.write(data);
-      };
-    }
+      verbose,
+    });
 
     // Create a lazy SyntheticUser — initialized once we have a session ID
     let syntheticUser: SyntheticUser | undefined;
@@ -306,16 +224,11 @@ export async function runSession(
             } else if (block.type === 'tool_use' && block.name) {
               writeTool(block.name, block.input);
               toolCallCount++;
-              // BetaToolUseBlock.input is typed `unknown` by the SDK because
-              // tool input shapes are user-defined. We only read file_path
-              // for the built-in Read/Write/Edit tools.
-              const inp = block.input as Record<string, unknown>;
-              if (block.name === 'Write' && typeof inp.file_path === 'string')
-                filesWritten.add(inp.file_path);
-              else if (block.name === 'Edit' && typeof inp.file_path === 'string')
-                filesEdited.add(inp.file_path);
-              else if (block.name === 'Read' && typeof inp.file_path === 'string')
-                filesRead.add(inp.file_path);
+              recordToolFile(block.name, block.input, {
+                written: filesWritten,
+                edited: filesEdited,
+                read: filesRead,
+              });
             }
           }
           if (textParts.length > 0 && syntheticUser) {
@@ -402,6 +315,124 @@ export async function runSession(
   }
 
   return { exitCode, sessionId };
+}
+
+// BetaToolUseBlock.input is typed `unknown` by the SDK because tool input shapes
+// are user-defined. We only read file_path for the built-in Read/Write/Edit tools.
+function recordToolFile(
+  name: string,
+  input: unknown,
+  files: { written: Set<string>; edited: Set<string>; read: Set<string> },
+): void {
+  const inp = input as Record<string, unknown>;
+  if (typeof inp.file_path !== 'string') return;
+  if (name === 'Write') files.written.add(inp.file_path);
+  else if (name === 'Edit') files.edited.add(inp.file_path);
+  else if (name === 'Read') files.read.add(inp.file_path);
+}
+
+interface BuildSdkOptionsCtx {
+  cwd: string;
+  sandboxHome: string | undefined;
+  abortController: AbortController;
+  verbose: boolean;
+}
+
+function buildSdkOptions(
+  config: SessionConfig,
+  options: RunOptions,
+  ctx: BuildSdkOptionsCtx,
+): Record<string, unknown> {
+  const { cwd, sandboxHome, abortController, verbose } = ctx;
+  const sdkOptions: Record<string, unknown> = {
+    cwd,
+    permissionMode: config.permission_mode,
+    allowDangerouslySkipPermissions: config.permission_mode === 'bypassPermissions',
+    tools: config.tools,
+    maxTurns: config.max_turns,
+    abortController,
+    effort: config.effort,
+    settingSources: config.sdk.setting_sources,
+    model: config.model,
+  };
+
+  if (config.max_budget_usd) sdkOptions.maxBudgetUsd = config.max_budget_usd;
+  const sp = config.sdk.system_prompt;
+  if (typeof sp === 'string') {
+    sdkOptions.systemPrompt = [sp, SYSTEM_PROMPT_DYNAMIC_BOUNDARY];
+  } else {
+    sdkOptions.systemPrompt = {
+      type: 'preset' as const,
+      preset: sp.preset,
+      ...(sp.append && { append: sp.append }),
+    };
+  }
+  if (config.disallowed_tools) sdkOptions.disallowedTools = config.disallowed_tools;
+  if (config.sdk.thinking) sdkOptions.thinking = config.sdk.thinking;
+  if (config.sdk.mcp_servers) sdkOptions.mcpServers = config.sdk.mcp_servers;
+  if (config.sdk.agents) sdkOptions.agents = config.sdk.agents;
+
+  const projectPlugins = config.project?.plugins ?? [];
+  const sdkPlugins = config.sdk.plugins ?? [];
+  if (projectPlugins.length > 0 || sdkPlugins.length > 0) {
+    const configDir = options.configDir || process.cwd();
+    const resolved = [
+      ...projectPlugins.map((p) => ({
+        type: 'local' as const,
+        path: resolveSkillPath(p, configDir),
+      })),
+      ...sdkPlugins.map((p) => ({
+        ...p,
+        path: resolveSkillPath(p.path, configDir),
+      })),
+    ];
+    const seen = new Set<string>();
+    sdkOptions.plugins = resolved.filter((p) => {
+      if (seen.has(p.path)) return false;
+      seen.add(p.path);
+      return true;
+    });
+  }
+
+  // Subprocess environment: when sandbox is enabled, filter process.env
+  // through an allowlist to prevent leaking secrets (API keys, tokens, etc.)
+  if (sandboxHome) {
+    sdkOptions.env = buildSandboxEnv(
+      process.env as Record<string, string | undefined>,
+      config.sdk.env,
+      sandboxHome,
+    );
+  } else if (config.sdk.env) {
+    sdkOptions.env = config.sdk.env;
+  } else {
+    // Inherit parent env minus CLAUDECODE, which the SDK rejects as a nested session
+    sdkOptions.env = { ...process.env, CLAUDECODE: undefined };
+  }
+
+  if (config.sandbox.enabled) {
+    sdkOptions.sandbox = {
+      enabled: true,
+      autoAllowBashIfSandboxed: true,
+      allowUnsandboxedCommands: false,
+      network: {
+        allowedDomains: config.sandbox.network.allowed_domains,
+        allowLocalBinding: config.sandbox.network.allow_local_binding,
+      },
+      filesystem: {
+        allowWrite: [cwd, '/tmp', ...config.sandbox.filesystem.allow_write],
+        denyRead: config.sandbox.filesystem.deny_read,
+        denyWrite: config.sandbox.filesystem.deny_write,
+      },
+    };
+  }
+
+  if (verbose) {
+    sdkOptions.stderr = (data: string) => {
+      process.stderr.write(data);
+    };
+  }
+
+  return sdkOptions;
 }
 
 export const SAFE_ENV_VARS: ReadonlySet<string> = new Set([
