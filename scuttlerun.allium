@@ -1020,6 +1020,31 @@ surface StreamingTranscript {
         -- and thinking) is preserved by the Agent SDK in a JSONL file
         -- whose path is announced in the preamble. scuttlerun does not
         -- own this file.
+
+    @guarantee TranscriptToolFieldContract
+        -- The transcript captures tool invocations as observations, not
+        -- as faithful reproductions of tool inputs. For each named tool
+        -- below, the entry carries exactly the listed fields (in addition
+        -- to `tool:` and `sequence:`); all other input fields the agent
+        -- supplied are intentionally dropped from the YAML transcript.
+        -- The SDK JSONL (see `FullConversationInJsonl`) is the source of
+        -- truth for full tool inputs.
+        --
+        --   * Read, Write, Edit  → `path` (from `file_path`).
+        --     Content-bearing fields (`content`, `old_string`,
+        --     `new_string`) do NOT appear in the transcript. Downstream
+        --     graders cannot assert on what was written or replaced from
+        --     the transcript alone.
+        --   * Bash               → `command`.
+        --   * Glob, Grep         → `pattern`.
+        --   * TodoWrite          → `todos` (full array).
+        --   * TaskCreate         → `subject`, `description`.
+        --   * TaskUpdate         → `task_id` (from `taskId`); `status`
+        --     only when supplied.
+        --   * TaskList           → no extra fields.
+        --   * TaskGet            → `task_id` (from `taskId`).
+        --   * Any other tool name → the full `input` mapping is emitted
+        --     verbatim under an `input:` key.
 }
 
 surface AgentSdkBoundary {

@@ -231,9 +231,11 @@ duration_s: 12.3
 
 The output is valid YAML and machine-parseable (e.g. with `yq`).
 
+**Tool-call entries are observations, not reproductions.** Each tool entry carries the tool name plus a small, fixed set of identifying fields — `path` for `Read`/`Write`/`Edit`, `command` for `Bash`, `pattern` for `Glob`/`Grep`, and similar minimal handles for `Task*`/`TodoWrite`. Content-bearing fields (the bytes a `Write` wrote, the strings an `Edit` replaced) are **intentionally dropped from the YAML transcript** and are not available to downstream graders that consume the transcript text alone. Unknown tool names emit their full `input` mapping. The complete contract is `@guarantee TranscriptToolFieldContract` in [`scuttlerun.allium`](scuttlerun.allium); the SDK JSONL below is the source of truth for full tool inputs.
+
 **Project directory** — Always created in `$TMPDIR` as `scuttlerun-project-<id>/`, preserved after the session ends so you can inspect agent-created files. On the next run, scuttlerun garbage-collects its own `scuttlerun-project-*` directories that are older than 7 days; nothing else in `$TMPDIR` is touched.
 
-**SDK session file** — Full conversation record in Claude Code's native JSONL format at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Queryable with `jq`.
+**SDK session file** — Full conversation record in Claude Code's native JSONL format at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Queryable with `jq`. This is the authoritative record of full tool inputs and outputs; the YAML transcript is a lossy summary.
 
 ## Privacy
 

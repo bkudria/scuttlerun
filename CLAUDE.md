@@ -45,6 +45,8 @@ npm run dev -- examples/simple.yaml             # Run via tsx (no build step)
 
 **Output:** scuttlerun streams a human-readable transcript to stdout (preamble → messages → summary). The SDK session file (full conversation JSONL) is preserved automatically. The project temp dir is always created and preserved at session end; on the next session start, scuttlerun garbage-collects its own `scuttlerun-project-*` directories in `$TMPDIR` that are older than 7 days.
 
+**Transcript tool-field contract:** the YAML transcript is intentionally lossy. For each known tool the entry carries a small fixed set of identifying fields — e.g. `path` for `Read`/`Write`/`Edit`, `command` for `Bash`. Content-bearing fields like `content`, `old_string`, and `new_string` are **dropped** before serialization in `src/transcript.ts:writeTool` — downstream pincenez checks that need to assert on what was written must consult the SDK JSONL, not the YAML transcript. The full contract lives in `scuttlerun.allium`'s `@guarantee TranscriptToolFieldContract`. Changing the captured fields requires updating that guarantee in lockstep.
+
 ## Agent SDK Reference
 
 When working with Agent SDK code (`@anthropic-ai/claude-agent-sdk`), load the `/claude-api` skill and consult the Agent SDK docs at https://platform.claude.com/docs/en/agent-sdk/typescript before making changes. The SDK API surface has non-obvious constraints (see Key Technical Details below).
