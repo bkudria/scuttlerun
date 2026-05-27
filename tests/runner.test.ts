@@ -30,7 +30,7 @@ vi.mock('../src/project.js', () => {
     scaffoldProject: vi
       .fn()
       .mockResolvedValue({ projectPath: '/tmp/scuttlerun-project-scaffold123' }),
-    resolveSkillPath: vi.fn((p: string) => p),
+    resolveConfigPath: vi.fn((p: string) => p),
   };
 });
 vi.mock('../src/cleanup.js', () => {
@@ -56,7 +56,7 @@ import { query as mockQueryFn } from '@anthropic-ai/claude-agent-sdk';
 import {
   createProjectDir as mockCreateProjectDir,
   scaffoldProject as mockScaffoldProject,
-  resolveSkillPath as mockResolveSkillPath,
+  resolveConfigPath as mockResolveConfigPath,
 } from '../src/project.js';
 import { cleanOldProjects as mockCleanOldProjects } from '../src/cleanup.js';
 
@@ -1739,7 +1739,7 @@ describe('runSession', () => {
       { configDir: '/tmp/cfg' },
     );
 
-    expect(mockResolveSkillPath).toHaveBeenCalledWith('~/my-plugin', '/tmp/cfg');
+    expect(mockResolveConfigPath).toHaveBeenCalledWith('~/my-plugin', '/tmp/cfg');
     expect(capturedOptions?.plugins).toEqual([{ type: 'local', path: '~/my-plugin' }]);
   });
 
@@ -1774,7 +1774,7 @@ describe('runSession', () => {
       // no configDir — forces options.configDir || process.cwd() to take the right side
     );
 
-    expect(mockResolveSkillPath).toHaveBeenCalledWith('./rel', process.cwd());
+    expect(mockResolveConfigPath).toHaveBeenCalledWith('./rel', process.cwd());
   });
 
   it('translates project.plugins entries into sdk.plugins forwarded to query', async () => {
@@ -1810,8 +1810,8 @@ describe('runSession', () => {
       { configDir: '/tmp/cfg' },
     );
 
-    expect(mockResolveSkillPath).toHaveBeenCalledWith('~/code/plugin-a', '/tmp/cfg');
-    expect(mockResolveSkillPath).toHaveBeenCalledWith('./rel-plugin', '/tmp/cfg');
+    expect(mockResolveConfigPath).toHaveBeenCalledWith('~/code/plugin-a', '/tmp/cfg');
+    expect(mockResolveConfigPath).toHaveBeenCalledWith('./rel-plugin', '/tmp/cfg');
     expect(capturedOptions?.plugins).toEqual([
       { type: 'local', path: '~/code/plugin-a' },
       { type: 'local', path: './rel-plugin' },

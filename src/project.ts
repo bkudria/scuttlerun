@@ -67,7 +67,7 @@ async function validateSkills(
   if (!skills || skills.length === 0) return [];
   const resolved: Array<{ original: string; resolved: string }> = [];
   for (const skillPath of skills) {
-    const resolvedPath = resolveSkillPath(skillPath, configDir);
+    const resolvedPath = resolveConfigPath(skillPath, configDir);
     await validateSkillPath(skillPath, resolvedPath);
     resolved.push({ original: skillPath, resolved: resolvedPath });
   }
@@ -116,7 +116,7 @@ async function validateSkillPath(originalPath: string, resolvedPath: string): Pr
   }
 }
 
-export function resolveSkillPath(skillPath: string, configDir: string): string {
+export function resolveConfigPath(skillPath: string, configDir: string): string {
   // Expand tilde
   if (skillPath.startsWith('~/')) {
     const home = process.env.HOME;

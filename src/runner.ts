@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { SessionConfig } from './config.js';
 import { Oracle, AskUserQuestionInputSchema } from './oracle.js';
 import { SyntheticUser } from './synthetic-user.js';
-import { scaffoldProject, createProjectDir, resolveSkillPath } from './project.js';
+import { scaffoldProject, createProjectDir, resolveConfigPath } from './project.js';
 import { cleanOldProjects, WORKSPACE_CLEANUP_AGE_DAYS } from './cleanup.js';
 import {
   EXIT_SUCCESS,
@@ -392,11 +392,11 @@ function buildSdkOptions(
     const resolved = [
       ...projectPlugins.map((p) => ({
         type: 'local' as const,
-        path: resolveSkillPath(p, configDir),
+        path: resolveConfigPath(p, configDir),
       })),
       ...sdkPlugins.map((p) => ({
         ...p,
-        path: resolveSkillPath(p.path, configDir),
+        path: resolveConfigPath(p.path, configDir),
       })),
     ];
     const seen = new Set<string>();
