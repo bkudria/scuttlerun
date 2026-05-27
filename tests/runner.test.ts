@@ -437,9 +437,11 @@ describe('runSession', () => {
     expect(capturedCanUseTool).toBeDefined();
     if (!capturedCanUseTool) throw new Error('capturedCanUseTool not set');
 
-    // Non-AskUserQuestion tools should be allowed
-    const allowResult = (await capturedCanUseTool('Read', {})) as { behavior: string };
-    expect(allowResult.behavior).toBe('allow');
+    // Allow branch must include `updatedInput` per the SDK's PermissionResult
+    // schema (see issue #36); the runner passes input through unchanged.
+    const sampleInput = { file_path: '/tmp/example.txt' };
+    const allowResult = await capturedCanUseTool('Read', sampleInput);
+    expect(allowResult).toEqual({ behavior: 'allow', updatedInput: sampleInput });
   });
 
   it('denies AskUserQuestion with malformed input', async () => {
@@ -477,11 +479,13 @@ describe('runSession', () => {
     expect(capturedCanUseTool).toBeDefined();
     if (!capturedCanUseTool) throw new Error('capturedCanUseTool not set');
 
-    // Malformed AskUserQuestion input should be denied
-    const denyResult = (await capturedCanUseTool('AskUserQuestion', { garbage: true })) as {
-      behavior: string;
-    };
-    expect(denyResult.behavior).toBe('deny');
+    // Deny branch must include a `message` per the SDK's PermissionResult
+    // schema (see issue #36).
+    const denyResult = await capturedCanUseTool('AskUserQuestion', { garbage: true });
+    expect(denyResult).toEqual({
+      behavior: 'deny',
+      message: expect.stringMatching(/\S/),
+    });
   });
 
   it('handles timeout with exit code 6', async () => {
@@ -1351,7 +1355,7 @@ describe('runSession', () => {
       .mockRejectedValueOnce(new Error('Oracle exhausted 4 attempts: network down'));
 
     let capturedCanUseTool: CanUseToolFn | undefined;
-    let askResult: { behavior: string } | undefined;
+    let askResult: unknown;
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
       (opts: { options: { canUseTool?: CanUseToolFn } }) => {
         capturedCanUseTool = opts.options.canUseTool;
@@ -1367,7 +1371,7 @@ describe('runSession', () => {
               model: 'claude-haiku-4-5',
             };
             if (!capturedCanUseTool) throw new Error('capturedCanUseTool not set');
-            askResult = (await capturedCanUseTool('AskUserQuestion', {
+            askResult = await capturedCanUseTool('AskUserQuestion', {
               questions: [
                 {
                   question: 'What language?',
@@ -1379,7 +1383,7 @@ describe('runSession', () => {
                   multiSelect: false,
                 },
               ],
-            })) as { behavior: string };
+            });
             yield {
               type: 'result',
               subtype: 'success',
@@ -1394,7 +1398,12 @@ describe('runSession', () => {
 
     const result = await runSession(minConfig());
 
-    expect(askResult?.behavior).toBe('deny');
+    // Deny branch must include a `message` per the SDK's PermissionResult
+    // schema (see issue #36).
+    expect(askResult).toEqual({
+      behavior: 'deny',
+      message: expect.stringMatching(/\S/),
+    });
     expect(stdoutOutput).toContain('oracle: error');
     expect(stdoutOutput).toContain('Oracle exhausted 4 attempts: network down');
     expect(result.exitCode).toBe(2);
