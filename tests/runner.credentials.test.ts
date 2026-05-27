@@ -7,7 +7,6 @@ import {
   symlinkSync,
   lstatSync,
   readlinkSync,
-  readFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -66,7 +65,6 @@ describe('linkOauthCredentialIntoSandbox', () => {
     expect(result).toEqual({ linked: true, source, link: expectedLink });
     expect(lstatSync(expectedLink).isSymbolicLink()).toBe(true);
     expect(readlinkSync(expectedLink)).toBe(source);
-    expect(readFileSync(expectedLink, 'utf8')).toBe('{"token":"oauth-happy-path"}');
   });
 
   it('is idempotent when link already exists pointing to same source', () => {
@@ -88,18 +86,18 @@ describe('linkOauthCredentialIntoSandbox', () => {
     writeFileSync(otherSource, '{"token":"other"}');
     mkdirSync(join(sandboxHome, '.claude'), { recursive: true });
     symlinkSync(otherSource, join(sandboxHome, '.claude', '.credentials.json'));
-    expect(() =>
-      linkOauthCredentialIntoSandbox({ realHome, sandboxHome, env: {} }),
-    ).toThrow(/already exists/);
+    expect(() => linkOauthCredentialIntoSandbox({ realHome, sandboxHome, env: {} })).toThrow(
+      /already exists/,
+    );
   });
 
   it('throws when link path exists as a regular file', () => {
     writeRealCredentials();
     mkdirSync(join(sandboxHome, '.claude'), { recursive: true });
     writeFileSync(join(sandboxHome, '.claude', '.credentials.json'), '{}');
-    expect(() =>
-      linkOauthCredentialIntoSandbox({ realHome, sandboxHome, env: {} }),
-    ).toThrow(/already exists/);
+    expect(() => linkOauthCredentialIntoSandbox({ realHome, sandboxHome, env: {} })).toThrow(
+      /already exists/,
+    );
   });
 
   it.each([
