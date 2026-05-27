@@ -1,12 +1,5 @@
 import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readlinkSync,
-  realpathSync,
-  symlinkSync,
-} from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, symlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { SessionConfig } from './config.js';
@@ -475,7 +468,7 @@ export function linkOauthCredentialIntoSandbox(opts: {
   const link = join(opts.sandboxHome, '.claude', '.credentials.json');
   mkdirSync(join(opts.sandboxHome, '.claude'), { recursive: true });
 
-  const existing = tryLstat(link);
+  const existing = lstatSync(link, { throwIfNoEntry: false });
   if (existing) {
     if (existing.isSymbolicLink() && readlinkSync(link) === source) {
       return { linked: true, source, link };
@@ -487,15 +480,6 @@ export function linkOauthCredentialIntoSandbox(opts: {
 
   symlinkSync(source, link);
   return { linked: true, source, link };
-}
-
-function tryLstat(path: string): ReturnType<typeof lstatSync> | undefined {
-  try {
-    return lstatSync(path);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw err;
-  }
 }
 
 export const SAFE_ENV_VARS: ReadonlySet<string> = new Set([
