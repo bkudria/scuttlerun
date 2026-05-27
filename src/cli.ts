@@ -35,22 +35,6 @@ interface CliOverrides {
 }
 
 /**
- * Verify that ANTHROPIC_API_KEY is set in the environment before running a
- * session. Without this check, auth failures only surface deep inside the
- * Anthropic SDK at the first network call. Exported for testing.
- */
-export function assertAnthropicApiKey(): void {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key || key.trim() === '') {
-    throw new Error(
-      'ANTHROPIC_API_KEY is not set. Export it before running scuttlerun:\n' +
-        '  export ANTHROPIC_API_KEY=sk-ant-...\n' +
-        'See the Setup section of README.md for details.',
-    );
-  }
-}
-
-/**
  * Build a SessionConfig from YAML content strings and CLI overrides.
  * Exported for testing.
  */
@@ -185,8 +169,6 @@ async function main() {
           process.stdout.write(stringifyYaml(summary));
           process.exit(EXIT_SUCCESS);
         }
-
-        assertAnthropicApiKey();
 
         const signalController = new AbortController();
         let signalCount = 0;

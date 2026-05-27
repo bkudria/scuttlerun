@@ -56,13 +56,16 @@ npm link          # makes `scuttlerun` available globally
 
 ## Configuration
 
-scuttlerun requires an Anthropic API key:
+scuttlerun authenticates via the Claude Agent SDK, which resolves credentials in this order:
 
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
+1. `ANTHROPIC_API_KEY` environment variable, if set:
+   ```bash
+   export ANTHROPIC_API_KEY=sk-ant-...
+   ```
+   Get one at [console.anthropic.com](https://console.anthropic.com/).
+2. Otherwise, OAuth credentials from `~/.claude/` (created by `claude` login on a Claude Code subscription).
 
-Get one at [console.anthropic.com](https://console.anthropic.com/).
+Either is sufficient. If neither is present, the SDK reports the auth failure on its first network call.
 
 ## Quick Start
 
