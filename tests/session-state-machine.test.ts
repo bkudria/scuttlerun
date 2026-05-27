@@ -45,7 +45,7 @@ vi.mock('../src/project.js', () => ({
   scaffoldProject: vi
     .fn()
     .mockResolvedValue({ projectPath: '/tmp/scuttlerun-project-fsm-scaffold' }),
-  resolveSkillPath: vi.fn((p: string) => p),
+  resolveConfigPath: vi.fn((p: string) => p),
 }));
 
 vi.mock('../src/cleanup.js', () => ({

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
-import { scaffoldProject, createProjectDir, resolveSkillPath } from '../src/project.js';
+import { scaffoldProject, createProjectDir, resolveConfigPath } from '../src/project.js';
 import type { ProjectConfig } from '../src/config.js';
 
 describe('createProjectDir', () => {
@@ -321,7 +321,7 @@ describe('scaffoldProject', () => {
   });
 });
 
-describe('resolveSkillPath', () => {
+describe('resolveConfigPath', () => {
   let origHome: string | undefined;
 
   beforeEach(() => {
@@ -335,16 +335,16 @@ describe('resolveSkillPath', () => {
 
   it('expands ~/ when HOME is set', () => {
     process.env.HOME = '/users/alice';
-    expect(resolveSkillPath('~/skills/foo', '/cfg')).toBe('/users/alice/skills/foo');
+    expect(resolveConfigPath('~/skills/foo', '/cfg')).toBe('/users/alice/skills/foo');
   });
 
   it('throws when HOME is unset and skill path begins with ~/', () => {
     delete process.env.HOME;
-    expect(() => resolveSkillPath('~/skills/foo', '/cfg')).toThrow(/HOME/);
+    expect(() => resolveConfigPath('~/skills/foo', '/cfg')).toThrow(/HOME/);
   });
 
   it('resolves relative paths against configDir without consulting HOME', () => {
     delete process.env.HOME;
-    expect(resolveSkillPath('skills/foo', '/cfg')).toBe('/cfg/skills/foo');
+    expect(resolveConfigPath('skills/foo', '/cfg')).toBe('/cfg/skills/foo');
   });
 });
