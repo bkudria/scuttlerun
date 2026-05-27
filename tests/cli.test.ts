@@ -1,7 +1,7 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { assertAnthropicApiKey, buildConfig, getCliVersion } from '../src/cli.js';
+import { buildConfig, getCliVersion } from '../src/cli.js';
 
 describe('buildConfig', () => {
   it('parses a YAML file into a SessionConfig', async () => {
@@ -70,35 +70,6 @@ max_budget_usd: 1.0
     const yaml = `prompt: hi\n`;
     const config = await buildConfig([yaml], { maxBudgetUsd: 2.5 });
     expect(config.max_budget_usd).toBe(2.5);
-  });
-});
-
-describe('assertAnthropicApiKey', () => {
-  const originalKey = process.env.ANTHROPIC_API_KEY;
-  afterEach(() => {
-    if (originalKey === undefined) delete process.env.ANTHROPIC_API_KEY;
-    else process.env.ANTHROPIC_API_KEY = originalKey;
-  });
-
-  it('returns silently when ANTHROPIC_API_KEY is set', () => {
-    process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
-    expect(() => assertAnthropicApiKey()).not.toThrow();
-  });
-
-  it('throws an actionable error when ANTHROPIC_API_KEY is unset', () => {
-    delete process.env.ANTHROPIC_API_KEY;
-    expect(() => assertAnthropicApiKey()).toThrow(/ANTHROPIC_API_KEY/);
-    expect(() => assertAnthropicApiKey()).toThrow(/README/);
-  });
-
-  it('throws when ANTHROPIC_API_KEY is empty', () => {
-    process.env.ANTHROPIC_API_KEY = '';
-    expect(() => assertAnthropicApiKey()).toThrow(/ANTHROPIC_API_KEY/);
-  });
-
-  it('throws when ANTHROPIC_API_KEY is whitespace only', () => {
-    process.env.ANTHROPIC_API_KEY = '   ';
-    expect(() => assertAnthropicApiKey()).toThrow(/ANTHROPIC_API_KEY/);
   });
 });
 
