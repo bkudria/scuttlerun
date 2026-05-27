@@ -133,6 +133,8 @@ When present, scuttlerun populates the project temp directory.
 
 Enabled by default. Restricts the agent's filesystem and network access. When the sandbox is enabled, `$HOME` is redirected to `<projectDir>/.home` so tools (npm, pip, cargo) write caches inside the sandbox rather than your real home directory.
 
+For OAuth-based auth (Claude Code subscription login), there's a single carve-out: when no `ANTHROPIC_API_KEY` is set, scuttlerun symlinks `~/.claude/.credentials.json` into the sandbox so the Agent SDK can find it. Nothing else under `~/.claude/` (skills, plugins, commands, agents, settings, session history) is exposed.
+
 | Field                                 | Type     | Default                                   |
 | ------------------------------------- | -------- | ----------------------------------------- |
 | `sandbox.enabled`                     | boolean  | `true`                                    |

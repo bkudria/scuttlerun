@@ -264,6 +264,17 @@ entity Workspace {
         -- of whether the workspace was scaffolded from a project
         -- template.
         --
+        -- A single carve-out exists for OAuth authentication: when no
+        -- ANTHROPIC_API_KEY is set on the parent process and the
+        -- operator's real-home credentials file exists, that one file
+        -- (~/.claude/.credentials.json) is exposed inside the sandbox
+        -- via a symlink at <workspace>/.home/.claude/.credentials.json.
+        -- Nothing else under the operator's ~/.claude/ is reachable
+        -- from the agent subprocess; skills, plugins, commands, agents,
+        -- settings, prior session history and other operator state stay
+        -- invisible. The carve-out is silently skipped when an API key
+        -- is set or when no credentials file exists.
+        --
         -- When session.input.sandbox.enabled, the agent subprocess
         -- receives only an allowlisted set of environment variables
         -- (plus any user-supplied sdk.env overrides applied on top).

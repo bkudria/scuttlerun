@@ -1,5 +1,6 @@
 import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
-import { mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, symlinkSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { SessionConfig } from './config.js';
 import { Oracle, AskUserQuestionInputSchema } from './oracle.js';
@@ -73,6 +74,16 @@ export async function runSession(
   const sandboxHome = config.sandbox.enabled ? join(cwd, '.home') : undefined;
   if (sandboxHome) {
     mkdirSync(sandboxHome, { recursive: true });
+    const credResult = linkOauthCredentialIntoSandbox({
+      realHome: homedir(),
+      sandboxHome,
+      env: process.env,
+    });
+    if (verbose && credResult.linked) {
+      process.stderr.write(
+        `[scuttlerun] Exposed OAuth credential: ${credResult.source} → ${credResult.link}\n`,
+      );
+    }
   }
 
   // Create oracle
@@ -437,9 +448,45 @@ function buildSdkOptions(
   return sdkOptions;
 }
 
+export interface LinkOauthCredentialResult {
+  linked: boolean;
+  source?: string;
+  link?: string;
+}
+
+export function linkOauthCredentialIntoSandbox(opts: {
+  realHome: string;
+  sandboxHome: string;
+  env: Record<string, string | undefined>;
+}): LinkOauthCredentialResult {
+  const key = opts.env.ANTHROPIC_API_KEY;
+  if (key && key.trim() !== '') return { linked: false };
+
+  const source = join(opts.realHome, '.claude', '.credentials.json');
+  if (!existsSync(source)) return { linked: false };
+
+  const link = join(opts.sandboxHome, '.claude', '.credentials.json');
+  mkdirSync(join(opts.sandboxHome, '.claude'), { recursive: true });
+
+  const existing = lstatSync(link, { throwIfNoEntry: false });
+  if (existing) {
+    if (existing.isSymbolicLink() && readlinkSync(link) === source) {
+      return { linked: true, source, link };
+    }
+    throw new Error(
+      `Cannot expose OAuth credentials: ${link} already exists and does not point to ${source}`,
+    );
+  }
+
+  symlinkSync(source, link);
+  return { linked: true, source, link };
+}
+
 export const SAFE_ENV_VARS: ReadonlySet<string> = new Set([
   // Required for the agent subprocess to make API calls
   'ANTHROPIC_API_KEY',
+  // Long-lived OAuth bearer issued by `claude setup-token`
+  'CLAUDE_CODE_OAUTH_TOKEN',
   // Paths and execution
   'PATH',
   'HOME',
