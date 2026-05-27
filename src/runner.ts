@@ -440,6 +440,8 @@ function buildSdkOptions(
 export const SAFE_ENV_VARS: ReadonlySet<string> = new Set([
   // Required for the agent subprocess to make API calls
   'ANTHROPIC_API_KEY',
+  // Long-lived OAuth bearer issued by `claude setup-token`
+  'CLAUDE_CODE_OAUTH_TOKEN',
   // Paths and execution
   'PATH',
   'HOME',

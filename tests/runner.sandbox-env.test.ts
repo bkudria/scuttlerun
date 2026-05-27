@@ -52,6 +52,15 @@ describe('buildSandboxEnv', () => {
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-test');
   });
 
+  it('always includes CLAUDE_CODE_OAUTH_TOKEN', () => {
+    const env = buildSandboxEnv(
+      { CLAUDE_CODE_OAUTH_TOKEN: 'oauth-token-fake' },
+      undefined,
+      '/sandbox/home',
+    );
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('oauth-token-fake');
+  });
+
   it('excludes other ANTHROPIC_ vars', () => {
     const env = buildSandboxEnv(
       { ANTHROPIC_API_KEY: 'sk-ant-test', ANTHROPIC_ADMIN_KEY: 'admin-secret' },
@@ -97,6 +106,10 @@ describe('buildSandboxEnv', () => {
 
   it('SAFE_ENV_VARS includes ANTHROPIC_API_KEY', () => {
     expect(SAFE_ENV_VARS.has('ANTHROPIC_API_KEY')).toBe(true);
+  });
+
+  it('SAFE_ENV_VARS includes CLAUDE_CODE_OAUTH_TOKEN', () => {
+    expect(SAFE_ENV_VARS.has('CLAUDE_CODE_OAUTH_TOKEN')).toBe(true);
   });
 
   it('SAFE_ENV_PREFIXES includes LC_', () => {
