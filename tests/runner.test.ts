@@ -44,9 +44,18 @@ vi.mock('node:fs', async () => {
   return {
     ...actual,
     mkdirSync: vi.fn(),
+    existsSync: vi.fn().mockReturnValue(false),
+    lstatSync: vi.fn().mockImplementation(() => {
+      const err = new Error('ENOENT') as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      throw err;
+    }),
+    readlinkSync: vi.fn(),
+    symlinkSync: vi.fn(),
   };
 });
 
+import { existsSync, lstatSync, symlinkSync } from 'node:fs';
 import { query as mockQueryFn } from '@anthropic-ai/claude-agent-sdk';
 import {
   createProjectDir as mockCreateProjectDir,
@@ -2147,6 +2156,74 @@ describe('runSession', () => {
     await runSession(minConfig(), { signal: signalController.signal });
 
     expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
+
+  it('symlinks ~/.claude/.credentials.json into sandbox home when sandbox enabled and no API key', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(lstatSync).mockImplementation(() => {
+      const err = new Error('ENOENT') as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      throw err;
+    });
+
+    const mockQuery = createMockQuery([
+      { type: 'system', subtype: 'init', session_id: 's-oauth', tools: [], model: 'claude-haiku-4-5' },
+      { type: 'result', subtype: 'success', session_id: 's-oauth', num_turns: 1, total_cost_usd: 0 },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    await runSession(minConfig());
+
+    expect(symlinkSync).toHaveBeenCalledTimes(1);
+    expect(symlinkSync).toHaveBeenCalledWith(
+      expect.stringMatching(/\/\.claude\/\.credentials\.json$/),
+      '/tmp/scuttlerun-project-test123/.home/.claude/.credentials.json',
+    );
+
+    vi.unstubAllEnvs();
+  });
+
+  it('does not symlink when sandbox is disabled', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    vi.mocked(existsSync).mockReturnValue(true);
+
+    const mockQuery = createMockQuery([
+      { type: 'system', subtype: 'init', session_id: 's-nosandbox', tools: [], model: 'claude-haiku-4-5' },
+      { type: 'result', subtype: 'success', session_id: 's-nosandbox', num_turns: 1, total_cost_usd: 0 },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    await runSession(
+      minConfig({
+        sandbox: {
+          enabled: false,
+          network: { allowed_domains: [], allow_local_binding: false },
+          filesystem: { deny_read: [], allow_write: [], deny_write: [] },
+        },
+      }),
+    );
+
+    expect(symlinkSync).not.toHaveBeenCalled();
+
+    vi.unstubAllEnvs();
+  });
+
+  it('does not symlink when ANTHROPIC_API_KEY is set', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test');
+    vi.mocked(existsSync).mockReturnValue(true);
+
+    const mockQuery = createMockQuery([
+      { type: 'system', subtype: 'init', session_id: 's-key', tools: [], model: 'claude-haiku-4-5' },
+      { type: 'result', subtype: 'success', session_id: 's-key', num_turns: 1, total_cost_usd: 0 },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    await runSession(minConfig());
+
+    expect(symlinkSync).not.toHaveBeenCalled();
+
+    vi.unstubAllEnvs();
   });
 });
 
