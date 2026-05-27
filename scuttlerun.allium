@@ -1107,13 +1107,20 @@ contract ToolPermissionCallback {
         -- { behavior: "allow", updatedInput: { questions, answers } }
         -- where answers come from the oracle and reflect the configured
         -- persona. If the input does not parse as a list of questions,
-        -- the result is { behavior: "deny" }.
+        -- the result is { behavior: "deny", message: <string> }.
 
     @invariant OtherToolsPassThrough
         -- For tool_name != "AskUserQuestion", the result is
-        -- { behavior: "allow" }. The configured permission_mode is
-        -- responsible for any further enforcement; the callback itself
+        -- { behavior: "allow", updatedInput: input } — i.e. the caller's
+        -- input is passed through unchanged. The configured permission_mode
+        -- is responsible for any further enforcement; the callback itself
         -- adds no extra restriction.
+
+    @invariant PermissionResultShapeMatchesSdkSchema
+        -- All return values conform to the Agent SDK's PermissionResult
+        -- schema: the allow branch carries updatedInput as a record, and
+        -- the deny branch carries message as a non-empty string. A bare
+        -- { behavior } is rejected by the SDK at runtime.
 }
 
 contract MultiTurnPromptStream {

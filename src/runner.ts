@@ -154,12 +154,14 @@ export async function runSession(
     // Create a lazy SyntheticUser — initialized once we have a session ID
     let syntheticUser: SyntheticUser | undefined;
 
-    // canUseTool callback
+    // canUseTool callback. The Agent SDK's PermissionResult schema requires
+    // `updatedInput` on the allow branch and `message` on the deny branch;
+    // returning a bare `{ behavior }` triggers a ZodError for every tool call.
     sdkOptions.canUseTool = async (toolName: string, input: Record<string, unknown>) => {
       if (toolName === 'AskUserQuestion' && syntheticUser) {
         const parsed = AskUserQuestionInputSchema.safeParse(input);
         if (!parsed.success) {
-          return { behavior: 'deny' };
+          return { behavior: 'deny', message: 'AskUserQuestion input failed schema validation' };
         }
         try {
           const result = await syntheticUser.handleAskUserQuestion(parsed.data);
@@ -172,10 +174,10 @@ export async function runSession(
           oracleFailed = true;
           writeOracleError(err instanceof Error ? err.message : String(err));
           abortController.abort();
-          return { behavior: 'deny' };
+          return { behavior: 'deny', message: 'Synthetic-user oracle aborted with an error' };
         }
       }
-      return { behavior: 'allow' };
+      return { behavior: 'allow', updatedInput: input };
     };
 
     // Start timeout
