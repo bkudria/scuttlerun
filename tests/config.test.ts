@@ -702,27 +702,27 @@ describe('additional_tools resolution', () => {
   it('appends additional_tools to the default tools when tools is absent', () => {
     const config = parseSessionConfig({
       prompt: 'hi',
-      additional_tools: ['TodoWrite'],
+      additional_tools: ['TaskCreate'],
     });
-    expect(config.tools).toEqual([...DEFAULT_TOOLS, 'TodoWrite']);
+    expect(config.tools).toEqual([...DEFAULT_TOOLS, 'TaskCreate']);
   });
 
   it('appends additional_tools to an explicit tools list', () => {
     const config = parseSessionConfig({
       prompt: 'hi',
       tools: ['Read'],
-      additional_tools: ['TodoWrite'],
+      additional_tools: ['TaskCreate'],
     });
-    expect(config.tools).toEqual(['Read', 'TodoWrite']);
+    expect(config.tools).toEqual(['Read', 'TaskCreate']);
   });
 
   it('dedupes duplicate names, preserving first occurrence', () => {
     const config = parseSessionConfig({
       prompt: 'hi',
       tools: ['Read', 'Write'],
-      additional_tools: ['Write', 'TodoWrite'],
+      additional_tools: ['Write', 'TaskCreate'],
     });
-    expect(config.tools).toEqual(['Read', 'Write', 'TodoWrite']);
+    expect(config.tools).toEqual(['Read', 'Write', 'TaskCreate']);
   });
 
   it('warns on unknown tool names in additional_tools', () => {
@@ -741,7 +741,7 @@ describe('additional_tools resolution', () => {
   it('does not expose additional_tools on the parsed config', () => {
     const config = parseSessionConfig({
       prompt: 'hi',
-      additional_tools: ['TodoWrite'],
+      additional_tools: ['TaskCreate'],
     });
     expect('additional_tools' in config).toBe(false);
   });
