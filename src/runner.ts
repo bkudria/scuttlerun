@@ -287,6 +287,7 @@ export async function runSession(
 
     // Check for timeout
     if (timedOut) {
+      process.stderr.write(`[scuttlerun] timed out after ${timeoutSeconds}s\n`);
       exitCode = EXIT_TIMEOUT;
     } else if (signaled) {
       exitCode = EXIT_SIGINT;
@@ -294,8 +295,10 @@ export async function runSession(
       exitCode = EXIT_RUNTIME_ERROR;
     }
   } catch {
-    if (timedOut) exitCode = EXIT_TIMEOUT;
-    else if (signaled) exitCode = EXIT_SIGINT;
+    if (timedOut) {
+      process.stderr.write(`[scuttlerun] timed out after ${timeoutSeconds}s\n`);
+      exitCode = EXIT_TIMEOUT;
+    } else if (signaled) exitCode = EXIT_SIGINT;
     else exitCode = EXIT_RUNTIME_ERROR;
   } finally {
     // Always finalise the transcript on every termination path
