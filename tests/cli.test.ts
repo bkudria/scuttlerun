@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { buildConfig, getCliVersion } from '../src/cli.js';
+import { buildConfig, buildDryRunSummary, getCliVersion } from '../src/cli.js';
 
 describe('buildConfig', () => {
   it('parses a YAML file into a SessionConfig', async () => {
@@ -70,6 +70,41 @@ max_budget_usd: 1.0
     const yaml = `prompt: hi\n`;
     const config = await buildConfig([yaml], { maxBudgetUsd: 2.5 });
     expect(config.max_budget_usd).toBe(2.5);
+  });
+});
+
+describe('buildDryRunSummary', () => {
+  it('includes project.plugins alongside other project fields when all are set', async () => {
+    const yaml = `
+prompt: hi
+project:
+  claude_md: |
+    # Hello
+  skills:
+    - skill-a
+  plugins:
+    - ./plugin-a
+    - ./plugin-b
+`;
+    const config = await buildConfig([yaml], {});
+    const summary = buildDryRunSummary(config) as { project?: Record<string, unknown> };
+    expect(summary.project).toBeDefined();
+    expect(summary.project?.plugins).toEqual(['./plugin-a', './plugin-b']);
+    expect(summary.project?.skills).toEqual(['skill-a']);
+    expect(summary.project?.claude_md).toBe('# Hello\n');
+  });
+
+  it('emits the project block even when plugins is the only project field set', async () => {
+    const yaml = `
+prompt: hi
+project:
+  plugins:
+    - ./plugin-a
+`;
+    const config = await buildConfig([yaml], {});
+    const summary = buildDryRunSummary(config) as { project?: Record<string, unknown> };
+    expect(summary.project).toBeDefined();
+    expect(summary.project?.plugins).toEqual(['./plugin-a']);
   });
 });
 

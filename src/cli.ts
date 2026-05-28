@@ -70,6 +70,48 @@ export async function buildConfig(
   return config;
 }
 
+/**
+ * Build the YAML-serializable summary object that `--dry-run` prints.
+ * Pure function (no IO) so it can be unit-tested. Exported for testing.
+ */
+export function buildDryRunSummary(config: SessionConfig): Record<string, unknown> {
+  const proj = config.project;
+  const hasProject =
+    proj &&
+    (proj.claude_md ||
+      (proj.skills && proj.skills.length > 0) ||
+      (proj.plugins && proj.plugins.length > 0) ||
+      proj.files ||
+      proj.git_init);
+
+  return {
+    model: config.model,
+    tools: config.tools,
+    effort: config.effort,
+    max_turns: config.max_turns,
+    permission_mode: config.permission_mode,
+    user: {
+      oracle_model: config.user.oracle_model,
+      max_turns: config.user.max_turns,
+      ...(config.user.persona ? { persona: config.user.persona } : {}),
+    },
+    ...(hasProject && proj
+      ? {
+          project: {
+            ...(proj.claude_md ? { claude_md: proj.claude_md } : {}),
+            ...(proj.skills && proj.skills.length > 0 ? { skills: proj.skills } : {}),
+            ...(proj.plugins && proj.plugins.length > 0 ? { plugins: proj.plugins } : {}),
+            ...(proj.settings ? { settings: proj.settings } : {}),
+            ...(proj.files ? { files: proj.files } : {}),
+            ...(proj.git_init ? { git_init: proj.git_init } : {}),
+          },
+        }
+      : {}),
+    ...(config.sdk.plugins ? { sdk: { plugins: config.sdk.plugins } } : {}),
+    prompt: config.prompt,
+  };
+}
+
 async function main() {
   const program = new Command();
 
@@ -131,42 +173,7 @@ async function main() {
         });
 
         if (opts.dryRun) {
-          // Output resolved config summary as YAML
-          const proj = config.project;
-          const hasProject =
-            proj &&
-            (proj.claude_md ||
-              (proj.skills && proj.skills.length > 0) ||
-              proj.files ||
-              proj.git_init);
-
-          const summary: Record<string, unknown> = {
-            model: config.model,
-            tools: config.tools,
-            effort: config.effort,
-            max_turns: config.max_turns,
-            permission_mode: config.permission_mode,
-            user: {
-              oracle_model: config.user.oracle_model,
-              max_turns: config.user.max_turns,
-              ...(config.user.persona ? { persona: config.user.persona } : {}),
-            },
-            ...(hasProject && proj
-              ? {
-                  project: {
-                    ...(proj.claude_md ? { claude_md: proj.claude_md } : {}),
-                    ...(proj.skills && proj.skills.length > 0 ? { skills: proj.skills } : {}),
-                    ...(proj.settings ? { settings: proj.settings } : {}),
-                    ...(proj.files ? { files: proj.files } : {}),
-                    ...(proj.git_init ? { git_init: proj.git_init } : {}),
-                  },
-                }
-              : {}),
-            ...(config.sdk.plugins ? { sdk: { plugins: config.sdk.plugins } } : {}),
-            prompt: config.prompt,
-          };
-
-          process.stdout.write(stringifyYaml(summary));
+          process.stdout.write(stringifyYaml(buildDryRunSummary(config)));
           process.exit(EXIT_SUCCESS);
         }
 
