@@ -525,6 +525,45 @@ describe('runSession', () => {
     expect(neverEndingQuery.close).toHaveBeenCalled();
   });
 
+  it('emits a [scuttlerun] timed out after Xs diagnostic on stderr when the session times out', async () => {
+    let resolveHang: (() => void) | undefined;
+    const neverEndingQuery = {
+      close: vi.fn(),
+      interrupt: vi.fn(async () => {
+        resolveHang?.();
+      }),
+      [Symbol.asyncIterator]: async function* () {
+        yield {
+          type: 'system',
+          subtype: 'init',
+          session_id: 's-timeout-stderr',
+          tools: [],
+          model: 'claude-haiku-4-5',
+        };
+        await new Promise<void>((resolve) => {
+          resolveHang = resolve;
+        });
+      },
+    };
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(neverEndingQuery);
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(minConfig(), { timeoutSeconds: 0.1 });
+      expect(result.exitCode).toBe(6);
+      expect(stderrOutput).toMatch(/\[scuttlerun\] timed out after 0\.1s/);
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
+
   it('swallows interrupt() rejection on timeout', async () => {
     let resolveHang: (() => void) | undefined;
     const mockQuery = {
@@ -1448,6 +1487,41 @@ describe('runSession', () => {
 
     const result = await runSession(minConfig(), { timeoutSeconds: 0.1 });
     expect(result.exitCode).toBe(6);
+  });
+
+  it('emits the timed-out diagnostic on stderr when the query throws after timeout', async () => {
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      return {
+        close: vi.fn(),
+        interrupt: vi.fn().mockResolvedValue(undefined),
+        [Symbol.asyncIterator]: async function* () {
+          yield {
+            type: 'system',
+            subtype: 'init',
+            session_id: 's-throw-timeout-stderr',
+            tools: [],
+            model: 'claude-haiku-4-5',
+          };
+          await new Promise<void>((resolve) => setTimeout(resolve, 150));
+          throw new Error('aborted');
+        },
+      };
+    });
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(minConfig(), { timeoutSeconds: 0.1 });
+      expect(result.exitCode).toBe(6);
+      expect(stderrOutput).toMatch(/\[scuttlerun\] timed out after 0\.1s/);
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
   });
 
   it('handles timeout during oracle decideTurn (catch with timedOut)', async () => {

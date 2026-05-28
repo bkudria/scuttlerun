@@ -695,12 +695,17 @@ rule SessionTimesOut {
         -- writes the terminal `status = timed_out` and signals the
         -- agent abort. On timeout scuttlerun aborts the SDK abort
         -- controller and calls queryHandle.interrupt() as a
-        -- belt-and-suspenders signal. The transcript footer is still
-        -- emitted with whatever stats accrued. The terminal status
-        -- reflects the timeout regardless of whether the for-await
-        -- loop unwound normally or via an exception thrown
-        -- mid-iteration: the runner's catch path checks the timed-out
-        -- flag and resolves to timed_out either way.
+        -- belt-and-suspenders signal. The runner also writes a single
+        -- `[scuttlerun] timed out after Xs` line to stderr (where X
+        -- is the configured timeout in seconds) as a diagnostic
+        -- annotation paired with the `timed_out` exit code; the
+        -- message is informational and downstream tools should not
+        -- parse it. The transcript footer is still emitted with
+        -- whatever stats accrued. The terminal status reflects the
+        -- timeout regardless of whether the for-await loop unwound
+        -- normally or via an exception thrown mid-iteration: the
+        -- runner's catch path checks the timed-out flag and resolves
+        -- to timed_out either way.
         --
         -- The observe-then-commit split exists so the analyser sees
         -- the status-writing rule as disjoint from the six other
