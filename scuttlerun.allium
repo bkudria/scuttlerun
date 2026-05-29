@@ -477,6 +477,13 @@ rule SyntheticUserAnswersClarifyingQuestion {
         -- The oracle's call is retried with bounded exponential backoff
         -- on transient failures before the session is terminated as a
         -- runtime error.
+        --
+        -- Answers are associated to the input questions positionally (the
+        -- i-th oracle answer pairs with the i-th input question) and keyed
+        -- by the input question's exact text, so the agent's answer lookup
+        -- resolves regardless of how the oracle echoes the question text.
+        -- A question/answer count mismatch is a non-transient failure that
+        -- terminates the session as a runtime error.
 }
 
 
