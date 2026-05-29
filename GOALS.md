@@ -39,7 +39,7 @@ Project scaffolding (CLAUDE.md, skill symlinks, settings.json) creates a **contr
 scuttlerun uses an LLM oracle (Haiku by default) to simulate user responses rather than scripted answers. This is driven by three concerns:
 
 1. **Config simplicity** — A persona description plus an LLM handles the full range of possible interactions with minimal config. Scripting answers for every possible question would be unwieldy.
-2. **Robustness** — Scripted answers break when questions change even slightly. An LLM adapts naturally to variations in phrasing or unexpected questions.
+2. **Robustness** — Scripted answers break when questions change even slightly. An LLM adapts naturally to variations in phrasing or unexpected questions. If the oracle itself returns a malformed answer set (e.g., one answer per option instead of one per question), scuttlerun re-prompts it with corrective feedback rather than aborting the session on the first slip.
 3. **Design clarity** — One mechanism (LLM oracle) avoids ambiguity about which path handles a given question.
 
 Personas are a **steering mechanism** — a knob to guide the oracle toward relevant responses for a given scenario. Haiku is the default oracle model because it's the cheapest and fastest model that reliably handles the task.

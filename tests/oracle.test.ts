@@ -147,17 +147,70 @@ describe('Oracle', () => {
       expect(result.answers).toEqual({ 'How do you want to proceed?': 'Skip' });
     });
 
-    it('throws when the oracle returns a different number of answers than questions', async () => {
-      mockParse.mockResolvedValueOnce({
+    it('self-corrects a question/answer count mismatch by retrying with corrective feedback', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      mockParse
+        .mockResolvedValueOnce({
+          parsed_output: {
+            answers: [
+              { question: 'Pick', answer: 'A' },
+              { question: 'Pick', answer: 'B' },
+            ],
+            reasoning: 'over-answered one entry per option',
+          },
+          usage: { input_tokens: 10, output_tokens: 5 },
+        })
+        .mockResolvedValueOnce({
+          parsed_output: {
+            answers: [{ question: 'Pick', answer: 'A' }],
+            reasoning: 'corrected to one entry',
+          },
+          usage: { input_tokens: 12, output_tokens: 6 },
+        });
+
+      const result = await o.answerQuestions({
+        persona: 'test',
+        conversationContext: [],
+        questions: [
+          {
+            question: 'Pick',
+            header: 'Choice',
+            options: [
+              { label: 'A', description: 'a' },
+              { label: 'B', description: 'b' },
+            ],
+            multiSelect: false,
+          },
+        ],
+      });
+
+      expect(result.answers).toEqual({ Pick: 'A' });
+      expect(mockParse).toHaveBeenCalledTimes(2);
+      const retryContent = mockParse.mock.calls[1][0].messages[0].content;
+      expect(retryContent).toContain('Correction');
+      expect(retryContent).toContain('Return exactly one answer per question');
+    });
+
+    it('retries a count mismatch and fails as a runtime error only after exhausting attempts', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      const overAnswered = {
         parsed_output: {
-          answers: [{ question: 'First?', answer: 'Yes' }],
+          answers: [
+            { question: 'First?', answer: 'Yes' },
+            { question: 'First?', answer: 'No' },
+          ],
           reasoning: 'r',
         },
         usage: { input_tokens: 10, output_tokens: 5 },
-      });
+      };
+      mockParse
+        .mockResolvedValueOnce(overAnswered)
+        .mockResolvedValueOnce(overAnswered)
+        .mockResolvedValueOnce(overAnswered)
+        .mockResolvedValueOnce(overAnswered);
 
       await expect(
-        oracle.answerQuestions({
+        o.answerQuestions({
           persona: 'p',
           conversationContext: [],
           questions: [
@@ -170,18 +223,10 @@ describe('Oracle', () => {
               ],
               multiSelect: false,
             },
-            {
-              question: 'Second?',
-              header: 'Second',
-              options: [
-                { label: 'Yes', description: 'y' },
-                { label: 'No', description: 'n' },
-              ],
-              multiSelect: false,
-            },
           ],
         }),
-      ).rejects.toThrow(/Oracle returned \d+ answers for \d+ question/);
+      ).rejects.toThrow(/exhausted.*4 attempts.*2 answer/i);
+      expect(mockParse).toHaveBeenCalledTimes(4);
     });
   });
 
@@ -555,6 +600,36 @@ describe('Oracle', () => {
       const callArgs = mockParse.mock.calls[0][0];
       expect(typeof callArgs.system).toBe('string');
       expect(callArgs.system).toContain('PERSONA_MARKER');
+    });
+
+    it('instructs the oracle to return one answer per question, never one per option', async () => {
+      mockParse.mockResolvedValueOnce({
+        parsed_output: {
+          answers: [{ question: 'Q', answer: 'A' }],
+          reasoning: 'r',
+        },
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      await oracle.answerQuestions({
+        persona: 'p',
+        conversationContext: [],
+        questions: [
+          {
+            question: 'Q',
+            header: 'H',
+            options: [
+              { label: 'A', description: 'a' },
+              { label: 'B', description: 'b' },
+            ],
+            multiSelect: false,
+          },
+        ],
+      });
+
+      const system = mockParse.mock.calls[0][0].system;
+      expect(system).toContain('never one per option');
+      expect(system).toContain('multi-select');
     });
 
     it('passes system prompt as a string on decideTurnPolicy', async () => {

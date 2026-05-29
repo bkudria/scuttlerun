@@ -475,15 +475,22 @@ rule SyntheticUserAnswersClarifyingQuestion {
         -- appear in oracle prompts.
         --
         -- The oracle's call is retried with bounded exponential backoff
-        -- on transient failures before the session is terminated as a
-        -- runtime error.
+        -- before the session is terminated as a runtime error. Both a
+        -- transport failure and a malformed answer set (an answer count that
+        -- does not match the question count) are retryable: on a count
+        -- mismatch the oracle is re-consulted with corrective feedback
+        -- stating the expected count, and the session is terminated as a
+        -- runtime error only if the mismatch persists across every attempt.
+        --
+        -- The oracle is instructed to return exactly one answer per question
+        -- regardless of how many options a question carries (never one
+        -- answer per option), and to encode a multi-select answer as a
+        -- single entry listing the chosen labels.
         --
         -- Answers are associated to the input questions positionally (the
         -- i-th oracle answer pairs with the i-th input question) and keyed
         -- by the input question's exact text, so the agent's answer lookup
         -- resolves regardless of how the oracle echoes the question text.
-        -- A question/answer count mismatch is a non-transient failure that
-        -- terminates the session as a runtime error.
 }
 
 
