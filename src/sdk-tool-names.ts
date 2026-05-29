@@ -8,7 +8,9 @@ const SDK_TOOL_ALIASES: Record<string, string[]> = {
   FileEdit: ['Edit'],
 };
 
-const SDK_TOOL_EXTRAS = ['Skill', 'Task', 'EnterPlanMode'];
+// Real allowedTools names that have no *Input interface in sdk-tools.d.ts.
+// 'Skill' is a valid (now-deprecated) SDK tool name with no Input type.
+const SDK_TOOL_EXTRAS = ['Skill'];
 
 let cached: Set<string> | null = null;
 
