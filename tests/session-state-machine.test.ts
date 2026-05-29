@@ -23,6 +23,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { runSession } from '../src/runner.js';
 import type { SessionConfig } from '../src/config.js';
+import { DEFAULT_SESSION_TIMEOUT_SECONDS } from '../src/config.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', async () => {
   const actual = await vi.importActual<typeof import('@anthropic-ai/claude-agent-sdk')>(
@@ -70,6 +71,7 @@ function minStubConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
     prompt: 'ping',
     model: 'claude-haiku-4-5',
     max_turns: 50,
+    timeout: DEFAULT_SESSION_TIMEOUT_SECONDS,
     effort: 'high',
     tools: ['Read'],
     permission_mode: 'bypassPermissions',

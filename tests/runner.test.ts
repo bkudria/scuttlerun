@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runSession } from '../src/runner.js';
 import type { SessionConfig } from '../src/config.js';
+import { DEFAULT_SESSION_TIMEOUT_SECONDS } from '../src/config.js';
 
 // Mock all dependencies
 vi.mock('@anthropic-ai/claude-agent-sdk', async () => {
@@ -65,6 +66,7 @@ function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
     prompt: 'Write a haiku',
     model: 'claude-haiku-4-5',
     max_turns: 50,
+    timeout: DEFAULT_SESSION_TIMEOUT_SECONDS,
     effort: 'high',
     tools: ['Read', 'Write', 'AskUserQuestion', 'Skill'],
     permission_mode: 'bypassPermissions',
