@@ -138,10 +138,8 @@ async function main() {
     )
     .option('--tools <tools>', 'Tools list, comma-separated (e.g. Read,Write,Grep)')
     .option('--effort <level>', 'Thinking effort: low, medium, high, xhigh, max (default: high)')
-    .option(
-      '--timeout <seconds>',
-      'Session timeout in seconds (default: 300)',
-      (v: string) => parseInt(v, 10),
+    .option('--timeout <seconds>', 'Session timeout in seconds (default: 300)', (v: string) =>
+      parseInt(v, 10),
     )
     .option(
       '-v, --verbose',
