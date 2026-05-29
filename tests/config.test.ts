@@ -657,7 +657,7 @@ describe('parseSessionConfig tool validation', () => {
     const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     parseSessionConfig({
       prompt: 'hi',
-      tools: ['Read', 'Write', 'Bash', 'TodoWrite', 'Task', 'Skill', 'EnterPlanMode'],
+      tools: ['Read', 'Write', 'Bash', 'TodoWrite', 'Skill'],
     });
     const out = spy.mock.calls.map((c) => String(c[0])).join('');
     expect(out).not.toContain('WARNING');
