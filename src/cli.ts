@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSessionConfig, mergeRawConfigs, type SessionConfig } from './config.js';
-import { runSession, DEFAULT_SESSION_TIMEOUT_SECONDS } from './runner.js';
+import { runSession } from './runner.js';
 import { formatCliError } from './errors.js';
 import { EXIT_SUCCESS, EXIT_CONFIG_ERROR, EXIT_SIGINT } from './exit-codes.js';
 import { HELP_TEXT } from './help-text.js';
@@ -54,6 +54,9 @@ export async function buildConfig(
   if (overrides.maxBudgetUsd !== undefined) {
     config = { ...config, max_budget_usd: overrides.maxBudgetUsd };
   }
+  if (overrides.timeout !== undefined) {
+    config = { ...config, timeout: overrides.timeout };
+  }
   if (overrides.effort) {
     config = { ...config, effort: overrides.effort as SessionConfig['effort'] };
   }
@@ -89,6 +92,7 @@ export function buildDryRunSummary(config: SessionConfig): Record<string, unknow
     tools: config.tools,
     effort: config.effort,
     max_turns: config.max_turns,
+    timeout: config.timeout,
     permission_mode: config.permission_mode,
     user: {
       oracle_model: config.user.oracle_model,
@@ -136,9 +140,8 @@ async function main() {
     .option('--effort <level>', 'Thinking effort: low, medium, high, xhigh, max (default: high)')
     .option(
       '--timeout <seconds>',
-      'Session timeout in seconds',
+      'Session timeout in seconds (default: 300)',
       (v: string) => parseInt(v, 10),
-      DEFAULT_SESSION_TIMEOUT_SECONDS,
     )
     .option(
       '-v, --verbose',
@@ -170,6 +173,7 @@ async function main() {
           maxBudgetUsd: opts.maxBudgetUsd,
           tools: opts.tools,
           effort: opts.effort,
+          timeout: opts.timeout,
         });
 
         if (opts.dryRun) {
@@ -189,7 +193,7 @@ async function main() {
 
         try {
           const result = await runSession(config, {
-            timeoutSeconds: opts.timeout,
+            timeoutSeconds: opts.timeout ?? config.timeout,
             verbose: opts.verbose,
             configDir,
             configPaths,

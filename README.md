@@ -86,6 +86,7 @@ prompt: |
 | `model`            | string                                          | `claude-haiku-4-5`                                                     |
 | `max_turns`        | number                                          | `50`                                                                   |
 | `max_budget_usd`   | number                                          | —                                                                      |
+| `timeout`          | number                                          | `300` (session wall-clock seconds; `--timeout` overrides)              |
 | `effort`           | `low` \| `medium` \| `high` \| `xhigh` \| `max` | `high`                                                                 |
 | `tools`            | string[]                                        | `[Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion, Skill, Agent]` |
 | `additional_tools` | string[]                                        | — (appended to `tools` after defaults apply; deduped first-wins)       |
