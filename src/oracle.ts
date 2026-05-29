@@ -139,8 +139,14 @@ export class Oracle {
 
     this.trackUsage(response.usage);
 
+    const oracleAnswers = response.parsed_output.answers;
+    if (oracleAnswers.length !== params.questions.length) {
+      throw new Error(
+        `Oracle returned ${oracleAnswers.length} answers for ${params.questions.length} question(s)`,
+      );
+    }
     const answers = Object.fromEntries(
-      response.parsed_output.answers.map((a) => [a.question, a.answer]),
+      params.questions.map((q, i) => [q.question, oracleAnswers[i].answer]),
     );
 
     return {

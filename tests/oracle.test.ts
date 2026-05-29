@@ -118,6 +118,71 @@ describe('Oracle', () => {
       ).rejects.toThrow(/exhausted.*4 attempts.*fail 4/);
       expect(mockParse).toHaveBeenCalledTimes(4);
     });
+
+    it('keys answers by the input question text even when the oracle paraphrases the question', async () => {
+      mockParse.mockResolvedValueOnce({
+        parsed_output: {
+          answers: [{ question: 'Which option do you want?', answer: 'Skip' }],
+          reasoning: 'r',
+        },
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      const result = await oracle.answerQuestions({
+        persona: 'p',
+        conversationContext: [],
+        questions: [
+          {
+            question: 'How do you want to proceed?',
+            header: 'Proceed',
+            options: [
+              { label: 'Continue', description: 'keep going' },
+              { label: 'Skip', description: 'skip it' },
+            ],
+            multiSelect: false,
+          },
+        ],
+      });
+
+      expect(result.answers).toEqual({ 'How do you want to proceed?': 'Skip' });
+    });
+
+    it('throws when the oracle returns a different number of answers than questions', async () => {
+      mockParse.mockResolvedValueOnce({
+        parsed_output: {
+          answers: [{ question: 'First?', answer: 'Yes' }],
+          reasoning: 'r',
+        },
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+
+      await expect(
+        oracle.answerQuestions({
+          persona: 'p',
+          conversationContext: [],
+          questions: [
+            {
+              question: 'First?',
+              header: 'First',
+              options: [
+                { label: 'Yes', description: 'y' },
+                { label: 'No', description: 'n' },
+              ],
+              multiSelect: false,
+            },
+            {
+              question: 'Second?',
+              header: 'Second',
+              options: [
+                { label: 'Yes', description: 'y' },
+                { label: 'No', description: 'n' },
+              ],
+              multiSelect: false,
+            },
+          ],
+        }),
+      ).rejects.toThrow(/Oracle returned \d+ answers for \d+ question/);
+    });
   });
 
   describe('decideTurnPolicy', () => {
