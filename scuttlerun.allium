@@ -93,11 +93,15 @@ value SessionInput {
         -- and first-wins dedup means an additional entry that repeats
         -- a base entry is a no-op rather than a reorder.
         --
-        -- timeout is supplied at runtime via the --timeout CLI flag
-        -- (defaulting to config.default_session_timeout, 300 seconds)
-        -- rather than being read from a YAML config file. The field on
-        -- SessionInput represents the resolved value the runner enforces
-        -- against session.started_at, not a YAML-configurable knob.
+        -- timeout is supplied via the top-level YAML field timeout
+        -- (in seconds) and defaults to config.default_session_timeout
+        -- (300 seconds) when omitted; like other config values it flows
+        -- through the base+scenario merge, so a scenario may override a
+        -- base timeout. The --timeout CLI flag, when supplied, overrides
+        -- the merged config value. The field on SessionInput represents
+        -- the resolved value the runner enforces against
+        -- session.started_at: CLI flag if passed, else the merged config
+        -- value, else config.default_session_timeout.
         --
         -- effort is passed through to the Agent SDK as a reasoning
         -- effort knob. Default value handling lives in CLI/config and

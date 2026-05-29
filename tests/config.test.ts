@@ -11,6 +11,7 @@ describe('parseSessionConfig', () => {
   it('applies defaults for omitted fields', () => {
     const config = parseSessionConfig({ prompt: 'Hello' });
     expect(config.max_turns).toBe(50);
+    expect(config.timeout).toBe(300);
     expect(config.effort).toBe('high');
     expect(config.tools).toEqual([
       'Read',
@@ -29,6 +30,11 @@ describe('parseSessionConfig', () => {
     expect(config.user.oracle_model).toBe('claude-haiku-4-5');
   });
 
+  it('parses an explicit timeout', () => {
+    const config = parseSessionConfig({ prompt: 'hi', timeout: 120 });
+    expect(config.timeout).toBe(120);
+  });
+
   it('parses a full config with all fields', () => {
     const raw = {
       version: '1',
@@ -36,6 +42,7 @@ describe('parseSessionConfig', () => {
       model: 'claude-haiku-4-5',
       max_turns: 20,
       max_budget_usd: 1.0,
+      timeout: 90,
       effort: 'max' as const,
       tools: ['Read', 'Write', 'AskUserQuestion'],
       disallowed_tools: ['Agent'],
@@ -65,6 +72,7 @@ describe('parseSessionConfig', () => {
     expect(config.model).toBe('claude-haiku-4-5');
     expect(config.max_turns).toBe(20);
     expect(config.max_budget_usd).toBe(1.0);
+    expect(config.timeout).toBe(90);
     expect(config.effort).toBe('max');
     expect(config.tools).toEqual(['Read', 'Write', 'AskUserQuestion']);
     expect(config.disallowed_tools).toEqual(['Agent']);

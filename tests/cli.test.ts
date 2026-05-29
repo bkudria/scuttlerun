@@ -71,6 +71,19 @@ max_budget_usd: 1.0
     const config = await buildConfig([yaml], { maxBudgetUsd: 2.5 });
     expect(config.max_budget_usd).toBe(2.5);
   });
+
+  it('applies the timeout CLI override over the config value', async () => {
+    const yaml = `prompt: hi\ntimeout: 100\n`;
+    const config = await buildConfig([yaml], { timeout: 250 });
+    expect(config.timeout).toBe(250);
+  });
+
+  it('lets a scenario timeout override the base timeout via merge', async () => {
+    const base = `prompt: hi\ntimeout: 300\n`;
+    const scenario = `timeout: 600\n`;
+    const config = await buildConfig([base, scenario], {});
+    expect(config.timeout).toBe(600);
+  });
 });
 
 describe('buildDryRunSummary', () => {
@@ -105,6 +118,13 @@ project:
     const summary = buildDryRunSummary(config) as { project?: Record<string, unknown> };
     expect(summary.project).toBeDefined();
     expect(summary.project?.plugins).toEqual(['./plugin-a']);
+  });
+
+  it('includes the resolved timeout', async () => {
+    const yaml = `prompt: hi\ntimeout: 450\n`;
+    const config = await buildConfig([yaml], {});
+    const summary = buildDryRunSummary(config) as { timeout?: number };
+    expect(summary.timeout).toBe(450);
   });
 });
 

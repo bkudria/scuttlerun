@@ -2,7 +2,7 @@ import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agen
 import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, symlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { SessionConfig } from './config.js';
+import { type SessionConfig, DEFAULT_SESSION_TIMEOUT_SECONDS } from './config.js';
 import { Oracle, AskUserQuestionInputSchema } from './oracle.js';
 import { SyntheticUser } from './synthetic-user.js';
 import { scaffoldProject, createProjectDir, resolveConfigPath } from './project.js';
@@ -26,8 +26,6 @@ import {
   writeOracleError,
   writeFooter,
 } from './transcript.js';
-
-export const DEFAULT_SESSION_TIMEOUT_SECONDS = 300;
 
 export interface RunResult {
   exitCode: number;
