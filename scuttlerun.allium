@@ -69,6 +69,17 @@ value SessionInput {
     sandbox: Sandbox
 
     @guidance
+        -- prompt is forwarded verbatim to the Agent SDK as the initial
+        -- user message; scuttlerun performs no slash-command expansion.
+        -- A slash-command prompt (e.g. /plugin:skill ...) only resolves
+        -- when the defining skill/plugin is loaded into the session (via
+        -- project.skills, project.plugins, or sdk.plugins), which
+        -- registers it among the session's available slash commands. When
+        -- the prompt begins with a slash command that is not so
+        -- registered, the runner emits a stderr warning at session start
+        -- (the agent would otherwise receive it as literal text and
+        -- typically run zero turns); the session still proceeds.
+        --
         -- agent_model is supplied via the top-level YAML field model
         -- and defaults to config.default_agent_model when omitted.
         -- oracle_model is supplied via the YAML field user.oracle_model
