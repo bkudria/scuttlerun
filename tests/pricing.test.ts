@@ -46,6 +46,23 @@ describe('computeCostUsd', () => {
     expect(future).toBeCloseTo(opus, 10);
   });
 
+  it('computes opus 4.8 cost at $5/MTok input, $25/MTok output', () => {
+    // 1M input @ $5/MTok + 1M output @ $25/MTok = $5 + $25 = $30
+    expect(computeCostUsd('claude-opus-4-8', 1_000_000, 1_000_000)).toBeCloseTo(30, 6);
+  });
+
+  it('prices opus 4.7 at current $5/$25 rates, not the legacy $15/$75', () => {
+    // Opus 4.5 through 4.8 are all $5/MTok in, $25/MTok out.
+    // 1M input @ $5/MTok + 1M output @ $25/MTok = $30
+    expect(computeCostUsd('claude-opus-4-7', 1_000_000, 1_000_000)).toBeCloseTo(30, 6);
+  });
+
+  it('prices unrecognized opus releases at current-generation $5/$25 via the family fallback', () => {
+    // Any opus string with no direct table entry resolves to current opus rates:
+    // 1M input @ $5/MTok + 1M output @ $25/MTok = $30
+    expect(computeCostUsd('claude-opus-9-9', 1_000_000, 1_000_000)).toBeCloseTo(30, 6);
+  });
+
   it("falls back to the configured default model's rate when family matching also fails", () => {
     // An unknown model (no opus/sonnet/haiku in name) priced with a configured
     // default model that uses a *different* rate from haiku must charge the
