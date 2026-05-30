@@ -56,7 +56,20 @@ npm link          # makes `scuttlerun` available globally
 
 ## Requirements
 
-scuttlerun authenticates via the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk), which accepts the same credentials as Claude Code. See [Claude Code authentication](https://code.claude.com/docs/en/authentication) for the supported options.
+scuttlerun authenticates via the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk), which accepts the same credentials as Claude Code — an `ANTHROPIC_API_KEY`, a subscription login, or an OAuth token. See [Claude Code authentication](https://code.claude.com/docs/en/authentication) for the full list and precedence.
+
+### Authenticating with a Claude subscription (OAuth)
+
+To run scuttlerun against a Claude Pro/Max/Team/Enterprise subscription without an API key, generate a long-lived OAuth token and put it in your environment:
+
+```bash
+claude setup-token                  # walks through OAuth, prints a token
+export CLAUDE_CODE_OAUTH_TOKEN=<token>
+```
+
+scuttlerun forwards `CLAUDE_CODE_OAUTH_TOKEN` to the agent in both sandboxed and non-sandboxed runs, so this is the recommended path for headless and CI use.
+
+**macOS note:** a regular `claude /login` stores your subscription credential in the macOS Keychain, which the default [sandbox](#sandbox-os-level-isolation) cannot read — so a logged-in Mac with no `CLAUDE_CODE_OAUTH_TOKEN` set fails with `Not logged in`. Use the token above, or set `sandbox.enabled: false`. (On Linux/Windows, `/login` writes `~/.claude/.credentials.json`, which the sandbox links in automatically.)
 
 ## Quick Start
 
@@ -136,7 +149,7 @@ When present, scuttlerun populates the project temp directory.
 
 Enabled by default. Restricts the agent's filesystem and network access. When the sandbox is enabled, `$HOME` is redirected to `<projectDir>/.home` so tools (npm, pip, cargo) write caches inside the sandbox rather than your real home directory.
 
-For OAuth-based auth (Claude Code subscription login), there's a single carve-out: when no `ANTHROPIC_API_KEY` is set, scuttlerun symlinks `~/.claude/.credentials.json` into the sandbox so the Agent SDK can find it. Nothing else under `~/.claude/` (skills, plugins, commands, agents, settings, session history) is exposed.
+For OAuth-based auth (Claude Code subscription login), there's a single carve-out: when no `ANTHROPIC_API_KEY` is set and `~/.claude/.credentials.json` exists (the Linux/Windows login location), scuttlerun symlinks that one file into the sandbox so the Agent SDK can find it. Nothing else under `~/.claude/` (skills, plugins, commands, agents, settings, session history) is exposed. On macOS the login credential lives in the Keychain rather than that file, so the carve-out finds nothing — set `CLAUDE_CODE_OAUTH_TOKEN` (see [Requirements](#requirements)) or disable the sandbox. scuttlerun prints a warning at session start when a sandboxed run has no credential it can reach.
 
 | Field                                 | Type     | Default                                   |
 | ------------------------------------- | -------- | ----------------------------------------- |
