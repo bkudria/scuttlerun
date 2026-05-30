@@ -83,6 +83,14 @@ export async function runSession(
         `[scuttlerun] Exposed OAuth credential: ${credResult.source} → ${credResult.link}\n`,
       );
     }
+    const credWarning = sandboxCredentialWarning({
+      sandboxEnabled: true,
+      credentialLinked: credResult.linked,
+      env: process.env,
+    });
+    if (credWarning) {
+      process.stderr.write(`${credWarning}\n`);
+    }
   }
 
   // Create oracle
@@ -502,6 +510,44 @@ export function linkOauthCredentialIntoSandbox(opts: {
 
   symlinkSync(source, link);
   return { linked: true, source, link };
+}
+
+/**
+ * Produce a session-start warning when a sandboxed session has no credential
+ * the agent subprocess can use, so the opaque "Not logged in" failure from the
+ * Agent SDK becomes actionable.
+ *
+ * When the sandbox is enabled the agent runs under a redirected HOME and a
+ * filtered env; the only credentials it can see are an allowlisted env var
+ * (ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN) or a `.credentials.json`
+ * symlinked in by `linkOauthCredentialIntoSandbox`. A subscription `claude
+ * /login` on macOS stores its credential in the Keychain, which the sandbox
+ * cannot reach — so a logged-in operator with neither env var set and no
+ * credentials file ends up with an unauthenticated session. This helper lets
+ * the runner flag that up front instead of failing silently.
+ *
+ * Returns the warning string when the sandbox will have no usable credential;
+ * returns undefined otherwise. Scoped to sandbox sessions: without the sandbox
+ * the subprocess inherits the real HOME and can read the Keychain directly, so
+ * scuttlerun cannot tell whether the operator is authenticated and stays quiet.
+ */
+export function sandboxCredentialWarning(opts: {
+  sandboxEnabled: boolean;
+  credentialLinked: boolean;
+  env: Record<string, string | undefined>;
+}): string | undefined {
+  if (!opts.sandboxEnabled) return undefined;
+  if (opts.credentialLinked) return undefined;
+  const hasApiKey = (opts.env.ANTHROPIC_API_KEY ?? '').trim() !== '';
+  const hasOauthToken = (opts.env.CLAUDE_CODE_OAUTH_TOKEN ?? '').trim() !== '';
+  if (hasApiKey || hasOauthToken) return undefined;
+  return (
+    '[scuttlerun] WARNING: sandbox is enabled but no credential is available to the agent ' +
+    '(no ANTHROPIC_API_KEY, no CLAUDE_CODE_OAUTH_TOKEN, and no ~/.claude/.credentials.json ' +
+    'to link). On macOS a subscription `claude /login` stores credentials in the Keychain, ' +
+    'which is not visible inside the sandbox. Run `claude setup-token` and export ' +
+    'CLAUDE_CODE_OAUTH_TOKEN, or set sandbox.enabled: false.'
+  );
 }
 
 export const SAFE_ENV_VARS: ReadonlySet<string> = new Set([

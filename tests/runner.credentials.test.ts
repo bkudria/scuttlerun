@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { linkOauthCredentialIntoSandbox } from '../src/runner.js';
+import { linkOauthCredentialIntoSandbox, sandboxCredentialWarning } from '../src/runner.js';
 
 describe('linkOauthCredentialIntoSandbox', () => {
   let realHome: string;
@@ -111,5 +111,59 @@ describe('linkOauthCredentialIntoSandbox', () => {
       env: { ANTHROPIC_API_KEY: key },
     });
     expect(result.linked).toBe(true);
+  });
+});
+
+describe('sandboxCredentialWarning', () => {
+  const noCreds = { sandboxEnabled: true, credentialLinked: false };
+
+  it('warns when sandbox is enabled with no key, no token, and nothing linked', () => {
+    const warning = sandboxCredentialWarning({ ...noCreds, env: {} });
+    expect(warning).toBeDefined();
+    // Actionable remediation must name the documented headless OAuth path.
+    expect(warning).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+    expect(warning).toMatch(/WARNING/);
+  });
+
+  it('returns undefined when the sandbox is disabled', () => {
+    expect(
+      sandboxCredentialWarning({ sandboxEnabled: false, credentialLinked: false, env: {} }),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when ANTHROPIC_API_KEY is set', () => {
+    expect(
+      sandboxCredentialWarning({ ...noCreds, env: { ANTHROPIC_API_KEY: 'sk-ant-test' } }),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when CLAUDE_CODE_OAUTH_TOKEN is set', () => {
+    expect(
+      sandboxCredentialWarning({ ...noCreds, env: { CLAUDE_CODE_OAUTH_TOKEN: 'oauth-token' } }),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when a credentials file was linked', () => {
+    expect(
+      sandboxCredentialWarning({ sandboxEnabled: true, credentialLinked: true, env: {} }),
+    ).toBeUndefined();
+  });
+
+  it.each([
+    ['empty string', ''],
+    ['whitespace only', '   '],
+  ])('treats %s ANTHROPIC_API_KEY as unset and warns', (_label, key) => {
+    expect(
+      sandboxCredentialWarning({ ...noCreds, env: { ANTHROPIC_API_KEY: key } }),
+    ).toBeDefined();
+  });
+
+  it.each([
+    ['empty string', ''],
+    ['whitespace only', '   '],
+  ])('treats %s CLAUDE_CODE_OAUTH_TOKEN as unset and warns', (_label, token) => {
+    expect(
+      sandboxCredentialWarning({ ...noCreds, env: { CLAUDE_CODE_OAUTH_TOKEN: token } }),
+    ).toBeDefined();
   });
 });
