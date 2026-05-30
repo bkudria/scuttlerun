@@ -3,6 +3,11 @@ import { getKnownSdkToolNames } from './sdk-tool-names.js';
 
 export const DEFAULT_ORACLE_MODEL = 'claude-haiku-4-5';
 
+// Default wall-clock ceiling for a session, in seconds. Owned here because
+// `timeout` is now a config field; runner.ts imports it for its RunOptions
+// fallback. Keep in lockstep with scuttlerun.allium's config.default_session_timeout.
+export const DEFAULT_SESSION_TIMEOUT_SECONDS = 300;
+
 function dedupeAppend(base: string[], extra: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -190,6 +195,7 @@ const SessionConfigRawSchema = z
     model: z.string().default('claude-haiku-4-5'),
     max_turns: z.number().int().min(1).default(50),
     max_budget_usd: z.number().positive().optional(),
+    timeout: z.number().int().positive().default(DEFAULT_SESSION_TIMEOUT_SECONDS),
     effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('high'),
     tools: z
       .array(z.string())
@@ -236,6 +242,7 @@ export interface SessionConfig {
   model: string;
   max_turns: number;
   max_budget_usd?: number;
+  timeout: number;
   effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   tools: string[];
   disallowed_tools?: string[];
@@ -274,6 +281,7 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
     model: parsed.model,
     max_turns: parsed.max_turns,
     max_budget_usd: parsed.max_budget_usd,
+    timeout: parsed.timeout,
     effort: parsed.effort,
     tools: resolvedTools,
     disallowed_tools: parsed.disallowed_tools,
