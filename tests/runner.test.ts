@@ -981,6 +981,81 @@ describe('runSession', () => {
     }
   });
 
+  it('warns on stderr when the prompt is an unregistered leading slash command, listing registered commands', async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: 'system',
+        subtype: 'init',
+        session_id: 's-unregistered-slash',
+        tools: [],
+        slash_commands: ['deploy', 'compact'],
+        model: 'claude-haiku-4-5',
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        session_id: 's-unregistered-slash',
+        num_turns: 1,
+        total_cost_usd: 0,
+      },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      await runSession(minConfig({ prompt: '/acme:deploy infra/prod.yaml' }));
+      expect(stderrOutput).toContain(
+        '[scuttlerun] WARNING: prompt begins with slash command "/acme:deploy"',
+      );
+      expect(stderrOutput).toContain('Registered slash commands: compact, deploy');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
+
+  it('warns with "(none)" when the prompt is a slash command and the session registers none', async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: 'system',
+        subtype: 'init',
+        session_id: 's-no-slash-commands',
+        tools: [],
+        model: 'claude-haiku-4-5',
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        session_id: 's-no-slash-commands',
+        num_turns: 1,
+        total_cost_usd: 0,
+      },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      await runSession(minConfig({ prompt: '/acme:deploy infra/prod.yaml' }));
+      expect(stderrOutput).toContain(
+        '[scuttlerun] WARNING: prompt begins with slash command "/acme:deploy"',
+      );
+      expect(stderrOutput).toContain('Registered slash commands: (none)');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
+
   it('passes verbose stderr callback that writes to stderr', async () => {
     let capturedOptions: Record<string, unknown> | undefined;
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(

@@ -2,6 +2,7 @@ import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agen
 import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, symlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { unregisteredSlashCommand } from './slash-command.js';
 import { type SessionConfig, DEFAULT_SESSION_TIMEOUT_SECONDS } from './config.js';
 import { Oracle, AskUserQuestionInputSchema } from './oracle.js';
 import { SyntheticUser } from './synthetic-user.js';
@@ -208,6 +209,26 @@ export async function runSession(
 
       if (message.type === 'system' && message.subtype === 'init' && !sessionId) {
         sessionId = message.session_id;
+
+        // Warn when the prompt is a slash command this session cannot resolve:
+        // scuttlerun forwards the prompt verbatim, so an unregistered command
+        // reaches the agent as literal text and typically runs zero turns.
+        // Loading the defining skill/plugin registers it in slash_commands.
+        const unresolvedCommand = unregisteredSlashCommand(
+          config.prompt,
+          message.slash_commands ?? [],
+        );
+        if (unresolvedCommand) {
+          const registered = (message.slash_commands ?? []).slice().sort();
+          process.stderr.write(
+            `[scuttlerun] WARNING: prompt begins with slash command "/${unresolvedCommand}" ` +
+              `which is not registered in this session, so the agent will receive it as literal ` +
+              `text and likely do nothing. Load the defining skill/plugin via project.skills, ` +
+              `project.plugins, or sdk.plugins. Registered slash commands: ` +
+              `${registered.join(', ') || '(none)'}\n`,
+          );
+        }
+
         syntheticUser = new SyntheticUser(oracle, config.user, config.prompt);
 
         // Write YAML header and first user message

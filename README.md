@@ -118,6 +118,8 @@ When present, scuttlerun populates the project temp directory.
 
 `project.plugins` is the preferred surface for loading local plugins. Each entry is a path to a plugin directory; at runtime entries are translated to `sdk.plugins` form (`{type: "local", path: <resolved>}`) and merged with any explicit `sdk.plugins`. Duplicates are dropped by resolved path on a first-wins basis, so `project.plugins` entries take precedence over `sdk.plugins` entries pointing at the same directory. `sdk.plugins` remains as an escape hatch for raw SDK passthrough.
 
+**Slash-command prompts** (e.g. `prompt: /plugin:skill …`) are forwarded to the agent verbatim — scuttlerun does not expand them. A slash command only resolves when the skill or plugin that defines it is loaded into the session (via `project.skills`, `project.plugins`, or `sdk.plugins`); loading registers it among the session's available commands. If the prompt begins with a slash command that isn't registered, scuttlerun prints a warning to stderr at session start, because the agent would otherwise receive it as literal text and typically do nothing. Note the namespace difference: a bare skill loaded via `project.skills` registers under its own name (`/skill`), while a plugin loaded via `project.plugins` registers its skills plugin-qualified (`/plugin:skill`).
+
 #### `sdk` (Agent SDK passthrough)
 
 | Field                 | Type                                                                | Default                                        |
