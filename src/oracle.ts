@@ -135,16 +135,15 @@ export class Oracle {
       systemPrompt,
       userMessage,
       AskUserQuestionResponseSchema,
+      (parsed) =>
+        parsed.answers.length === params.questions.length
+          ? null
+          : `You returned ${parsed.answers.length} answer(s) for ${params.questions.length} question(s). Return exactly one answer per question.`,
     );
 
     this.trackUsage(response.usage);
 
     const oracleAnswers = response.parsed_output.answers;
-    if (oracleAnswers.length !== params.questions.length) {
-      throw new Error(
-        `Oracle returned ${oracleAnswers.length} answers for ${params.questions.length} question(s)`,
-      );
-    }
     const answers = Object.fromEntries(
       params.questions.map((q, i) => [q.question, oracleAnswers[i].answer]),
     );
@@ -196,6 +195,7 @@ export class Oracle {
     systemPrompt: string,
     userMessage: string,
     schema: T,
+    validate?: (parsed: z.infer<T>) => string | null,
   ): Promise<{
     parsed_output: z.infer<T>;
     usage: {
@@ -206,17 +206,29 @@ export class Oracle {
     };
   }> {
     let lastError: unknown;
+    // Appended to the user message on the next attempt when a parsed response
+    // fails semantic validation, so the oracle is re-prompted with what went
+    // wrong (e.g. an answer-per-option count mismatch). Empty for transport
+    // failures, which carry no useful correction.
+    let correction = '';
     for (let attempt = 0; attempt < ORACLE_MAX_ATTEMPTS; attempt++) {
       try {
         const response = await this.client.messages.parse({
           model: this.model,
           max_tokens: 1024,
           system: systemPrompt,
-          messages: [{ role: 'user' as const, content: userMessage }],
+          messages: [{ role: 'user' as const, content: userMessage + correction }],
           output_config: { format: zodOutputFormat(schema) },
         });
         if (!response.parsed_output) {
           throw new Error('Oracle returned no structured output');
+        }
+        if (validate) {
+          const problem = validate(response.parsed_output);
+          if (problem) {
+            correction = `\n\n## Correction\n${problem}`;
+            throw new Error(problem);
+          }
         }
         return { parsed_output: response.parsed_output, usage: response.usage };
       } catch (err) {
@@ -265,7 +277,11 @@ ${persona ?? 'A helpful user who provides reasonable answers.'}
 Given the conversation so far and the questions below, select the most
 appropriate answers. Return one entry per question in the answers array,
 using the exact question text and the selected option label (or free text
-if no option fits). Provide brief reasoning.`;
+if no option fits). The answers array must have exactly one entry per
+question — one per question, never one per option. A question's options are
+alternative choices for that single question, not separate questions. For a
+multi-select question, still return a single entry whose answer lists the
+chosen labels (for example, "A, B"). Provide brief reasoning.`;
 }
 
 function buildAskUserQuestionUserMessage(
