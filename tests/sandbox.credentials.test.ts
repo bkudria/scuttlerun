@@ -153,9 +153,7 @@ describe('sandboxCredentialWarning', () => {
     ['empty string', ''],
     ['whitespace only', '   '],
   ])('treats %s ANTHROPIC_API_KEY as unset and warns', (_label, key) => {
-    expect(
-      sandboxCredentialWarning({ ...noCreds, env: { ANTHROPIC_API_KEY: key } }),
-    ).toBeDefined();
+    expect(sandboxCredentialWarning({ ...noCreds, env: { ANTHROPIC_API_KEY: key } })).toBeDefined();
   });
 
   it.each([
