@@ -1,7 +1,12 @@
 import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
-import { existsSync, lstatSync, mkdirSync, readlinkSync, realpathSync, symlinkSync } from 'node:fs';
+import { mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import {
+  buildSandboxEnv,
+  linkOauthCredentialIntoSandbox,
+  sandboxCredentialWarning,
+} from './sandbox.js';
 import { unregisteredSlashCommand } from './slash-command.js';
 import { type SessionConfig, DEFAULT_SESSION_TIMEOUT_SECONDS } from './config.js';
 import { Oracle, AskUserQuestionInputSchema } from './oracle.js';
@@ -82,6 +87,14 @@ export async function runSession(
       process.stderr.write(
         `[scuttlerun] Exposed OAuth credential: ${credResult.source} → ${credResult.link}\n`,
       );
+    }
+    const credWarning = sandboxCredentialWarning({
+      sandboxEnabled: true,
+      credentialLinked: credResult.linked,
+      env: process.env,
+    });
+    if (credWarning) {
+      process.stderr.write(`${credWarning}\n`);
     }
   }
 
@@ -468,125 +481,6 @@ function buildSdkOptions(
   }
 
   return sdkOptions;
-}
-
-export interface LinkOauthCredentialResult {
-  linked: boolean;
-  source?: string;
-  link?: string;
-}
-
-export function linkOauthCredentialIntoSandbox(opts: {
-  realHome: string;
-  sandboxHome: string;
-  env: Record<string, string | undefined>;
-}): LinkOauthCredentialResult {
-  const key = opts.env.ANTHROPIC_API_KEY;
-  if (key && key.trim() !== '') return { linked: false };
-
-  const source = join(opts.realHome, '.claude', '.credentials.json');
-  if (!existsSync(source)) return { linked: false };
-
-  const link = join(opts.sandboxHome, '.claude', '.credentials.json');
-  mkdirSync(join(opts.sandboxHome, '.claude'), { recursive: true });
-
-  const existing = lstatSync(link, { throwIfNoEntry: false });
-  if (existing) {
-    if (existing.isSymbolicLink() && readlinkSync(link) === source) {
-      return { linked: true, source, link };
-    }
-    throw new Error(
-      `Cannot expose OAuth credentials: ${link} already exists and does not point to ${source}`,
-    );
-  }
-
-  symlinkSync(source, link);
-  return { linked: true, source, link };
-}
-
-export const SAFE_ENV_VARS: ReadonlySet<string> = new Set([
-  // Required for the agent subprocess to make API calls
-  'ANTHROPIC_API_KEY',
-  // Long-lived OAuth bearer issued by `claude setup-token`
-  'CLAUDE_CODE_OAUTH_TOKEN',
-  // Paths and execution
-  'PATH',
-  'HOME',
-  'SHELL',
-  'USER',
-  'LOGNAME',
-  // Temp directories
-  'TMPDIR',
-  'TEMP',
-  'TMP',
-  // Locale and encoding
-  'LANG',
-  'LANGUAGE',
-  'LC_ALL',
-  'LC_COLLATE',
-  'LC_CTYPE',
-  'LC_MESSAGES',
-  'LC_MONETARY',
-  'LC_NUMERIC',
-  'LC_TIME',
-  // Terminal
-  'TERM',
-  'COLORTERM',
-  'TERM_PROGRAM',
-  'FORCE_COLOR',
-  'NO_COLOR',
-  // Editor
-  'EDITOR',
-  'VISUAL',
-  // Node.js runtime
-  'NODE_PATH',
-  'NODE_ENV',
-  'NODE_OPTIONS',
-  'NODE_EXTRA_CA_CERTS',
-  'NODE_NO_WARNINGS',
-  'UV_THREADPOOL_SIZE',
-  // SSL/TLS certificates
-  'SSL_CERT_FILE',
-  'SSL_CERT_DIR',
-  'CURL_CA_BUNDLE',
-  'REQUESTS_CA_BUNDLE',
-  // XDG base directories
-  'XDG_CACHE_HOME',
-  'XDG_CONFIG_HOME',
-  'XDG_DATA_HOME',
-  'XDG_RUNTIME_DIR',
-  'XDG_STATE_HOME',
-  // macOS
-  'COMMAND_MODE',
-  '__CF_USER_TEXT_ENCODING',
-  // SDK identification
-  'CLAUDE_AGENT_SDK_CLIENT_APP',
-]);
-
-export const SAFE_ENV_PREFIXES: readonly string[] = ['LC_', 'npm_config_'];
-
-export function buildSandboxEnv(
-  processEnv: Record<string, string | undefined>,
-  userEnv: Record<string, string> | undefined,
-  sandboxHome: string,
-): Record<string, string> {
-  const filtered: Record<string, string> = {};
-
-  for (const [key, value] of Object.entries(processEnv)) {
-    if (value === undefined) continue;
-    if (SAFE_ENV_VARS.has(key) || SAFE_ENV_PREFIXES.some((p) => key.startsWith(p))) {
-      filtered[key] = value;
-    }
-  }
-
-  if (userEnv) {
-    Object.assign(filtered, userEnv);
-  }
-
-  // HOME is always the sandbox home, regardless of process.env or userEnv
-  filtered.HOME = sandboxHome;
-
-  return filtered;
 }
 
 function buildSdkSessionPath(cwd: string, sessionId: string, sandboxHome?: string): string {

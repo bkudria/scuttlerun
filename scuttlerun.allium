@@ -290,6 +290,18 @@ entity Workspace {
         -- invisible. The carve-out is silently skipped when an API key
         -- is set or when no credentials file exists.
         --
+        -- When the sandbox is enabled and that carve-out links nothing
+        -- — no ANTHROPIC_API_KEY, no CLAUDE_CODE_OAUTH_TOKEN, and no
+        -- credentials file to expose — the agent subprocess has no
+        -- credential it can reach (a macOS subscription `claude /login`
+        -- stores its credential in the Keychain, which the sandbox
+        -- cannot see). The runner emits a stderr warning at session
+        -- start so this surfaces as actionable guidance rather than an
+        -- opaque downstream authentication failure. The diagnostic is
+        -- scoped to sandboxed sessions: without the sandbox the
+        -- subprocess inherits the real HOME and can read the Keychain
+        -- directly, so no such determination is made.
+        --
         -- When session.input.sandbox.enabled, the agent subprocess
         -- receives only an allowlisted set of environment variables
         -- (plus any user-supplied sdk.env overrides applied on top).
