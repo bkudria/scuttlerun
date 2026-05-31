@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { linkOauthCredentialIntoSandbox, sandboxCredentialWarning } from '../src/runner.js';
+import { linkOauthCredentialIntoSandbox, sandboxCredentialWarning } from '../src/sandbox.js';
 
 describe('linkOauthCredentialIntoSandbox', () => {
   let realHome: string;

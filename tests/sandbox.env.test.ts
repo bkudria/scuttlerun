@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSandboxEnv, SAFE_ENV_VARS, SAFE_ENV_PREFIXES } from '../src/runner.js';
+import { buildSandboxEnv, SAFE_ENV_VARS, SAFE_ENV_PREFIXES } from '../src/sandbox.js';
 
 describe('buildSandboxEnv', () => {
   it('includes safe individual vars', () => {
