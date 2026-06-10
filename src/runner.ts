@@ -312,7 +312,16 @@ export async function runSession(
           resolveNextAction?.({ type: 'end' });
           if (subtype === 'error_max_turns') exitCode = EXIT_MAX_TURNS;
           else if (subtype === 'error_max_budget_usd') exitCode = EXIT_BUDGET_EXCEEDED;
-          else exitCode = EXIT_RUNTIME_ERROR;
+          else {
+            exitCode = EXIT_RUNTIME_ERROR;
+            // Surface the SDK's error detail as a diagnostic annotation paired
+            // with the runtime-error exit code (spec rule AgentTurnFailsAtRuntime).
+            // Informational only; downstream tools should not parse it.
+            const sdkErrors = (message as { errors?: string[] }).errors;
+            if (sdkErrors && sdkErrors.length > 0) {
+              process.stderr.write(`[scuttlerun] ${sdkErrors.join('\n')}\n`);
+            }
+          }
         }
       }
     }
@@ -326,12 +335,18 @@ export async function runSession(
     } else if (oracleFailed) {
       exitCode = EXIT_RUNTIME_ERROR;
     }
-  } catch {
+  } catch (err) {
     if (timedOut) {
       process.stderr.write(`[scuttlerun] timed out after ${timeoutSeconds}s\n`);
       exitCode = EXIT_TIMEOUT;
     } else if (signaled) exitCode = EXIT_SIGINT;
-    else exitCode = EXIT_RUNTIME_ERROR;
+    else {
+      exitCode = EXIT_RUNTIME_ERROR;
+      // Surface the exception that escaped the message loop as a diagnostic
+      // annotation paired with the runtime-error exit code (spec rule
+      // SessionFailsFromUncaughtException). Informational only.
+      process.stderr.write(`[scuttlerun] ${err instanceof Error ? err.message : String(err)}\n`);
+    }
   } finally {
     // Always finalise the transcript on every termination path
     // (happy, timeout, exception) — see spec rule SessionFinalises and

@@ -379,7 +379,7 @@ describe('runSession', () => {
     expect(result.exitCode).toBe(5);
   });
 
-  it('handles error_during_execution with exit code 2', async () => {
+  it('handles error_during_execution with exit code 2 and surfaces SDK errors to stderr', async () => {
     const mockQuery = createMockQuery([
       {
         type: 'system',
@@ -397,14 +397,64 @@ describe('runSession', () => {
         // Omit num_turns and total_cost_usd to cover || 0 fallback branches
         duration_ms: 2000,
         usage: { input_tokens: 100, output_tokens: 50 },
-        errors: ['Runtime error occurred'],
+        errors: ['Runtime error occurred', 'second detail line'],
       },
     ]);
 
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
-    const result = await runSession(minConfig());
 
-    expect(result.exitCode).toBe(2);
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(minConfig());
+      expect(result.exitCode).toBe(2);
+      expect(stderrOutput).toContain('[scuttlerun] ');
+      expect(stderrOutput).toContain('Runtime error occurred');
+      expect(stderrOutput).toContain('second detail line');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
+
+  it('emits no diagnostic line for error_during_execution with empty errors', async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: 'system',
+        subtype: 'init',
+        session_id: 's4-empty',
+        tools: [],
+        model: 'claude-haiku-4-5',
+      },
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        session_id: 's4-empty',
+        is_error: true,
+        errors: [],
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(minConfig());
+      expect(result.exitCode).toBe(2);
+      expect(stderrOutput).not.toContain('[scuttlerun]');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
   });
 
   it('passes canUseTool callback that handles AskUserQuestion', async () => {
@@ -1532,13 +1582,26 @@ describe('runSession', () => {
     spy.mockRestore();
   });
 
-  it('returns exit code 2 when query throws a non-timeout error', async () => {
+  it('returns exit code 2 and surfaces the exception message to stderr when query throws a non-timeout error', async () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(() => {
       throw new Error('SDK crash');
     });
 
-    const result = await runSession(minConfig());
-    expect(result.exitCode).toBe(2);
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(minConfig());
+      expect(result.exitCode).toBe(2);
+      expect(stderrOutput).toContain('[scuttlerun] ');
+      expect(stderrOutput).toContain('SDK crash');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
   });
 
   it('returns exit code 6 when query throws after timeout', async () => {
