@@ -119,6 +119,10 @@ describe('runSession', () => {
       projectPath: '/tmp/scuttlerun-project-scaffold123',
     });
     (mockCleanOldProjects as ReturnType<typeof vi.fn>).mockResolvedValue(0);
+    // Pin credential env vars so test behavior (credential linking, sandbox
+    // credential warning) does not depend on the developer's or CI's shell env
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', 'test-oauth-token');
     stdoutOutput = '';
     process.stdout.write = ((chunk: string) => {
       stdoutOutput += chunk;
@@ -128,6 +132,7 @@ describe('runSession', () => {
 
   afterEach(() => {
     process.stdout.write = originalStdoutWrite;
+    vi.unstubAllEnvs();
   });
 
   it('runs a single-turn session to completion', async () => {
@@ -1673,6 +1678,27 @@ describe('runSession', () => {
     }
   });
 
+  it('returns exit code 2 and surfaces a stringified non-Error thrown by query', async () => {
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw 'plain string failure';
+    });
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(minConfig());
+      expect(result.exitCode).toBe(2);
+      expect(stderrOutput).toContain('[scuttlerun] plain string failure');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
+
   it('returns exit code 6 when query throws after timeout', async () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(() => {
       // Simulate: timeout fires, then error is thrown
@@ -2569,6 +2595,45 @@ describe('runSession', () => {
       vi.unstubAllEnvs();
     }
   });
+
+  it('warns on stderr when the sandbox has no usable credential', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', '');
+
+    const mockQuery = createMockQuery([
+      {
+        type: 'system',
+        subtype: 'init',
+        session_id: 's-no-cred',
+        tools: [],
+        model: 'claude-haiku-4-5',
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        session_id: 's-no-cred',
+        num_turns: 1,
+        total_cost_usd: 0,
+      },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      await runSession(minConfig());
+      expect(stderrOutput).toContain(
+        '[scuttlerun] WARNING: sandbox is enabled but no credential is available to the agent',
+      );
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
 });
 
 // =============================================================================
@@ -2586,6 +2651,10 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
       projectPath: '/tmp/scuttlerun-project-scaffold123',
     });
     (mockCleanOldProjects as ReturnType<typeof vi.fn>).mockResolvedValue(0);
+    // Pin credential env vars so test behavior (credential linking, sandbox
+    // credential warning) does not depend on the developer's or CI's shell env
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', 'test-oauth-token');
     stdoutOutput = '';
     process.stdout.write = ((chunk: string) => {
       stdoutOutput += chunk;
@@ -2595,6 +2664,7 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
 
   afterEach(() => {
     process.stdout.write = originalStdoutWrite;
+    vi.unstubAllEnvs();
   });
 
   // -------------------------------------------------------------------------
