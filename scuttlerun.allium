@@ -670,6 +670,17 @@ rule AgentTurnFailsAtRuntime {
     ensures: session.agent_cost = agent_cost_to_date
     ensures: session.turn_count = num_turns_to_date
     ensures: session.status = failed
+
+    @guidance
+        -- When the result message carries SDK error detail (the
+        -- `errors` string array on the error result), the runner writes
+        -- a single `[scuttlerun] <joined errors>` line to stderr as a
+        -- diagnostic annotation paired with the runtime-error exit code,
+        -- mirroring the timeout diagnostic in `SessionTimesOut`. The
+        -- line is informational and downstream tools should not parse
+        -- it; an empty or absent `errors` array emits nothing. This is
+        -- what makes a runtime failure observable instead of surfacing
+        -- only as a bare exit code 2.
 }
 
 rule SessionFailsFromUncaughtException {
@@ -699,6 +710,14 @@ rule SessionFailsFromUncaughtException {
         -- carry bounded retries with backoff (see
         -- SyntheticUserAnswersClarifyingQuestion and
         -- StructuredOutputParse.SchemaConformance).
+        --
+        -- On this non-timeout, non-signal exception path the runner
+        -- writes a single `[scuttlerun] <exception message>` line to
+        -- stderr as a diagnostic annotation paired with the
+        -- runtime-error exit code (same informational, do-not-parse
+        -- contract as the timeout and AgentTurnFailsAtRuntime
+        -- diagnostics). The timeout and signal branches keep their own
+        -- handling and do not emit this line.
 }
 
 rule SessionTimeoutObserved {
