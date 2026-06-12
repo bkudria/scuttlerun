@@ -1609,6 +1609,27 @@ describe('runSession', () => {
     }
   });
 
+  it('returns exit code 2 and surfaces a stringified non-Error thrown by query', async () => {
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw 'plain string failure';
+    });
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(minConfig());
+      expect(result.exitCode).toBe(2);
+      expect(stderrOutput).toContain('[scuttlerun] plain string failure');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
+
   it('returns exit code 6 when query throws after timeout', async () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(() => {
       // Simulate: timeout fires, then error is thrown
@@ -2503,6 +2524,45 @@ describe('runSession', () => {
     } finally {
       process.stderr.write = origStderrWrite;
       vi.unstubAllEnvs();
+    }
+  });
+
+  it('warns on stderr when the sandbox has no usable credential', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', '');
+
+    const mockQuery = createMockQuery([
+      {
+        type: 'system',
+        subtype: 'init',
+        session_id: 's-no-cred',
+        tools: [],
+        model: 'claude-haiku-4-5',
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        session_id: 's-no-cred',
+        num_turns: 1,
+        total_cost_usd: 0,
+      },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      await runSession(minConfig());
+      expect(stderrOutput).toContain(
+        '[scuttlerun] WARNING: sandbox is enabled but no credential is available to the agent',
+      );
+    } finally {
+      process.stderr.write = origStderrWrite;
     }
   });
 });
