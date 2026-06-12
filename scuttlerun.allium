@@ -526,7 +526,7 @@ rule SyntheticUserAnswersClarifyingQuestion {
 -- =============================================================
 
 rule AgentTurnSucceeds {
-    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: subtype = success
@@ -637,7 +637,7 @@ rule TurnPolicyEndsByCap {
 }
 
 rule AgentTurnExhaustsTurns {
-    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
@@ -648,8 +648,34 @@ rule AgentTurnExhaustsTurns {
     ensures: session.status = exhausted_turns
 }
 
+rule AgentTurnHitsTurnCapDuringExecution {
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+
+    requires: session.status = running
+    requires: session.timed_out_observed = false
+    requires: subtype = error_during_execution
+    requires: terminal_reason = max_turns
+
+    ensures: session.agent_cost = agent_cost_to_date
+    ensures: session.turn_count = num_turns_to_date
+    ensures: session.status = exhausted_turns
+
+    @guidance
+        -- The turn cap can be reached mid-execution: the SDK accepts and
+        -- processes a tool/skill call as the Nth tool use, then cannot
+        -- start the next model turn. The result subtype is
+        -- error_during_execution (not error_max_turns), but the SDK
+        -- attributes the terminal cause via terminal_reason = max_turns.
+        -- scuttlerun keys on terminal_reason to map this to
+        -- exhausted_turns (exit 7) rather than a runtime failure (exit
+        -- 2), so the same logical condition — the turn cap — yields the
+        -- same exit code regardless of where in the tool-call lifecycle
+        -- it fired. Disjoint from AgentTurnFailsAtRuntime, which carries
+        -- the complementary `terminal_reason != max_turns` guard.
+}
+
 rule AgentTurnExhaustsBudget {
-    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
@@ -661,17 +687,25 @@ rule AgentTurnExhaustsBudget {
 }
 
 rule AgentTurnFailsAtRuntime {
-    when: AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
     requires: subtype = error_during_execution
+    requires: terminal_reason != max_turns
 
     ensures: session.agent_cost = agent_cost_to_date
     ensures: session.turn_count = num_turns_to_date
     ensures: session.status = failed
 
     @guidance
+        -- An error_during_execution result is a genuine runtime failure
+        -- only when its terminal_reason is not the turn cap; the
+        -- `terminal_reason != max_turns` guard (which an absent /
+        -- undefined terminal_reason also satisfies) keeps this rule
+        -- disjoint from AgentTurnHitsTurnCapDuringExecution, which claims
+        -- the mid-execution turn-cap case for exhausted_turns instead.
+        --
         -- When the result message carries SDK error detail (the
         -- `errors` string array on the error result), the runner writes
         -- a single `[scuttlerun] <joined errors>` line to stderr as a
@@ -1140,7 +1174,7 @@ surface AgentSdkBoundary {
 
     provides:
         AgentInitialized(client, session)
-        AgentTurnCompleted(client, session, subtype, agent_cost_to_date, num_turns_to_date)
+        AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
         AgentAsksClarifyingQuestion(client, session)
         AgentEmitsAssistantMessage(client, session, text_blocks)
         AgentEmitsThinking(client, session, text)

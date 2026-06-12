@@ -355,6 +355,75 @@ describe('runSession', () => {
     expect(result.exitCode).toBe(7);
   });
 
+  it('maps error_during_execution with terminal_reason max_turns to exit code 7', async () => {
+    // The turn cap can be reached mid-execution: a tool/skill call is accepted
+    // as the Nth tool use, then the next model turn cannot start. The SDK reports
+    // subtype error_during_execution but attributes the cause via
+    // terminal_reason: 'max_turns'. This is the turn cap, not a runtime crash.
+    const mockQuery = createMockQuery([
+      {
+        type: 'system',
+        subtype: 'init',
+        session_id: 's-cap-midexec',
+        tools: [],
+        model: 'claude-haiku-4-5',
+      },
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        session_id: 's-cap-midexec',
+        stop_reason: null,
+        is_error: true,
+        num_turns: 5,
+        terminal_reason: 'max_turns',
+        errors: [],
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+    const result = await runSession(minConfig());
+
+    expect(result.exitCode).toBe(7);
+  });
+
+  it('keeps exit code 2 for error_during_execution with a non-max_turns terminal_reason', async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: 'system',
+        subtype: 'init',
+        session_id: 's-genuine-runtime',
+        tools: [],
+        model: 'claude-haiku-4-5',
+      },
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        session_id: 's-genuine-runtime',
+        stop_reason: null,
+        is_error: true,
+        terminal_reason: 'model_error',
+        errors: ['model exploded'],
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(minConfig());
+      expect(result.exitCode).toBe(2);
+      expect(stderrOutput).toContain('model exploded');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
+
   it('handles error_max_budget_usd with exit code 5', async () => {
     const mockQuery = createMockQuery([
       {
