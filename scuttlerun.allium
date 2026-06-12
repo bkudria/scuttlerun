@@ -1102,6 +1102,12 @@ surface StreamingTranscript {
         --   * TaskGet            → `task_id` (from `taskId`).
         --   * Any other tool name → the full `input` mapping is emitted
         --     verbatim under an `input:` key.
+        --
+        -- Downstream, pincenez embeds a copy of this contract in its
+        -- judge prompts (buildTranscriptFieldContractSection in
+        -- pincenez's src/prompt.ts, shared by its grader and lint
+        -- system prompts). Changing the captured fields obliges
+        -- updating that section in lockstep.
 }
 
 surface AgentSdkBoundary {
