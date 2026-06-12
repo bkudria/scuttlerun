@@ -119,6 +119,10 @@ describe('runSession', () => {
       projectPath: '/tmp/scuttlerun-project-scaffold123',
     });
     (mockCleanOldProjects as ReturnType<typeof vi.fn>).mockResolvedValue(0);
+    // Pin credential env vars so test behavior (credential linking, sandbox
+    // credential warning) does not depend on the developer's or CI's shell env
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', 'test-oauth-token');
     stdoutOutput = '';
     process.stdout.write = ((chunk: string) => {
       stdoutOutput += chunk;
@@ -128,6 +132,7 @@ describe('runSession', () => {
 
   afterEach(() => {
     process.stdout.write = originalStdoutWrite;
+    vi.unstubAllEnvs();
   });
 
   it('runs a single-turn session to completion', async () => {
@@ -2517,6 +2522,10 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
       projectPath: '/tmp/scuttlerun-project-scaffold123',
     });
     (mockCleanOldProjects as ReturnType<typeof vi.fn>).mockResolvedValue(0);
+    // Pin credential env vars so test behavior (credential linking, sandbox
+    // credential warning) does not depend on the developer's or CI's shell env
+    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', 'test-oauth-token');
     stdoutOutput = '';
     process.stdout.write = ((chunk: string) => {
       stdoutOutput += chunk;
@@ -2526,6 +2535,7 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
 
   afterEach(() => {
     process.stdout.write = originalStdoutWrite;
+    vi.unstubAllEnvs();
   });
 
   // -------------------------------------------------------------------------
