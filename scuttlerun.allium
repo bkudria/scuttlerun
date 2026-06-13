@@ -226,6 +226,7 @@ entity Session {
     tool_call_count: Integer
     agent_cost: Decimal
     oracle_cost: Decimal
+    cost_incomplete: Boolean
     timed_out_observed: Boolean
 
     transitions status {
@@ -402,6 +403,7 @@ rule SessionStarts {
         tool_call_count: 0,
         agent_cost: 0,
         oracle_cost: 0,
+        cost_incomplete: false,
         timed_out_observed: false
     )
 
@@ -724,6 +726,9 @@ rule SessionFailsFromUncaughtException {
     requires: session.timed_out_observed = false
 
     ensures: session.status = failed
+    -- No result message reported the in-flight turn's cost, so the agent
+    -- cost in the footer is incomplete/unknown rather than a confirmed $0.
+    ensures: session.cost_incomplete = true
 
     @guidance
         -- Witnesses the running -> failed edge for exceptions that
@@ -782,6 +787,9 @@ rule SessionTimesOut {
 
     ensures: session.status = timed_out
     ensures: AgentInterrupted(session)
+    -- The in-flight turn was aborted before its result, so the agent cost
+    -- in the footer is incomplete/unknown rather than a confirmed $0.
+    ensures: session.cost_incomplete = true
 
     @guidance
         -- Committer half of the timeout split. Consumes the chained
@@ -823,6 +831,9 @@ rule SessionInterruptedByOperator {
 
     ensures: session.status = interrupted
     ensures: AgentInterrupted(session)
+    -- The in-flight turn was aborted before its result, so the agent cost
+    -- in the footer is incomplete/unknown rather than a confirmed $0.
+    ensures: session.cost_incomplete = true
 
     @guidance
         -- The operator interrupted the running session by sending
@@ -1051,6 +1062,7 @@ surface CommandLineInvocation {
         session.turn_count
         session.tool_call_count
         session.total_cost
+        session.cost_incomplete
         session.workspace.path
         session.transcript
 
@@ -1109,6 +1121,10 @@ surface StreamingTranscript {
         -- least once and is a flat mapping with `input_tokens`,
         -- `output_tokens`, `cache_creation_input_tokens`,
         -- `cache_read_input_tokens`, `calls` and `cost_usd`;
+        -- `cost_incomplete` (Boolean) appears only when truthy and means
+        -- the session terminated before the in-flight turn reported a
+        -- final result, so the agent cost shown or omitted is
+        -- incomplete/unknown rather than a confirmed $0;
         -- `timed_out`
         -- (Boolean) appears only when truthy; and `files_written`,
         -- `files_edited`, `files_read` each appear only when their

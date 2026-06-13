@@ -2921,6 +2921,35 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
       expect(stdoutOutput).toContain('turns:');
       expect(stdoutOutput).toContain('tool_calls:');
       expect(stdoutOutput).toContain('duration_s:');
+      // No SDK result arrived, so the agent cost is unknown/incomplete —
+      // the footer flags it rather than silently reading as $0.
+      expect(stdoutOutput).toContain('cost_incomplete: true');
+    });
+
+    it('omits cost_incomplete when the in-flight turn produced a result', async () => {
+      const mockQuery = createMockQuery([
+        {
+          type: 'system',
+          subtype: 'init',
+          session_id: 's-fin-complete-cost',
+          tools: [],
+          model: 'claude-haiku-4-5',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          session_id: 's-fin-complete-cost',
+          num_turns: 1,
+          total_cost_usd: 0,
+        },
+      ]);
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+      const result = await runSession(minConfig());
+
+      expect(result.exitCode).toBe(0);
+      expect(stdoutOutput).toContain('turns:');
+      expect(stdoutOutput).not.toContain('cost_incomplete');
     });
 
     it('closes the SDK query even when footer emission throws', async () => {

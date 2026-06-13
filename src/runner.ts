@@ -126,6 +126,11 @@ export async function runSession(
   const startTime = Date.now();
   let resultNumTurns = 0;
   let resultTotalCostUsd = 0;
+  // Tracks whether the in-flight turn produced an SDK result. Reset when a
+  // continuation turn is dispatched, so a crash after an earlier turn's result
+  // still marks the agent cost incomplete. The SDK only reports a dollar total
+  // on the result message, so without one the turn's spend is unknown.
+  let resultArrived = false;
   const filesWritten = new Set<string>();
   const filesEdited = new Set<string>();
   const filesRead = new Set<string>();
@@ -282,6 +287,7 @@ export async function runSession(
         }
       } else if (message.type === 'result') {
         const subtype = message.subtype;
+        resultArrived = true;
 
         // Extract stats from result
         resultNumTurns = message.num_turns || 0;
@@ -302,6 +308,8 @@ export async function runSession(
           if (decision.decision === 'continue' && decision.message) {
             syntheticUser.addUserMessage(decision.message);
             writeUser(decision.message);
+            // A new turn is now in flight; its result has not arrived yet.
+            resultArrived = false;
             resolveNextAction?.({ type: 'continue', message: decision.message });
           } else {
             resolveNextAction?.({ type: 'end' });
@@ -369,6 +377,7 @@ export async function runSession(
         toolCalls: toolCallCount,
         durationMs: duration,
         totalCostUsd: resultTotalCostUsd + oracleUsage.cost_usd,
+        costIncomplete: !resultArrived,
         oracleCostUsd: oracleUsage.cost_usd,
         timedOut,
         filesWritten: Array.from(filesWritten),
