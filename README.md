@@ -205,6 +205,8 @@ This table is the canonical reference for the scuttlerun/pincenez/craboodle exit
 | 7    | Max turns exceeded                                              | scuttlerun                      |
 | 130  | Interrupted (SIGINT)                                            | scuttlerun, pincenez, craboodle |
 
+> **Budget exhaustion** normally exits `5`, but when it arrives mid-run as a "Reached maximum budget" SDK error (rather than the dedicated `error_max_budget_usd` result) scuttlerun classifies it as a runtime failure and exits `2` — the message is surfaced on stderr as `[scuttlerun] …`.
+
 ## How It Works
 
 scuttlerun wraps the Claude Agent SDK's `query()` with an async generator for multi-turn input. Two key mechanisms:
