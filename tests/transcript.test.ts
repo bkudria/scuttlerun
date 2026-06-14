@@ -400,6 +400,28 @@ describe('transcript', () => {
       expect(output).not.toContain('cost_usd');
     });
 
+    it('emits cost_incomplete when the agent cost is incomplete', () => {
+      writeFooter({
+        turns: 0,
+        toolCalls: 0,
+        durationMs: 5000,
+        totalCostUsd: 0,
+        costIncomplete: true,
+      });
+      const parsed = parseYaml(output);
+      expect(parsed.cost_incomplete).toBe(true);
+    });
+
+    it('omits cost_incomplete when the agent cost is complete', () => {
+      writeFooter({
+        turns: 1,
+        toolCalls: 0,
+        durationMs: 5000,
+        totalCostUsd: 0.05,
+      });
+      expect(output).not.toContain('cost_incomplete');
+    });
+
     it('writes file lists when provided', () => {
       writeFooter({
         turns: 1,
