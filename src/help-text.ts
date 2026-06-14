@@ -153,4 +153,7 @@ Exit Codes:
   5    Budget exceeded
   6    Timeout
   7    Max turns exceeded
-  130  Interrupted (SIGINT)`;
+  130  Interrupted (SIGINT)
+
+  Budget exhaustion normally exits 5, but a mid-run "Reached maximum
+  budget" SDK error surfaces as code 2 instead.`;
