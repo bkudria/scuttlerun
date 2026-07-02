@@ -1,5 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { computeCostUsd } from './pricing.js';
 
@@ -26,6 +25,45 @@ const TurnPolicyResponseSchema = z.discriminatedUnion('decision', [
     reasoning: z.string(),
   }),
 ]);
+
+// JSON Schemas handed to the Agent SDK's structured-output format. Hand-written
+// rather than derived via z.toJSONSchema: the SDK's structured-output path
+// requires a single top-level object schema — both the oneOf Zod emits for
+// discriminated unions and a hand-rolled top-level anyOf make the Claude Code
+// subprocess return no structured output and exit 1. The turn-policy union is
+// therefore flattened to one object with an optional message; the Zod schemas
+// above remain the source of truth for validating the parsed output.
+const ASK_USER_QUESTION_OUTPUT_SCHEMA = {
+  type: 'object' as const,
+  properties: {
+    answers: {
+      type: 'array' as const,
+      items: {
+        type: 'object' as const,
+        properties: {
+          question: { type: 'string' as const },
+          answer: { type: 'string' as const },
+        },
+        required: ['question', 'answer'],
+        additionalProperties: false,
+      },
+    },
+    reasoning: { type: 'string' as const },
+  },
+  required: ['answers', 'reasoning'],
+  additionalProperties: false,
+};
+
+const TURN_POLICY_OUTPUT_SCHEMA = {
+  type: 'object' as const,
+  properties: {
+    decision: { type: 'string' as const, enum: ['continue', 'end'] },
+    message: { type: 'string' as const },
+    reasoning: { type: 'string' as const },
+  },
+  required: ['decision', 'reasoning'],
+  additionalProperties: false,
+};
 
 export interface ConversationEntry {
   role: 'user' | 'assistant';
@@ -91,17 +129,33 @@ export interface OracleOptions {
   verbose?: boolean;
   sleep?: (ms: number) => Promise<void>;
   baseDelayMs?: number;
+  /**
+   * Environment for the oracle's SDK subprocess. Supplied by the runner with
+   * the session's auth mode applied; defaults to the parent env with
+   * CLAUDECODE unset.
+   */
+  sdkEnv?: Record<string, string | undefined>;
+}
+
+interface OracleUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
 }
 
 const ORACLE_MAX_ATTEMPTS = 4;
 const ORACLE_DEFAULT_BASE_DELAY_MS = 250;
+// Headroom for the SDK's internal structured-output round trips; the oracle
+// runs with no tools, so real sessions complete in a single turn.
+const ORACLE_MAX_TURNS = 10;
 
 export class Oracle {
-  private client: Anthropic;
   private model: string;
   private verbose: boolean;
   private sleep: (ms: number) => Promise<void>;
   private baseDelayMs: number;
+  private sdkEnv: Record<string, string | undefined> | undefined;
   private totalUsage: {
     input_tokens: number;
     output_tokens: number;
@@ -117,11 +171,11 @@ export class Oracle {
   };
 
   constructor(model: string, options: OracleOptions = {}) {
-    this.client = new Anthropic();
     this.model = model;
     this.verbose = options.verbose ?? false;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.baseDelayMs = options.baseDelayMs ?? ORACLE_DEFAULT_BASE_DELAY_MS;
+    this.sdkEnv = options.sdkEnv;
   }
 
   async answerQuestions(params: AskUserQuestionParams): Promise<AskUserQuestionResult> {
@@ -135,6 +189,7 @@ export class Oracle {
       systemPrompt,
       userMessage,
       AskUserQuestionResponseSchema,
+      ASK_USER_QUESTION_OUTPUT_SCHEMA,
       (parsed) =>
         parsed.answers.length === params.questions.length
           ? null
@@ -162,7 +217,12 @@ export class Oracle {
     const systemPrompt = buildTurnPolicySystemPrompt(params.persona, params.originalPrompt);
     const userMessage = buildTurnPolicyUserMessage(params.conversationContext);
 
-    const response = await this.callWithRetry(systemPrompt, userMessage, TurnPolicyResponseSchema);
+    const response = await this.callWithRetry(
+      systemPrompt,
+      userMessage,
+      TurnPolicyResponseSchema,
+      TURN_POLICY_OUTPUT_SCHEMA,
+    );
 
     this.trackUsage(response.usage);
 
@@ -195,15 +255,11 @@ export class Oracle {
     systemPrompt: string,
     userMessage: string,
     schema: T,
+    outputSchema: Record<string, unknown>,
     validate?: (parsed: z.infer<T>) => string | null,
   ): Promise<{
     parsed_output: z.infer<T>;
-    usage: {
-      input_tokens: number;
-      output_tokens: number;
-      cache_creation_input_tokens?: number | null;
-      cache_read_input_tokens?: number | null;
-    };
+    usage: OracleUsage;
   }> {
     let lastError: unknown;
     // Appended to the user message on the next attempt when a parsed response
@@ -213,24 +269,23 @@ export class Oracle {
     let correction = '';
     for (let attempt = 0; attempt < ORACLE_MAX_ATTEMPTS; attempt++) {
       try {
-        const response = await this.client.messages.parse({
-          model: this.model,
-          max_tokens: 1024,
-          system: systemPrompt,
-          messages: [{ role: 'user' as const, content: userMessage + correction }],
-          output_config: { format: zodOutputFormat(schema) },
-        });
-        if (!response.parsed_output) {
+        const { structured, usage } = await this.callModel(
+          systemPrompt,
+          userMessage + correction,
+          outputSchema,
+        );
+        const parsed = schema.safeParse(structured);
+        if (!parsed.success) {
           throw new Error('Oracle returned no structured output');
         }
         if (validate) {
-          const problem = validate(response.parsed_output);
+          const problem = validate(parsed.data);
           if (problem) {
             correction = `\n\n## Correction\n${problem}`;
             throw new Error(problem);
           }
         }
-        return { parsed_output: response.parsed_output, usage: response.usage };
+        return { parsed_output: parsed.data, usage };
       } catch (err) {
         lastError = err;
         if (attempt === 0 && this.verbose) {
@@ -254,17 +309,74 @@ export class Oracle {
     throw wrapped;
   }
 
-  private trackUsage(usage: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_creation_input_tokens?: number | null;
-    cache_read_input_tokens?: number | null;
-  }): void {
+  /**
+   * One oracle exchange via a one-shot Agent SDK query: no tools, structured
+   * output enforced by JSON schema. Returns the structured output (or the
+   * result string parsed as JSON when the SDK omits it) plus token usage.
+   */
+  private async callModel(
+    systemPrompt: string,
+    userMessage: string,
+    outputSchema: Record<string, unknown>,
+  ): Promise<{ structured: unknown; usage: OracleUsage }> {
+    let structured: unknown;
+    let usage: OracleUsage | undefined;
+    let sdkError: { subtype: string; errors: string[] } | undefined;
+
+    for await (const message of query({
+      prompt: userMessage,
+      options: {
+        model: this.model,
+        env: this.sdkEnv ?? { ...process.env, CLAUDECODE: undefined },
+        tools: [],
+        maxTurns: ORACLE_MAX_TURNS,
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
+        persistSession: false,
+        systemPrompt: [systemPrompt, SYSTEM_PROMPT_DYNAMIC_BOUNDARY],
+        outputFormat: {
+          type: 'json_schema',
+          schema: outputSchema,
+        },
+      },
+    })) {
+      if (message.type === 'result') {
+        usage = message.usage;
+        if (message.subtype === 'success') {
+          structured = message.structured_output ?? tryParseJson(message.result);
+        } else {
+          sdkError = {
+            subtype: message.subtype,
+            errors: (message as { errors?: string[] }).errors ?? [],
+          };
+        }
+      }
+    }
+
+    if (sdkError) {
+      const detail = sdkError.errors.length > 0 ? sdkError.errors.join('; ') : 'no error details';
+      throw new Error(`Oracle SDK call failed (${sdkError.subtype}): ${detail}`);
+    }
+    if (!usage) {
+      throw new Error('Oracle SDK call produced no result message');
+    }
+    return { structured, usage };
+  }
+
+  private trackUsage(usage: OracleUsage): void {
     this.totalUsage.input_tokens += usage.input_tokens;
     this.totalUsage.output_tokens += usage.output_tokens;
     this.totalUsage.cache_creation_input_tokens += usage.cache_creation_input_tokens ?? 0;
     this.totalUsage.cache_read_input_tokens += usage.cache_read_input_tokens ?? 0;
     this.totalUsage.calls += 1;
+  }
+}
+
+function tryParseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
   }
 }
 

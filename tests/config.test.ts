@@ -127,6 +127,20 @@ describe('parseSessionConfig', () => {
     expect(() => parseSessionConfig({ prompt: 'hi', permission_mode: 'yolo' })).toThrow();
   });
 
+  it('defaults auth to auto', () => {
+    const config = parseSessionConfig({ prompt: 'hi' });
+    expect(config.auth).toBe('auto');
+  });
+
+  it.each(['auto', 'subscription', 'api-key'] as const)('accepts auth mode %s', (mode) => {
+    const config = parseSessionConfig({ prompt: 'hi', auth: mode });
+    expect(config.auth).toBe(mode);
+  });
+
+  it('rejects an invalid auth mode', () => {
+    expect(() => parseSessionConfig({ prompt: 'hi', auth: 'oauth' })).toThrow();
+  });
+
   it('rejects unknown version', () => {
     expect(() => parseSessionConfig({ prompt: 'hi', version: '2' })).toThrow(/version/);
   });

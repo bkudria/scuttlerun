@@ -39,7 +39,7 @@ npm run dev -- examples/simple.yaml             # Run via tsx (no build step)
 
 ## Architecture
 
-**Data flow:** CLI (`cli.ts`) → parses YAML + merges configs → `runner.ts` orchestrates the session → Agent SDK `query()` with async generator for multi-turn input → `synthetic-user.ts` handles AskUserQuestion (via `canUseTool` callback) and turn policy decisions → `oracle.ts` calls Haiku via Anthropic Messages API with structured output (Zod schemas) → `transcript.ts` streams formatted output to stdout.
+**Data flow:** CLI (`cli.ts`) → parses YAML + merges configs → `runner.ts` orchestrates the session → Agent SDK `query()` with async generator for multi-turn input → `synthetic-user.ts` handles AskUserQuestion (via `canUseTool` callback) and turn policy decisions → `oracle.ts` runs a one-shot Agent SDK `query()` (no tools, JSON-schema structured output, validated with Zod) → `transcript.ts` streams formatted output to stdout.
 
 **Key coordination pattern:** The runner uses an async generator + Promise/resolver to coordinate multi-turn input. After each SDK `ResultMessage`, the synthetic user's turn policy decides whether to yield another message or return (ending the session). This pattern exists because `streamInput()` fails with `ERR_STREAM_WRITE_AFTER_END`.
 
@@ -58,7 +58,8 @@ When working with Agent SDK code (`@anthropic-ai/claude-agent-sdk`), load the `/
 - **Config merging** happens on raw YAML objects _before_ Zod schema defaults are applied (critical for correct override behavior)
 - **`canUseTool` callback** is the correct mechanism for AskUserQuestion handling (PreToolUse hooks don't work — confirmed by spikes)
 - Must override `CLAUDECODE` in the SDK's `env` option (e.g. `env: { ...process.env, CLAUDECODE: undefined }`) before `query()` to avoid nested session errors. The default branch in `runner.ts:194` does this; the sandbox branch achieves the same effect by exclusion from the `SAFE_ENV_VARS` allowlist. Avoid `delete process.env.CLAUDECODE` in production code — that mutates the parent process's env; the spread-with-override pattern is local to the SDK call.
-- Oracle uses `client.messages.parse()` with `output_format` for guaranteed structured JSON output
+- Oracle runs through the Agent SDK (one-shot `query()` with `tools: []` and `outputFormat: json_schema`), same as the agent session — so a Claude subscription covers oracle calls too. The JSON schemas are hand-written (structured outputs accept `anyOf` but not the `oneOf` Zod emits for discriminated unions) and must mirror the Zod schemas that validate the parsed output
+- **Credential preference (`auth`)** — the SDK subprocess prefers `ANTHROPIC_API_KEY` over Claude Code OAuth, so `src/auth.ts` shapes subprocess envs to invert that: `auto` (default) withholds the API-key vars when subscription credentials are detected; `subscription` withholds unconditionally; `api-key` requires the key (config error otherwise) and withholds the OAuth token. The sandboxed agent's detection excludes the macOS Keychain (unreachable under the redirected HOME); the oracle and non-sandboxed agent include it. `sdk.env` (explicit env replacement) is exempt from auth shaping
 - Timeout uses `AbortController` (passed to SDK via `sdkOptions.abortController`) + `queryHandle.interrupt()` + a `timedOut` flag checked at the top of the `for await` loop (the `for await` doesn't respond to abort signals mid-iteration, so the flag break + SDK-driven iterator end are what actually stop the loop)
 
 ## Testing

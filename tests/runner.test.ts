@@ -15,16 +15,48 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async () => {
 });
 
 import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
-const mockParse = vi.fn();
-vi.mock('@anthropic-ai/sdk', () => {
+
+// Oracle calls run through the same mocked Agent SDK query() as the agent
+// session. The two are distinguishable by prompt shape: the agent session
+// passes an AsyncIterable input generator, the oracle passes a plain string.
+type OracleReply =
+  | {
+      structured: unknown;
+      usage?: { input_tokens: number; output_tokens: number };
+      delayMs?: number;
+    }
+  | { error: unknown; delayMs?: number };
+const oracleReplies: OracleReply[] = [];
+
+function oracleQueryHandle(reply: OracleReply | undefined) {
   return {
-    default: class MockAnthropic {
-      messages = {
-        parse: mockParse,
+    close: vi.fn(),
+    interrupt: vi.fn().mockResolvedValue(undefined),
+    [Symbol.asyncIterator]: async function* () {
+      if (!reply) throw new Error('no oracle reply queued');
+      if (reply.delayMs) await new Promise((r) => setTimeout(r, reply.delayMs));
+      if ('error' in reply) throw reply.error;
+      yield {
+        type: 'result',
+        subtype: 'success',
+        structured_output: reply.structured,
+        result: JSON.stringify(reply.structured),
+        usage: reply.usage ?? { input_tokens: 100, output_tokens: 50 },
+        total_cost_usd: 0,
       };
     },
   };
-});
+}
+
+function isOraclePrompt(callArg: unknown): callArg is { prompt: string } {
+  return typeof (callArg as { prompt?: unknown }).prompt === 'string';
+}
+
+function oracleQueryCalls(): { prompt: string }[] {
+  return (mockQueryFn as ReturnType<typeof vi.fn>).mock.calls
+    .map((c) => c[0] as unknown)
+    .filter(isOraclePrompt);
+}
 vi.mock('../src/project.js', () => {
   return {
     createProjectDir: vi.fn().mockResolvedValue('/tmp/scuttlerun-project-test123'),
@@ -40,6 +72,11 @@ vi.mock('../src/cleanup.js', () => {
     WORKSPACE_CLEANUP_AGE_DAYS: 7,
   };
 });
+vi.mock('node:child_process', () => ({
+  execFileSync: vi.fn(() => {
+    throw new Error('keychain unavailable in tests');
+  }),
+}));
 vi.mock('node:fs', async () => {
   const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
   return {
@@ -70,6 +107,7 @@ function minConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
     effort: 'high',
     tools: ['Read', 'Write', 'AskUserQuestion', 'Skill'],
     permission_mode: 'bypassPermissions',
+    auth: 'auto',
     user: {
       oracle_model: 'claude-haiku-4-5',
       max_turns: 0,
@@ -112,6 +150,7 @@ const originalStdoutWrite = process.stdout.write;
 describe('runSession', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    oracleReplies.length = 0;
     (mockCreateProjectDir as ReturnType<typeof vi.fn>).mockResolvedValue(
       '/tmp/scuttlerun-project-test123',
     );
@@ -1302,24 +1341,22 @@ describe('runSession', () => {
 
   it('handles multi-turn reactive flow with continue then end', async () => {
     // Oracle returns "continue" for first turn, then "end" for second
-    mockParse
-      .mockResolvedValueOnce({
-        parsed_output: {
+    oracleReplies.push(
+      {
+        structured: {
           decision: 'continue',
           message: 'Please add tests',
           reasoning: 'Task incomplete',
         },
-        usage: { input_tokens: 100, output_tokens: 50 },
-      })
-      .mockResolvedValueOnce({
-        parsed_output: { decision: 'end', reasoning: 'All done' },
-        usage: { input_tokens: 100, output_tokens: 50 },
-      });
+      },
+      { structured: { decision: 'end', reasoning: 'All done' } },
+    );
 
     // Use a mock that consumes the inputGenerator to cover the multi-turn
     // generator code (lines 99-115 in runner.ts)
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
-      (opts: { prompt: AsyncGenerator; options: Record<string, unknown> }) => {
+      (opts: { prompt: AsyncGenerator | string; options: Record<string, unknown> }) => {
+        if (typeof opts.prompt === 'string') return oracleQueryHandle(oracleReplies.shift());
         const inputGen = opts.prompt;
         return {
           close: vi.fn(),
@@ -1399,13 +1436,13 @@ describe('runSession', () => {
     // decideTurn short-circuits on the cap and never contacts the oracle.
     // Per spec rule TurnPolicyEndsByCap, no oracle_turn transcript entry
     // is emitted on the cap-driven path.
-    mockParse.mockResolvedValueOnce({
-      parsed_output: { decision: 'continue', message: 'Add tests', reasoning: 'Task incomplete' },
-      usage: { input_tokens: 100, output_tokens: 50 },
+    oracleReplies.push({
+      structured: { decision: 'continue', message: 'Add tests', reasoning: 'Task incomplete' },
     });
 
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
-      (opts: { prompt: AsyncGenerator; options: Record<string, unknown> }) => {
+      (opts: { prompt: AsyncGenerator | string; options: Record<string, unknown> }) => {
+        if (typeof opts.prompt === 'string') return oracleQueryHandle(oracleReplies.shift());
         const inputGen = opts.prompt;
         return {
           close: vi.fn(),
@@ -1464,7 +1501,7 @@ describe('runSession', () => {
     );
 
     expect(result.exitCode).toBe(0);
-    expect(mockParse).toHaveBeenCalledTimes(1);
+    expect(oracleQueryCalls()).toHaveLength(1);
     const oracleTurnMatches = stdoutOutput.match(/oracle: turn/g) ?? [];
     expect(oracleTurnMatches).toHaveLength(1);
   });
@@ -1473,17 +1510,17 @@ describe('runSession', () => {
     type CanUseToolFn = (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
 
     // Mock oracle answer for AskUserQuestion
-    mockParse.mockResolvedValueOnce({
-      parsed_output: {
+    oracleReplies.push({
+      structured: {
         answers: [{ question: 'What language?', answer: 'TypeScript' }],
         reasoning: 'User prefers TS',
       },
-      usage: { input_tokens: 100, output_tokens: 50 },
     });
 
     let capturedCanUseTool: CanUseToolFn | undefined;
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
-      (opts: { options: { canUseTool?: CanUseToolFn } }) => {
+      (opts: { prompt?: unknown; options: { canUseTool?: CanUseToolFn } }) => {
+        if (typeof opts.prompt === 'string') return oracleQueryHandle(oracleReplies.shift());
         capturedCanUseTool = opts.options.canUseTool;
         return {
           close: vi.fn(),
@@ -1761,10 +1798,7 @@ describe('runSession', () => {
 
   it('handles timeout during oracle decideTurn (catch with timedOut)', async () => {
     // Oracle call takes longer than timeout, then throws
-    mockParse.mockImplementation(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-      throw new Error('oracle timed out');
-    });
+    oracleReplies.push({ error: new Error('oracle timed out'), delayMs: 200 });
 
     const mockQuery = createMockQuery([
       {
@@ -1786,7 +1820,9 @@ describe('runSession', () => {
         total_cost_usd: 0,
       },
     ]);
-    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt?: unknown }) =>
+      typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : mockQuery,
+    );
 
     const result = await runSession(
       minConfig({ user: { oracle_model: 'claude-haiku-4-5', max_turns: 5 } }),
@@ -1798,12 +1834,10 @@ describe('runSession', () => {
 
   it('handles already-aborted signal on next loop iteration', async () => {
     // Oracle call takes longer than timeout but succeeds (doesn't throw)
-    mockParse.mockImplementationOnce(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      return {
-        parsed_output: { decision: 'continue', message: 'more', reasoning: 'not done' },
-        usage: { input_tokens: 50, output_tokens: 20 },
-      };
+    oracleReplies.push({
+      structured: { decision: 'continue', message: 'more', reasoning: 'not done' },
+      usage: { input_tokens: 50, output_tokens: 20 },
+      delayMs: 150,
     });
 
     const mockQuery = createMockQuery([
@@ -1838,7 +1872,9 @@ describe('runSession', () => {
         total_cost_usd: 0,
       },
     ]);
-    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt?: unknown }) =>
+      typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : mockQuery,
+    );
 
     const result = await runSession(
       minConfig({ user: { oracle_model: 'claude-haiku-4-5', max_turns: 5 } }),
@@ -1851,7 +1887,8 @@ describe('runSession', () => {
 
   it('handles error result after generator is consumed (resolveNextAction defined)', async () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
-      (opts: { prompt: AsyncGenerator; options: Record<string, unknown> }) => {
+      (opts: { prompt: AsyncGenerator | string; options: Record<string, unknown> }) => {
+        if (typeof opts.prompt === 'string') return oracleQueryHandle(oracleReplies.shift());
         const inputGen = opts.prompt;
         return {
           close: vi.fn(),
@@ -2338,12 +2375,10 @@ describe('runSession', () => {
   });
 
   it('returns exit code 130 when options.signal is aborted mid-session', async () => {
-    mockParse.mockImplementationOnce(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      return {
-        parsed_output: { decision: 'continue', message: 'more', reasoning: 'ok' },
-        usage: { input_tokens: 50, output_tokens: 20 },
-      };
+    oracleReplies.push({
+      structured: { decision: 'continue', message: 'more', reasoning: 'ok' },
+      usage: { input_tokens: 50, output_tokens: 20 },
+      delayMs: 100,
     });
 
     const mockQuery = createMockQuery([
@@ -2377,7 +2412,9 @@ describe('runSession', () => {
         total_cost_usd: 0,
       },
     ]);
-    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt?: unknown }) =>
+      typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : mockQuery,
+    );
 
     const signalController = new AbortController();
     setTimeout(() => signalController.abort(), 30);
@@ -2391,12 +2428,10 @@ describe('runSession', () => {
   });
 
   it('calls queryHandle.interrupt() when options.signal is aborted', async () => {
-    mockParse.mockImplementationOnce(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      return {
-        parsed_output: { decision: 'continue', message: 'm', reasoning: 'ok' },
-        usage: { input_tokens: 50, output_tokens: 20 },
-      };
+    oracleReplies.push({
+      structured: { decision: 'continue', message: 'm', reasoning: 'ok' },
+      usage: { input_tokens: 50, output_tokens: 20 },
+      delayMs: 100,
     });
 
     const interruptSpy = vi.fn().mockResolvedValue(undefined);
@@ -2424,7 +2459,9 @@ describe('runSession', () => {
         };
       },
     };
-    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt?: unknown }) =>
+      typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : mockQuery,
+    );
 
     const signalController = new AbortController();
     setTimeout(() => signalController.abort(), 30);
@@ -2534,7 +2571,7 @@ describe('runSession', () => {
     vi.unstubAllEnvs();
   });
 
-  it('does not symlink when ANTHROPIC_API_KEY is set', async () => {
+  it('does not symlink when the API key is the effective credential (auth api-key)', async () => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test');
     vi.mocked(existsSync).mockReturnValue(true);
 
@@ -2550,9 +2587,40 @@ describe('runSession', () => {
     ]);
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
 
-    await runSession(minConfig());
+    await runSession(minConfig({ auth: 'api-key' }));
 
     expect(symlinkSync).not.toHaveBeenCalled();
+
+    vi.unstubAllEnvs();
+  });
+
+  it('symlinks credentials despite a set API key when auth prefers the subscription', async () => {
+    // auto mode + CLAUDE_CODE_OAUTH_TOKEN present (beforeEach) → the API key is
+    // withheld from the agent, so the credential file must still be exposed.
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test');
+    vi.mocked(existsSync).mockReturnValue(true);
+
+    const mockQuery = createMockQuery([
+      {
+        type: 'system',
+        subtype: 'init',
+        session_id: 's-key-sub',
+        tools: [],
+        model: 'claude-haiku-4-5',
+      },
+      {
+        type: 'result',
+        subtype: 'success',
+        session_id: 's-key-sub',
+        num_turns: 1,
+        total_cost_usd: 0,
+      },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    await runSession(minConfig());
+
+    expect(symlinkSync).toHaveBeenCalledTimes(1);
 
     vi.unstubAllEnvs();
   });
@@ -2644,6 +2712,7 @@ describe('runSession', () => {
 describe('scuttlerun.allium invariants and rule obligations', () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    oracleReplies.length = 0;
     (mockCreateProjectDir as ReturnType<typeof vi.fn>).mockResolvedValue(
       '/tmp/scuttlerun-project-test123',
     );
@@ -2748,6 +2817,128 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
     });
   });
 
+  describe('auth modes', () => {
+    function agentEnvCapture(sessionId: string) {
+      let capturedOptions: Record<string, unknown> | undefined;
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
+        (opts: { prompt?: unknown; options: Record<string, unknown> }) => {
+          if (typeof opts.prompt === 'string') return oracleQueryHandle(oracleReplies.shift());
+          capturedOptions = opts.options;
+          return createMockQuery([
+            {
+              type: 'system',
+              subtype: 'init',
+              session_id: sessionId,
+              tools: [],
+              model: 'claude-haiku-4-5',
+            },
+            {
+              type: 'result',
+              subtype: 'success',
+              session_id: sessionId,
+              num_turns: 1,
+              total_cost_usd: 0,
+            },
+          ]);
+        },
+      );
+      return () => capturedOptions;
+    }
+
+    it('strips API-key vars from the non-sandbox agent env when auth is subscription', async () => {
+      vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test');
+      const getOptions = agentEnvCapture('s-auth-sub');
+
+      await runSession(
+        minConfig({
+          auth: 'subscription',
+          sandbox: { ...minConfig().sandbox, enabled: false },
+        }),
+      );
+
+      const env = getOptions()?.env as Record<string, string | undefined>;
+      expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(env.CLAUDECODE).toBeUndefined();
+    });
+
+    it('auto prefers the subscription when both credential kinds are present', async () => {
+      // beforeEach stubs CLAUDE_CODE_OAUTH_TOKEN=test-oauth-token
+      vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test');
+      const getOptions = agentEnvCapture('s-auth-auto');
+
+      await runSession(minConfig({ sandbox: { ...minConfig().sandbox, enabled: false } }));
+
+      const env = getOptions()?.env as Record<string, string | undefined>;
+      expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('test-oauth-token');
+    });
+
+    it('auto keeps the API key when no subscription credentials are detected', async () => {
+      vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test');
+      vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', '');
+      const getOptions = agentEnvCapture('s-auth-auto-key');
+
+      await runSession(minConfig({ sandbox: { ...minConfig().sandbox, enabled: false } }));
+
+      const env = getOptions()?.env as Record<string, string | undefined>;
+      expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-test');
+    });
+
+    it('api-key mode strips the OAuth token and keeps the key', async () => {
+      vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test');
+      const getOptions = agentEnvCapture('s-auth-key');
+
+      await runSession(
+        minConfig({
+          auth: 'api-key',
+          sandbox: { ...minConfig().sandbox, enabled: false },
+        }),
+      );
+
+      const env = getOptions()?.env as Record<string, string | undefined>;
+      expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-test');
+      expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    });
+
+    it('rejects api-key mode when ANTHROPIC_API_KEY is not set', async () => {
+      await expect(runSession(minConfig({ auth: 'api-key' }))).rejects.toThrow(/ANTHROPIC_API_KEY/);
+    });
+
+    it('removes ANTHROPIC_API_KEY from the sandbox env when auth prefers the subscription', async () => {
+      vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test');
+      const getOptions = agentEnvCapture('s-auth-sandbox');
+
+      await runSession(minConfig({ auth: 'subscription' }));
+
+      const env = getOptions()?.env as Record<string, string | undefined>;
+      expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(env.HOME).toBe('/tmp/scuttlerun-project-test123/.home');
+    });
+
+    it('passes the auth-shaped env to the oracle', async () => {
+      vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test');
+      oracleReplies.push({ structured: { decision: 'end', reasoning: 'done' } });
+      agentEnvCapture('s-auth-oracle');
+
+      await runSession(
+        minConfig({
+          auth: 'subscription',
+          user: { oracle_model: 'claude-haiku-4-5', max_turns: 5 },
+        }),
+      );
+
+      const oracleCall = (mockQueryFn as ReturnType<typeof vi.fn>).mock.calls
+        .map(
+          (c) =>
+            c[0] as { prompt?: unknown; options?: { env?: Record<string, string | undefined> } },
+        )
+        .find((c) => typeof c.prompt === 'string');
+      expect(oracleCall).toBeDefined();
+      expect(oracleCall?.options?.env?.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(oracleCall?.options?.env?.CLAUDECODE).toBeUndefined();
+    });
+  });
+
   // -------------------------------------------------------------------------
   // [invariant.OnlyTextReachesOracleContext]
   // For entry in ConversationEntries: entry.role in {user, assistant} and contains
@@ -2756,8 +2947,8 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
   // -------------------------------------------------------------------------
   describe('[invariant] OnlyTextReachesOracleContext', () => {
     it("strips thinking and tool_use blocks before the oracle's decideTurn call", async () => {
-      mockParse.mockResolvedValueOnce({
-        parsed_output: { decision: 'end', reasoning: 'done' },
+      oracleReplies.push({
+        structured: { decision: 'end', reasoning: 'done' },
         usage: { input_tokens: 50, output_tokens: 20 },
       });
 
@@ -2793,15 +2984,17 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
           total_cost_usd: 0,
         },
       ]);
-      (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt?: unknown }) =>
+        typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : mockQuery,
+      );
 
       await runSession(minConfig({ user: { oracle_model: 'claude-haiku-4-5', max_turns: 5 } }));
 
-      // The oracle.decideTurnPolicy call routes through mockParse. Inspect the
-      // user message it received and verify only text content reaches it.
-      expect(mockParse).toHaveBeenCalled();
-      const callArgs = mockParse.mock.calls[0][0];
-      const userMsg = callArgs.messages[0].content as string;
+      // The oracle.decideTurnPolicy call routes through the mocked query with a
+      // string prompt. Inspect it and verify only text content reaches the oracle.
+      const oracleCalls = oracleQueryCalls();
+      expect(oracleCalls.length).toBeGreaterThan(0);
+      const userMsg = oracleCalls[0].prompt;
       expect(userMsg).toContain('VISIBLE_ASSISTANT_TEXT');
       expect(userMsg).not.toContain('INTERNAL_THINKING_MARKER');
       expect(userMsg).not.toContain('TOOL_INPUT_MARKER');

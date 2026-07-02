@@ -11,23 +11,42 @@
 --   - Workspace lifecycle: scaffold-or-bare, preservation, stale GC
 --   - Cost accumulation across agent and oracle
 --   - Streaming transcript shape (preamble / conversation / footer)
+--   - Credential preference (auth mode) shaping which credential the agent
+--     session and the oracle authenticate with
 --
 -- Excludes:
 --   - YAML config schema and merge semantics (input presentation, not behaviour)
 --   - Agent SDK protocol internals (message envelopes, async-iterator coordination)
---   - Anthropic Messages API integration details (oracle is a black box here)
+--   - Oracle SDK call mechanics beyond the credential surface and retry
+--     policy captured here (one-shot query plumbing, structured-output
+--     round trips, and the hand-written JSON schema mirroring the Zod
+--     validators)
 --   - Sandbox enforcement (delegated to the Agent SDK; scuttlerun configures the sandbox via SessionInput.sandbox)
 --   - Pricing table maintenance (a data file, not behaviour)
 
 -- Self-reference. scuttlerun's external entities (AgentSdkClient,
--- AnthropicMessagesApi, Caller) sit at code-to-code or shell-to-process
--- boundaries; their governing specifications are upstream non-Allium
--- artefacts (the Agent SDK TypeScript types, the Anthropic Messages API
--- HTTP contract, and the operating system process model respectively).
--- This declaration anchors the module to a known coordinate so the
--- checker's missing-source-hint heuristic is satisfied without
--- inventing fictitious upstream Allium specs.
+-- OracleSdkClient, Environment, Caller) sit at code-to-code or
+-- shell-to-process boundaries; their governing specifications are upstream
+-- non-Allium artefacts (the Agent SDK TypeScript types for both the agent
+-- session and the one-shot oracle query, the operating system shell,
+-- filesystem and Keychain for the credential environment, and the operating
+-- system process model respectively). This declaration anchors the module
+-- to a known coordinate so the checker's missing-source-hint heuristic is
+-- satisfied without inventing fictitious upstream Allium specs.
 use "./scuttlerun.allium" as scuttlerun
+
+
+-- =============================================================
+-- Given
+-- =============================================================
+
+-- The invoking process environment, inspected once at session start during
+-- credential resolution (see the Environment entity for the detection
+-- sources and CredentialSelection for how the result shapes each SDK
+-- subprocess env).
+given {
+    environment: Environment
+}
 
 
 -- =============================================================
@@ -43,6 +62,36 @@ config {
     default_agent_model: String = "claude-haiku-4-5"
     default_oracle_model: String = "claude-haiku-4-5"
     workspace_dir_prefix: String = "scuttlerun-project-"
+}
+
+
+-- =============================================================
+-- Enumerations
+-- =============================================================
+
+-- The operator's credential preference, set by --auth (default auto when
+-- the flag is omitted). api_key corresponds to the --auth api-key CLI token.
+enum AuthMode {
+    auto                          -- prefer the subscription when it is
+                                  -- detected alongside API credentials, else
+                                  -- forward the environment unchanged
+  | subscription                  -- force the Claude subscription; withhold
+                                  -- API-key credentials from the subprocess
+  | api_key                       -- force ANTHROPIC_API_KEY; requires it to be set
+}
+
+-- How scuttlerun shapes an SDK subprocess environment, and hence which
+-- credential that subprocess authenticates with. The Claude Code runtime the
+-- Agent SDK spawns prefers ANTHROPIC_API_KEY over stored subscription OAuth,
+-- so scuttlerun selects a credential by withholding the ones it does not want.
+enum CredentialSelection {
+    subscription                  -- API-key variables (ANTHROPIC_API_KEY,
+                                  -- ANTHROPIC_AUTH_TOKEN) withheld, so the
+                                  -- subscription is used
+  | api_key                       -- CLAUDE_CODE_OAUTH_TOKEN withheld, the API
+                                  -- key retained, so the API key is used
+  | passthrough                   -- environment forwarded unchanged, apart
+                                  -- from the pre-existing CLAUDECODE unset
 }
 
 
@@ -67,6 +116,7 @@ value SessionInput {
     effort: low | medium | high | xhigh | max
     project: ProjectTemplate?
     sandbox: Sandbox
+    auth: AuthMode
 
     @guidance
         -- prompt is forwarded verbatim to the Agent SDK as the initial
@@ -117,6 +167,16 @@ value SessionInput {
         -- effort is passed through to the Agent SDK as a reasoning
         -- effort knob. Default value handling lives in CLI/config and
         -- is out of spec scope.
+        --
+        -- auth is the resolved credential preference (AuthMode). It is
+        -- supplied via the top-level YAML field auth and the --auth CLI
+        -- flag (the flag overrides the merged config value, like timeout),
+        -- defaulting to auto when omitted. An invalid --auth value is a
+        -- configuration error (exit 1) whose message names the valid modes.
+        -- The resolved value is echoed in the --dry-run summary. How auth
+        -- shapes each SDK subprocess env is specified on
+        -- Session.credential_selection and the AgentSdkBoundary /
+        -- OracleSdkBoundary surfaces.
 }
 
 value ProjectTemplate {
@@ -198,11 +258,43 @@ value SandboxFilesystem {
     deny_write: List<String>
 }
 
--- The Agent SDK process scuttlerun drives. Code-to-code boundary.
+-- The Agent SDK process scuttlerun drives for the agent session.
+-- Code-to-code boundary.
 external entity AgentSdkClient {}
 
--- The Anthropic Messages API the oracle calls. Code-to-code boundary.
-external entity AnthropicMessagesApi {}
+-- The Agent SDK process scuttlerun drives for a one-shot synthetic-user
+-- oracle query (no tools, structured output). The oracle now runs through
+-- the same Claude Agent SDK as the agent session — not the raw Anthropic
+-- Messages API — so both authenticate through the same Claude Code
+-- credential surface. Code-to-code boundary.
+external entity OracleSdkClient {}
+
+-- The invoking process environment scuttlerun inspects once at session start
+-- to decide which credential each SDK subprocess authenticates with.
+-- Governed by: the OS shell environment, filesystem, and (on macOS) Keychain.
+--
+-- Subscription-credential detection is best-effort, checked in order, and
+-- short-circuits on the first hit:
+--   1. CLAUDE_CODE_OAUTH_TOKEN set to a non-blank value;
+--   2. a Claude Code credentials file at $CLAUDE_CONFIG_DIR/.credentials.json
+--      (or ~/.claude/.credentials.json when CLAUDE_CONFIG_DIR is unset) that
+--      parses as JSON and carries a claudeAiOauth key — an unreadable or
+--      unparseable file counts as absent;
+--   3. on macOS only, a Keychain generic password with service name
+--      "Claude Code-credentials" — a failed lookup counts as absent.
+--
+-- Detection runs in two scopes because the agent runs under different HOMEs.
+-- subscription_present includes all three sources (the oracle and the
+-- non-sandboxed agent run under the real HOME). sandbox_subscription_present
+-- excludes source 3: the sandboxed agent runs under a redirected HOME that
+-- cannot reach the Keychain, so a Keychain-only login must not count there
+-- (it would otherwise leave the sandbox unauthenticated).
+external entity Environment {
+    has_api_key: Boolean          -- ANTHROPIC_API_KEY set and non-blank
+    has_api_credentials: Boolean  -- ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN set
+    subscription_present: Boolean         -- detection incl. Keychain
+    sandbox_subscription_present: Boolean -- detection excl. Keychain
+}
 
 -- The shell/script invoking scuttlerun.
 external entity Caller {}
@@ -217,6 +309,19 @@ entity Session {
     workspace: Workspace
     started_at: Timestamp
     sdk_session_id: String?
+
+    -- Credential preference resolved once at session start, before any
+    -- session work, from input.auth and the detected environment. Two scopes
+    -- exist because the agent runs under different HOMEs: credential_selection
+    -- governs the oracle and the non-sandboxed agent (real HOME,
+    -- Keychain-inclusive detection); sandbox_credential_selection governs the
+    -- sandboxed agent (redirected HOME that cannot reach the macOS Keychain).
+    -- They differ only in auto mode when the sole subscription credential is a
+    -- macOS Keychain login: the parent scope selects subscription while the
+    -- sandbox scope keeps the API key, so the sandbox is not left
+    -- unauthenticated.
+    credential_selection: CredentialSelection
+    sandbox_credential_selection: CredentialSelection
 
     status: pending | running | completed_success
           | exhausted_turns | exhausted_budget | failed | timed_out
@@ -280,26 +385,33 @@ entity Workspace {
         -- of whether the workspace was scaffolded from a project
         -- template.
         --
-        -- A single carve-out exists for OAuth authentication: when no
-        -- ANTHROPIC_API_KEY is set on the parent process and the
-        -- operator's real-home credentials file exists, that one file
-        -- (~/.claude/.credentials.json) is exposed inside the sandbox
-        -- via a symlink at <workspace>/.home/.claude/.credentials.json.
-        -- Nothing else under the operator's ~/.claude/ is reachable
-        -- from the agent subprocess; skills, plugins, commands, agents,
-        -- settings, prior session history and other operator state stay
-        -- invisible. The carve-out is silently skipped when an API key
-        -- is set or when no credentials file exists.
+        -- A single carve-out exists for subscription authentication: when
+        -- the sandbox's auth-shaped view of the environment presents no
+        -- ANTHROPIC_API_KEY and the operator's real-home credentials file
+        -- exists, that one file (~/.claude/.credentials.json) is exposed
+        -- inside the sandbox via a symlink at
+        -- <workspace>/.home/.claude/.credentials.json. Nothing else under
+        -- the operator's ~/.claude/ is reachable from the agent subprocess;
+        -- skills, plugins, commands, agents, settings, prior session history
+        -- and other operator state stay invisible. The symlink and the
+        -- warning below both evaluate the auth-shaped view (see
+        -- Session.sandbox_credential_selection), not the raw parent env, so a
+        -- subscription-preferring mode links the credentials file even when
+        -- ANTHROPIC_API_KEY is set in the parent process — previously a set
+        -- key always suppressed the symlink. The carve-out is silently
+        -- skipped when the auth-shaped view still carries an API key (api-key
+        -- mode, or auto with no subscription detected in the sandbox scope)
+        -- or when no credentials file exists.
         --
         -- When the sandbox is enabled and that carve-out links nothing
-        -- — no ANTHROPIC_API_KEY, no CLAUDE_CODE_OAUTH_TOKEN, and no
-        -- credentials file to expose — the agent subprocess has no
-        -- credential it can reach (a macOS subscription `claude /login`
-        -- stores its credential in the Keychain, which the sandbox
-        -- cannot see). The runner emits a stderr warning at session
-        -- start so this surfaces as actionable guidance rather than an
-        -- opaque downstream authentication failure. The diagnostic is
-        -- scoped to sandboxed sessions: without the sandbox the
+        -- — the auth-shaped view carries no ANTHROPIC_API_KEY, no
+        -- CLAUDE_CODE_OAUTH_TOKEN, and there is no credentials file to
+        -- expose — the agent subprocess has no credential it can reach (a
+        -- macOS subscription `claude /login` stores its credential in the
+        -- Keychain, which the sandbox cannot see). The runner emits a stderr
+        -- warning at session start so this surfaces as actionable guidance
+        -- rather than an opaque downstream authentication failure. The
+        -- diagnostic is scoped to sandboxed sessions: without the sandbox the
         -- subprocess inherits the real HOME and can read the Keychain
         -- directly, so no such determination is made.
         --
@@ -387,6 +499,28 @@ entity TranscriptEntry {
 rule SessionStarts {
     when: SessionRequested(caller, input, started_at)
 
+    -- Credential preference is resolved once here, before any session work.
+    -- api-key mode requires ANTHROPIC_API_KEY; without it the run is a
+    -- configuration error (exit 1) and no Session is created.
+    requires: input.auth = api_key implies environment.has_api_key
+
+    -- Parent-scope selection: governs the oracle and the non-sandboxed agent
+    -- (real HOME, Keychain-inclusive detection).
+    let credential_selection =
+        if input.auth = api_key: api_key
+        else if input.auth = subscription: subscription
+        else if environment.has_api_credentials and environment.subscription_present: subscription
+        else: passthrough
+
+    -- Sandbox-scope selection: governs the sandboxed agent (redirected HOME,
+    -- Keychain-exclusive detection), so a Keychain-only login does not
+    -- withhold the API key from the sandbox.
+    let sandbox_credential_selection =
+        if input.auth = api_key: api_key
+        else if input.auth = subscription: subscription
+        else if environment.has_api_credentials and environment.sandbox_subscription_present: subscription
+        else: passthrough
+
     -- Best-effort cleanup of stale workspaces from prior runs.
     -- Failures are silently ignored; this is not on the critical path.
     ensures: StaleWorkspaceCleanup(config.workspace_cleanup_age)
@@ -399,6 +533,8 @@ rule SessionStarts {
         input: input,
         started_at: started_at,
         status: pending,
+        credential_selection: credential_selection,
+        sandbox_credential_selection: sandbox_credential_selection,
         turn_count: 0,
         tool_call_count: 0,
         agent_cost: 0,
@@ -414,6 +550,14 @@ rule SessionStarts {
         -- order, and the cleanup's success or failure does not block
         -- session startup. The order shown here is logical, not
         -- temporal.
+        --
+        -- Credential resolution precedes every ensures here: it runs before
+        -- the stale-workspace cleanup, project scaffolding and any transcript
+        -- output. The api-key-without-key configuration error and an invalid
+        -- --auth value are both raised before a Session exists (exit 1),
+        -- consistent with the exit-code mapping below. Resolution never
+        -- mutates the parent process env; it only shapes the per-subprocess
+        -- env described on the SDK surfaces.
 }
 
 rule SessionScaffoldsSkills {
@@ -952,7 +1096,7 @@ rule AssistantToolCallEmitted {
 -- =============================================================
 
 rule OracleCallTracked {
-    when: OracleCallCompleted(api, session, usage)
+    when: OracleCallCompleted(oracle, session, usage)
 
     ensures: session.oracle_cost = session.oracle_cost
         + (usage.input_tokens * input_rate(session.input.oracle_model)
@@ -963,8 +1107,9 @@ rule OracleCallTracked {
 
     @guidance
         -- The cost increment combines input, output, cache-creation and
-        -- cache-read token counts reported by the API call with the
-        -- model's per-million-token rates: input tokens times the input
+        -- cache-read token counts reported on the oracle's SDK result
+        -- message with the model's per-million-token rates: input tokens
+        -- times the input
         -- rate, output tokens times the output rate, plus cache-creation
         -- and cache-read tokens against their own rate columns. The
         -- cache columns are derived from the input rate by fixed
@@ -1048,6 +1193,22 @@ invariant SinglePersonaPerSession {
         synthetic.persona = synthetic.session.input.persona
 }
 
+invariant CredentialSelectionMatchesMode {
+    -- The resolved credential selection always agrees with the operator's
+    -- auth mode. api-key mode selects the API key; subscription mode selects
+    -- the subscription; and only api-key mode ever selects the API key. Both
+    -- the parent scope (oracle and non-sandboxed agent) and the sandbox scope
+    -- obey the same mapping — they diverge only between subscription and
+    -- passthrough in auto mode, never onto api_key.
+    for session in Sessions:
+        (session.input.auth = api_key implies session.credential_selection = api_key)
+        and (session.input.auth = subscription implies session.credential_selection = subscription)
+        and (session.credential_selection = api_key implies session.input.auth = api_key)
+        and (session.input.auth = api_key implies session.sandbox_credential_selection = api_key)
+        and (session.input.auth = subscription implies session.sandbox_credential_selection = subscription)
+        and (session.sandbox_credential_selection = api_key implies session.input.auth = api_key)
+}
+
 
 -- =============================================================
 -- Surfaces
@@ -1089,7 +1250,22 @@ surface CommandLineInvocation {
     @guarantee ExitCodeReflectsOutcome
         -- The process exit code maps to session.status (see Session
         -- @guidance). Exit code 1 is reserved for configuration errors
-        -- raised before a Session is created.
+        -- raised before a Session is created — including an invalid --auth
+        -- value and api-key mode without a non-blank ANTHROPIC_API_KEY.
+
+    @guarantee CredentialPreference
+        -- The operator selects which credential the run authenticates with
+        -- via --auth: auto (default), subscription, or api-key. auto prefers
+        -- a detected subscription over API credentials; subscription forces
+        -- the subscription; api-key forces ANTHROPIC_API_KEY. The flag
+        -- overrides the merged config value (like --timeout). An invalid
+        -- value is a configuration error (exit 1) whose message names the
+        -- valid modes; api-key mode with ANTHROPIC_API_KEY unset or blank is
+        -- a configuration error (exit 1) with the message "auth mode api-key
+        -- requires ANTHROPIC_API_KEY to be set". The resolved auth value is
+        -- echoed in the --dry-run summary. The auth mode does not affect
+        -- cost: transcript footer costs remain notional API-rate figures
+        -- computed from token usage, and max_budget_usd is unchanged.
 }
 
 surface StreamingTranscript {
@@ -1203,6 +1379,27 @@ surface AgentSdkBoundary {
         demands SessionPersistence
         demands AbortableExecution
 
+    @guarantee CredentialSelectionShapesSubprocessEnv
+        -- The resolved credential preference shapes the agent subprocess env
+        -- so the chosen credential wins (the Claude Code runtime otherwise
+        -- prefers ANTHROPIC_API_KEY over stored subscription OAuth).
+        -- subscription withholds the API-credential variables
+        -- (ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN); api-key withholds
+        -- CLAUDE_CODE_OAUTH_TOKEN and keeps the key; auto withholds the
+        -- API-credential variables only when both API credentials and a
+        -- subscription credential are detected, else passes the env through.
+        -- CLAUDECODE is always unset and the parent process env is never
+        -- mutated.
+        --
+        -- The shaping is applied at two application points. When the sandbox
+        -- is enabled it is applied to the allowlist-filtered env using the
+        -- sandbox-scope selection (Session.sandbox_credential_selection,
+        -- Keychain-exclusive); when the sandbox is disabled it is applied to
+        -- the parent env using the parent-scope selection
+        -- (Session.credential_selection, Keychain-inclusive). An explicit
+        -- operator-supplied sdk.env (a full env replacement) is exempt from
+        -- auth shaping — the operator asked for exactly that environment.
+
     @guidance
         -- session.input.disallowed_tools is the deny list scuttlerun
         -- passes to the Agent SDK alongside the allow list. Under
@@ -1213,17 +1410,39 @@ surface AgentSdkBoundary {
         -- is layered on top of the mode's own enforcement.
 }
 
-surface OracleApiBoundary {
-    facing api: AnthropicMessagesApi
+surface OracleSdkBoundary {
+    facing oracle: OracleSdkClient
 
     context session: Session
 
     provides:
-        OracleCallCompleted(api, session, usage)
+        OracleCallCompleted(oracle, session, usage)
         TurnPolicyDecided(session, decision, message, reasoning)
 
     contracts:
         demands StructuredOutputParse
+
+    @guarantee OracleRunsThroughAgentSdk
+        -- Each oracle exchange is a one-shot Claude Agent SDK query() with
+        -- no tools, persistSession disabled, permissionMode
+        -- bypassPermissions, the oracle system prompt plus the SDK's
+        -- dynamic-boundary marker, and structured output enforced by a
+        -- hand-written JSON schema. Each schema is a single top-level object
+        -- (the SDK's structured-output path returns nothing and exits for
+        -- top-level anyOf/oneOf, so the turn-policy union is flattened to
+        -- one object with an optional message; the Zod schemas remain the
+        -- validation source of truth). The oracle no longer calls the
+        -- Anthropic Messages API; the raw @anthropic-ai/sdk dependency is
+        -- gone.
+
+    @guarantee OracleSharesCredentialSurface
+        -- The oracle runs in this process (never sandboxed) under the
+        -- auth-shaped parent env (Keychain-inclusive detection), so it
+        -- authenticates through the same Claude Code credential surface as
+        -- the agent session. A subscription-only environment now works end
+        -- to end: oracle features no longer require a separate API key.
+        -- Usage and cost accounting are unchanged — token usage is read from
+        -- the SDK result message and costed from the pricing table.
 }
 
 
@@ -1295,13 +1514,19 @@ contract StructuredOutputParse {
     parse: (system_prompt: String, user_message: String, schema: Any) -> Any
 
     @invariant SchemaConformance
-        -- The returned parsed_output conforms to the requested schema.
-        -- The call is retried with bounded exponential backoff on
-        -- failure before reporting a structured-output error to the
-        -- caller.
+        -- Each parse is a one-shot Agent SDK query() with no tools and
+        -- JSON-schema structured output; the structured output (or, when the
+        -- SDK omits it, the result string parsed as JSON) is validated
+        -- against the same schema. The call is retried with bounded
+        -- exponential backoff, up to a fixed maximum number of attempts,
+        -- before reporting a structured-output error to the caller. An SDK
+        -- error-subtype result and a transport failure both count as
+        -- retryable attempts; a semantic mismatch (e.g. an answer count that
+        -- does not match the question count) re-prompts the next attempt
+        -- with corrective feedback stating the expected shape.
 
     @invariant UsageReported
-        -- The response carries token-usage counts (input, output,
+        -- The SDK result message carries token-usage counts (input, output,
         -- cache-creation, cache-read) used by scuttlerun for cost
-        -- accounting.
+        -- accounting, unchanged by the move to the Agent SDK.
 }

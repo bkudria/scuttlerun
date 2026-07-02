@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSessionConfig, mergeRawConfigs, type SessionConfig } from './config.js';
+import { parseAuthMode } from './auth.js';
 import { runSession } from './runner.js';
 import { formatCliError } from './errors.js';
 import { EXIT_SUCCESS, EXIT_CONFIG_ERROR, EXIT_SIGINT } from './exit-codes.js';
@@ -31,6 +32,7 @@ interface CliOverrides {
   tools?: string;
   effort?: string;
   timeout?: number;
+  auth?: string;
   verbose?: boolean;
 }
 
@@ -59,6 +61,9 @@ export async function buildConfig(
   }
   if (overrides.effort) {
     config = { ...config, effort: overrides.effort as SessionConfig['effort'] };
+  }
+  if (overrides.auth) {
+    config = { ...config, auth: parseAuthMode(overrides.auth) };
   }
   if (overrides.tools) {
     config = { ...config, tools: overrides.tools.split(',').map((t) => t.trim()) };
@@ -94,6 +99,7 @@ export function buildDryRunSummary(config: SessionConfig): Record<string, unknow
     max_turns: config.max_turns,
     timeout: config.timeout,
     permission_mode: config.permission_mode,
+    auth: config.auth,
     user: {
       oracle_model: config.user.oracle_model,
       max_turns: config.user.max_turns,
@@ -142,6 +148,10 @@ async function main() {
       parseInt(v, 10),
     )
     .option(
+      '--auth <mode>',
+      'Credential preference: auto (subscription when present), subscription, or api-key (default: auto)',
+    )
+    .option(
       '-v, --verbose',
       'Verbose logging to stderr (includes agent stderr; note: -V is --version)',
     )
@@ -172,6 +182,7 @@ async function main() {
           tools: opts.tools,
           effort: opts.effort,
           timeout: opts.timeout,
+          auth: opts.auth,
         });
 
         if (opts.dryRun) {

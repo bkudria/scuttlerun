@@ -216,6 +216,7 @@ const SessionConfigRawSchema = z
     permission_mode: z
       .enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk'])
       .default('bypassPermissions'),
+    auth: z.enum(['auto', 'subscription', 'api-key']).default('auto'),
     user: z.unknown().optional(),
     sdk: z.unknown().optional(),
     sandbox: z.unknown().optional(),
@@ -248,6 +249,7 @@ export interface SessionConfig {
   disallowed_tools?: string[];
   project?: ProjectConfig;
   permission_mode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk';
+  auth: 'auto' | 'subscription' | 'api-key';
   user: UserConfig;
   sdk: SdkConfig;
   sandbox: SandboxConfig;
@@ -287,6 +289,7 @@ export function parseSessionConfig(raw: unknown): SessionConfig {
     disallowed_tools: parsed.disallowed_tools,
     project: parsed.project,
     permission_mode: parsed.permission_mode,
+    auth: parsed.auth,
     user,
     sdk: {
       ...sdkRaw,
