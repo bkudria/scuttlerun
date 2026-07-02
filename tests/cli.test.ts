@@ -42,19 +42,19 @@ model: claude-haiku-4-5
 max_turns: 10
 `;
     const config = await buildConfig([yaml], {
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5',
       prompt: 'overridden prompt',
       maxTurns: 30,
       effort: 'max',
       tools: 'Read,Grep,Glob',
-      oracleModel: 'claude-sonnet-4-6',
+      oracleModel: 'claude-sonnet-5',
     });
-    expect(config.model).toBe('claude-sonnet-4-6');
+    expect(config.model).toBe('claude-sonnet-5');
     expect(config.prompt).toBe('overridden prompt');
     expect(config.max_turns).toBe(30);
     expect(config.effort).toBe('max');
     expect(config.tools).toEqual(['Read', 'Grep', 'Glob']);
-    expect(config.user.oracle_model).toBe('claude-sonnet-4-6');
+    expect(config.user.oracle_model).toBe('claude-sonnet-5');
   });
 
   it('applies max_budget_usd CLI override', async () => {

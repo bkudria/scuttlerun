@@ -77,7 +77,7 @@ scuttlerun forwards `CLAUDE_CODE_OAUTH_TOKEN` to the agent in both sandboxed and
 scuttlerun examples/simple.yaml
 
 # Run with overrides
-scuttlerun examples/multi-turn.yaml --timeout 120 --model claude-sonnet-4-6
+scuttlerun examples/multi-turn.yaml --timeout 120 --model claude-sonnet-5
 ```
 
 ## Session Config

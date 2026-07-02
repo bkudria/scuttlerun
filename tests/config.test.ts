@@ -55,7 +55,7 @@ describe('parseSessionConfig', () => {
       permission_mode: 'default' as const,
       user: {
         persona: 'You are a beginner programmer.',
-        oracle_model: 'claude-sonnet-4-6',
+        oracle_model: 'claude-sonnet-5',
         max_turns: 5,
       },
       sdk: {
@@ -470,12 +470,12 @@ describe('parseSessionConfig', () => {
       prompt: 'hi',
       sdk: {
         agents: {
-          a: { description: 'd', prompt: 'p', model: 'claude-opus-4-7' },
+          a: { description: 'd', prompt: 'p', model: 'claude-opus-4-8' },
         },
       },
     });
     const agent = (config.sdk.agents as Record<string, Record<string, unknown>>)?.a;
-    expect(agent.model).toBe('claude-opus-4-7');
+    expect(agent.model).toBe('claude-opus-4-8');
   });
 
   it('rejects invalid memory scope in agent definition', () => {

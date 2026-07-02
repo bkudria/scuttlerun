@@ -12,6 +12,22 @@ describe('computeCostUsd', () => {
     expect(computeCostUsd('claude-sonnet-4-6', 500_000, 500_000)).toBeCloseTo(9, 6);
   });
 
+  it('computes sonnet 5 cost from tokens', () => {
+    // 1M input @ $3/MTok + 1M output @ $15/MTok = $18
+    expect(computeCostUsd('claude-sonnet-5', 1_000_000, 1_000_000)).toBeCloseTo(18, 6);
+  });
+
+  it('computes fable 5 cost at $10/MTok input, $50/MTok output', () => {
+    // 1M input @ $10/MTok + 1M output @ $50/MTok = $60
+    expect(computeCostUsd('claude-fable-5', 1_000_000, 1_000_000)).toBeCloseTo(60, 6);
+  });
+
+  it('matches fable family variants to fable rates', () => {
+    const variant = computeCostUsd('claude-fable-5-preview', 1000, 1000);
+    const fable = computeCostUsd('claude-fable-5', 1000, 1000);
+    expect(variant).toBeCloseTo(fable, 10);
+  });
+
   it('computes zero for zero tokens', () => {
     expect(computeCostUsd('claude-haiku-4-5', 0, 0)).toBe(0);
   });

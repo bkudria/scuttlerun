@@ -10,7 +10,7 @@ Session Config (YAML):
       Write a haiku about the ocean and save it to ocean.txt
 
     # --- Agent ---
-    model: claude-sonnet-4-6            # Agent model (default: claude-haiku-4-5)
+    model: claude-sonnet-5              # Agent model (default: claude-haiku-4-5)
     max_turns: 50                       # Max agent turns (default: 50)
     max_budget_usd: 1.00                # Max spend in USD (optional)
     effort: high                        # low | medium | high | xhigh | max (default: high)
@@ -118,7 +118,7 @@ Examples:
   scuttlerun session.yaml
 
   # Override model and timeout
-  scuttlerun session.yaml --model claude-sonnet-4-6 --timeout 120
+  scuttlerun session.yaml --model claude-sonnet-5 --timeout 120
 
   # Merge a base config with a scenario override
   scuttlerun base.yaml scenario.yaml
