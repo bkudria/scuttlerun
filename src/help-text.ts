@@ -36,6 +36,12 @@ Session Config (YAML):
     permission_mode: bypassPermissions  # default | acceptEdits | bypassPermissions
                                         #   | plan | dontAsk (default: bypassPermissions)
 
+    # --- Credentials ---
+    auth: auto                          # auto | subscription | api-key (default: auto)
+                                        #   auto: prefer a Claude subscription (Claude Code
+                                        #   login or CLAUDE_CODE_OAUTH_TOKEN) when present,
+                                        #   otherwise use ANTHROPIC_API_KEY
+
     # --- Project Scaffolding ---
     # When present, configures the temp project directory.
     # scuttlerun always creates a temp dir in $TMPDIR as the agent's cwd.
@@ -131,6 +137,9 @@ Examples:
 
   # Validate config without running
   scuttlerun session.yaml --dry-run
+
+  # Bill to the API key even when a Claude subscription is logged in
+  scuttlerun session.yaml --auth api-key
 
 Output:
   scuttlerun streams a transcript to stdout including user messages, assistant

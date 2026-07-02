@@ -84,6 +84,25 @@ max_budget_usd: 1.0
     const config = await buildConfig([base, scenario], {});
     expect(config.timeout).toBe(600);
   });
+
+  it('applies the --auth CLI override over the config value', async () => {
+    const yaml = `prompt: hi\nauth: subscription\n`;
+    const config = await buildConfig([yaml], { auth: 'api-key' });
+    expect(config.auth).toBe('api-key');
+  });
+
+  it('keeps the YAML auth value when no --auth override is given', async () => {
+    const yaml = `prompt: hi\nauth: subscription\n`;
+    const config = await buildConfig([yaml], {});
+    expect(config.auth).toBe('subscription');
+  });
+
+  it('rejects an invalid --auth override with an error naming the valid modes', async () => {
+    const yaml = `prompt: hi\n`;
+    await expect(buildConfig([yaml], { auth: 'oauth' })).rejects.toThrow(
+      /auto, subscription, or api-key/,
+    );
+  });
 });
 
 describe('buildDryRunSummary', () => {
@@ -125,6 +144,13 @@ project:
     const config = await buildConfig([yaml], {});
     const summary = buildDryRunSummary(config) as { timeout?: number };
     expect(summary.timeout).toBe(450);
+  });
+
+  it('includes the resolved auth mode', async () => {
+    const yaml = `prompt: hi\nauth: subscription\n`;
+    const config = await buildConfig([yaml], {});
+    const summary = buildDryRunSummary(config) as { auth?: string };
+    expect(summary.auth).toBe('subscription');
   });
 });
 

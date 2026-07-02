@@ -75,6 +75,7 @@ function minStubConfig(overrides: Partial<SessionConfig> = {}): SessionConfig {
     effort: 'high',
     tools: ['Read'],
     permission_mode: 'bypassPermissions',
+    auth: 'auto',
     user: { oracle_model: 'claude-haiku-4-5', max_turns: 0 },
     sdk: { system_prompt: { preset: 'claude_code' as const }, setting_sources: [] },
     sandbox: {

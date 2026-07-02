@@ -56,7 +56,19 @@ npm link          # makes `scuttlerun` available globally
 
 ## Requirements
 
-scuttlerun authenticates via the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk), which accepts the same credentials as Claude Code — an `ANTHROPIC_API_KEY`, a subscription login, or an OAuth token. See [Claude Code authentication](https://code.claude.com/docs/en/authentication) for the full list and precedence.
+scuttlerun authenticates via the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk), which accepts the same credentials as Claude Code — an `ANTHROPIC_API_KEY`, a subscription login, or an OAuth token. Both the agent session and the synthetic-user oracle run through the Agent SDK, so a Claude subscription covers the whole run.
+
+### Credential preference (`auth`)
+
+When both a Claude subscription and an `ANTHROPIC_API_KEY` are available, scuttlerun prefers the subscription: it withholds the API-key variables from the SDK subprocesses so the run doesn't bill per-token. Control this with the `auth` config key or `--auth` flag:
+
+| Mode             | Behavior                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| `auto` (default) | Prefer the subscription when one is detected; otherwise use the API key                      |
+| `subscription`   | Always withhold API-key variables; requires a Claude Code login or `CLAUDE_CODE_OAUTH_TOKEN` |
+| `api-key`        | Require `ANTHROPIC_API_KEY` (exit 1 if unset) and ignore any `CLAUDE_CODE_OAUTH_TOKEN`       |
+
+Subscription detection checks `CLAUDE_CODE_OAUTH_TOKEN`, the Claude Code credentials file (`~/.claude/.credentials.json`, honoring `CLAUDE_CONFIG_DIR`), and — for the non-sandboxed agent and the oracle — the macOS Keychain. Cost figures in the transcript footer are unchanged: they remain the SDK's notional API-rate numbers, so `max_budget_usd` still works as a usage limiter on subscription runs.
 
 ### Authenticating with a Claude subscription (OAuth)
 
@@ -69,7 +81,7 @@ export CLAUDE_CODE_OAUTH_TOKEN=<token>
 
 scuttlerun forwards `CLAUDE_CODE_OAUTH_TOKEN` to the agent in both sandboxed and non-sandboxed runs, so this is the recommended path for headless and CI use.
 
-**macOS note:** a regular `claude /login` stores your subscription credential in the macOS Keychain, which the default [sandbox](#sandbox-os-level-isolation) cannot read — so a logged-in Mac with no `CLAUDE_CODE_OAUTH_TOKEN` set fails with `Not logged in`. Use the token above, or set `sandbox.enabled: false`. (On Linux/Windows, `/login` writes `~/.claude/.credentials.json`, which the sandbox links in automatically.)
+**macOS note:** a regular `claude /login` stores your subscription credential in the macOS Keychain, which the default [sandbox](#sandbox-os-level-isolation) cannot read — so a logged-in Mac with no `CLAUDE_CODE_OAUTH_TOKEN` set fails with `Not logged in`. Use the token above, or set `sandbox.enabled: false`. (`auto` mode accounts for this: a Keychain-only login never causes the API key to be withheld from the sandboxed agent.) On Linux/Windows, `/login` writes `~/.claude/.credentials.json`, which the sandbox links in automatically — including when an API key is set but the subscription is preferred.
 
 ## Quick Start
 
@@ -105,6 +117,7 @@ prompt: |
 | `additional_tools` | string[]                                        | — (appended to `tools` after defaults apply; deduped first-wins)       |
 | `disallowed_tools` | string[]                                        | —                                                                      |
 | `permission_mode`  | string                                          | `bypassPermissions`                                                    |
+| `auth`             | `auto` \| `subscription` \| `api-key`           | `auto` (see [Credential preference](#credential-preference-auth))      |
 
 #### `user` (synthetic user)
 

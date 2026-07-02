@@ -7,6 +7,7 @@ import {
   linkOauthCredentialIntoSandbox,
   sandboxCredentialWarning,
 } from './sandbox.js';
+import { applyAuthMode, buildAuthEnv, detectSubscriptionCredentials } from './auth.js';
 import { unregisteredSlashCommand } from './slash-command.js';
 import { type SessionConfig, DEFAULT_SESSION_TIMEOUT_SECONDS } from './config.js';
 import { Oracle, AskUserQuestionInputSchema } from './oracle.js';
@@ -52,6 +53,21 @@ export async function runSession(
 ): Promise<RunResult> {
   const { timeoutSeconds = DEFAULT_SESSION_TIMEOUT_SECONDS, verbose = false } = options;
 
+  // Resolve credential preference up front, before any session work. This
+  // throws for api-key mode without ANTHROPIC_API_KEY, which the CLI reports
+  // as a config error. parentAuthEnv is the auth-shaped view of process.env
+  // used by the oracle and the non-sandboxed agent (both run with the real
+  // HOME, so Keychain-held subscription credentials count as present).
+  const parentAuthEnv = buildAuthEnv(config.auth);
+  // The sandboxed agent runs under a redirected HOME and cannot reach the
+  // macOS Keychain, so only env-token or credentials-file subscriptions count
+  // when deciding whether to withhold the API key from the sandbox.
+  const agentPrefersSubscription =
+    config.auth === 'subscription' ||
+    (config.auth === 'auto' &&
+      Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) &&
+      detectSubscriptionCredentials(process.env, process.platform, { includeKeychain: false }));
+
   // Clean old project directories in the background; best-effort, not on the critical path.
   cleanOldProjects(WORKSPACE_CLEANUP_AGE_DAYS, { verbose }).catch(() => {});
 
@@ -78,10 +94,16 @@ export async function runSession(
   const sandboxHome = config.sandbox.enabled ? join(cwd, '.home') : undefined;
   if (sandboxHome) {
     mkdirSync(sandboxHome, { recursive: true });
+    // The symlink and warning must see the credentials as the agent will:
+    // when the auth mode withholds the API key, the credentials file is the
+    // subscription the sandbox authenticates with, so it must still be linked.
+    const sandboxEffectiveEnv = agentPrefersSubscription
+      ? { ...process.env, ANTHROPIC_API_KEY: undefined }
+      : process.env;
     const credResult = linkOauthCredentialIntoSandbox({
       realHome: homedir(),
       sandboxHome,
-      env: process.env,
+      env: sandboxEffectiveEnv,
     });
     if (verbose && credResult.linked) {
       process.stderr.write(
@@ -91,15 +113,16 @@ export async function runSession(
     const credWarning = sandboxCredentialWarning({
       sandboxEnabled: true,
       credentialLinked: credResult.linked,
-      env: process.env,
+      env: sandboxEffectiveEnv,
     });
     if (credWarning) {
       process.stderr.write(`${credWarning}\n`);
     }
   }
 
-  // Create oracle
-  const oracle = new Oracle(config.user.oracle_model, { verbose });
+  // Create oracle — it runs in this process (never sandboxed), with the
+  // auth-shaped parent env
+  const oracle = new Oracle(config.user.oracle_model, { verbose, sdkEnv: parentAuthEnv });
 
   // Set up timeout
   const abortController = new AbortController();
@@ -177,6 +200,8 @@ export async function runSession(
       sandboxHome,
       abortController,
       verbose,
+      parentAuthEnv,
+      agentPrefersSubscription,
     });
 
     // Create a lazy SyntheticUser — initialized once we have a session ID
@@ -417,6 +442,8 @@ interface BuildSdkOptionsCtx {
   sandboxHome: string | undefined;
   abortController: AbortController;
   verbose: boolean;
+  parentAuthEnv: Record<string, string | undefined>;
+  agentPrefersSubscription: boolean;
 }
 
 function buildSdkOptions(
@@ -424,7 +451,8 @@ function buildSdkOptions(
   options: RunOptions,
   ctx: BuildSdkOptionsCtx,
 ): Record<string, unknown> {
-  const { cwd, sandboxHome, abortController, verbose } = ctx;
+  const { cwd, sandboxHome, abortController, verbose, parentAuthEnv, agentPrefersSubscription } =
+    ctx;
   const sdkOptions: Record<string, unknown> = {
     cwd,
     permissionMode: config.permission_mode,
@@ -476,18 +504,25 @@ function buildSdkOptions(
   }
 
   // Subprocess environment: when sandbox is enabled, filter process.env
-  // through an allowlist to prevent leaking secrets (API keys, tokens, etc.)
+  // through an allowlist to prevent leaking secrets (API keys, tokens, etc.),
+  // then apply the auth mode so the preferred credential wins inside the
+  // sandbox. An explicit sdk.env replaces the environment verbatim and is
+  // exempt from auth shaping — the operator asked for exactly that env.
   if (sandboxHome) {
-    sdkOptions.env = buildSandboxEnv(
-      process.env as Record<string, string | undefined>,
-      config.sdk.env,
-      sandboxHome,
+    sdkOptions.env = applyAuthMode(
+      config.auth,
+      buildSandboxEnv(
+        process.env as Record<string, string | undefined>,
+        config.sdk.env,
+        sandboxHome,
+      ),
+      agentPrefersSubscription,
     );
   } else if (config.sdk.env) {
     sdkOptions.env = config.sdk.env;
   } else {
-    // Inherit parent env minus CLAUDECODE, which the SDK rejects as a nested session
-    sdkOptions.env = { ...process.env, CLAUDECODE: undefined };
+    // Auth-shaped parent env; CLAUDECODE is already unset (SDK rejects nested sessions)
+    sdkOptions.env = parentAuthEnv;
   }
 
   if (config.sandbox.enabled) {
