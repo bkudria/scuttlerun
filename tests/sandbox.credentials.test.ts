@@ -121,7 +121,7 @@ describe('sandboxCredentialWarning', () => {
     const warning = sandboxCredentialWarning({ ...noCreds, env: {} });
     expect(warning).toBeDefined();
     // Actionable remediation must name the documented headless OAuth path.
-    expect(warning).toContain('CLAUDE_CODE_OAUTH_TOKEN');
+    expect(warning).toContain('CLAUDE_SDK_OAUTH_TOKEN');
     expect(warning).toMatch(/WARNING/);
   });
 
@@ -137,10 +137,16 @@ describe('sandboxCredentialWarning', () => {
     ).toBeUndefined();
   });
 
-  it('returns undefined when CLAUDE_CODE_OAUTH_TOKEN is set', () => {
+  it('returns undefined when CLAUDE_SDK_OAUTH_TOKEN is set', () => {
+    expect(
+      sandboxCredentialWarning({ ...noCreds, env: { CLAUDE_SDK_OAUTH_TOKEN: 'oauth-token' } }),
+    ).toBeUndefined();
+  });
+
+  it('still warns when only CLAUDE_CODE_OAUTH_TOKEN is set (scuttlerun never forwards it)', () => {
     expect(
       sandboxCredentialWarning({ ...noCreds, env: { CLAUDE_CODE_OAUTH_TOKEN: 'oauth-token' } }),
-    ).toBeUndefined();
+    ).toBeDefined();
   });
 
   it('returns undefined when a credentials file was linked', () => {
@@ -159,9 +165,9 @@ describe('sandboxCredentialWarning', () => {
   it.each([
     ['empty string', ''],
     ['whitespace only', '   '],
-  ])('treats %s CLAUDE_CODE_OAUTH_TOKEN as unset and warns', (_label, token) => {
+  ])('treats %s CLAUDE_SDK_OAUTH_TOKEN as unset and warns', (_label, token) => {
     expect(
-      sandboxCredentialWarning({ ...noCreds, env: { CLAUDE_CODE_OAUTH_TOKEN: token } }),
+      sandboxCredentialWarning({ ...noCreds, env: { CLAUDE_SDK_OAUTH_TOKEN: token } }),
     ).toBeDefined();
   });
 });

@@ -84,14 +84,21 @@ enum AuthMode {
 -- credential that subprocess authenticates with. The Claude Code runtime the
 -- Agent SDK spawns prefers ANTHROPIC_API_KEY over stored subscription OAuth,
 -- so scuttlerun selects a credential by withholding the ones it does not want.
+--
+-- Every selection additionally applies the same OAuth-token shaping: an
+-- inherited CLAUDE_CODE_OAUTH_TOKEN is stripped (the runtime would let it
+-- override a /login credential), and a non-blank CLAUDE_SDK_OAUTH_TOKEN is
+-- mapped onto CLAUDE_CODE_OAUTH_TOKEN — the only name the runtime reads — so
+-- an explicitly provided token wins over /login credentials.
 enum CredentialSelection {
     subscription                  -- API-key variables (ANTHROPIC_API_KEY,
                                   -- ANTHROPIC_AUTH_TOKEN) withheld, so the
                                   -- subscription is used
-  | api_key                       -- CLAUDE_CODE_OAUTH_TOKEN withheld, the API
-                                  -- key retained, so the API key is used
+  | api_key                       -- both OAuth-token variables withheld, the
+                                  -- API key retained, so the API key is used
   | passthrough                   -- environment forwarded unchanged, apart
                                   -- from the pre-existing CLAUDECODE unset
+                                  -- and the OAuth-token shaping above
 }
 
 
@@ -275,13 +282,17 @@ external entity OracleSdkClient {}
 --
 -- Subscription-credential detection is best-effort, checked in order, and
 -- short-circuits on the first hit:
---   1. CLAUDE_CODE_OAUTH_TOKEN set to a non-blank value;
+--   1. CLAUDE_SDK_OAUTH_TOKEN set to a non-blank value;
 --   2. a Claude Code credentials file at $CLAUDE_CONFIG_DIR/.credentials.json
 --      (or ~/.claude/.credentials.json when CLAUDE_CONFIG_DIR is unset) that
 --      parses as JSON and carries a claudeAiOauth key — an unreadable or
 --      unparseable file counts as absent;
 --   3. on macOS only, a Keychain generic password with service name
 --      "Claude Code-credentials" — a failed lookup counts as absent.
+--
+-- CLAUDE_CODE_OAUTH_TOKEN is never a detection source: scuttlerun always
+-- strips it from subprocess environments (the Claude Code runtime would let
+-- it override a /login credential), so its presence proves nothing usable.
 --
 -- Detection runs in two scopes because the agent runs under different HOMEs.
 -- subscription_present includes all three sources (the oracle and the
@@ -292,6 +303,9 @@ external entity OracleSdkClient {}
 external entity Environment {
     has_api_key: Boolean          -- ANTHROPIC_API_KEY set and non-blank
     has_api_credentials: Boolean  -- ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN set
+    has_claude_code_oauth_token: Boolean -- CLAUDE_CODE_OAUTH_TOKEN set and
+                                         -- non-blank (always stripped, never
+                                         -- used as a credential)
     subscription_present: Boolean         -- detection incl. Keychain
     sandbox_subscription_present: Boolean -- detection excl. Keychain
 }
@@ -405,7 +419,7 @@ entity Workspace {
         --
         -- When the sandbox is enabled and that carve-out links nothing
         -- — the auth-shaped view carries no ANTHROPIC_API_KEY, no
-        -- CLAUDE_CODE_OAUTH_TOKEN, and there is no credentials file to
+        -- CLAUDE_SDK_OAUTH_TOKEN, and there is no credentials file to
         -- expose — the agent subprocess has no credential it can reach (a
         -- macOS subscription `claude /login` stores its credential in the
         -- Keychain, which the sandbox cannot see). The runner emits a stderr
@@ -503,6 +517,14 @@ rule SessionStarts {
     -- api-key mode requires ANTHROPIC_API_KEY; without it the run is a
     -- configuration error (exit 1) and no Session is created.
     requires: input.auth = api_key implies environment.has_api_key
+
+    -- A CLAUDE_CODE_OAUTH_TOKEN that is the only credential available is a
+    -- configuration error (exit 1) naming CLAUDE_SDK_OAUTH_TOKEN: scuttlerun
+    -- strips that variable, so the run would otherwise reach the SDK
+    -- unauthenticated and fail opaquely.
+    requires:
+        environment.has_claude_code_oauth_token implies
+            (environment.has_api_credentials or environment.subscription_present)
 
     -- Parent-scope selection: governs the oracle and the non-sandboxed agent
     -- (real HOME, Keychain-inclusive detection).
@@ -1262,10 +1284,13 @@ surface CommandLineInvocation {
         -- value is a configuration error (exit 1) whose message names the
         -- valid modes; api-key mode with ANTHROPIC_API_KEY unset or blank is
         -- a configuration error (exit 1) with the message "auth mode api-key
-        -- requires ANTHROPIC_API_KEY to be set". The resolved auth value is
-        -- echoed in the --dry-run summary. The auth mode does not affect
-        -- cost: transcript footer costs remain notional API-rate figures
-        -- computed from token usage, and max_budget_usd is unchanged.
+        -- requires ANTHROPIC_API_KEY to be set". A CLAUDE_CODE_OAUTH_TOKEN
+        -- that is the only credential available is likewise a configuration
+        -- error (exit 1) naming CLAUDE_SDK_OAUTH_TOKEN (see SessionStarts).
+        -- The resolved auth value is echoed in the --dry-run summary. The
+        -- auth mode does not affect cost: transcript footer costs remain
+        -- notional API-rate figures computed from token usage, and
+        -- max_budget_usd is unchanged.
 }
 
 surface StreamingTranscript {
@@ -1384,10 +1409,13 @@ surface AgentSdkBoundary {
         -- so the chosen credential wins (the Claude Code runtime otherwise
         -- prefers ANTHROPIC_API_KEY over stored subscription OAuth).
         -- subscription withholds the API-credential variables
-        -- (ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN); api-key withholds
-        -- CLAUDE_CODE_OAUTH_TOKEN and keeps the key; auto withholds the
+        -- (ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN); api-key withholds both
+        -- OAuth-token variables and keeps the key; auto withholds the
         -- API-credential variables only when both API credentials and a
         -- subscription credential are detected, else passes the env through.
+        -- In every mode except api-key, a non-blank CLAUDE_SDK_OAUTH_TOKEN is
+        -- mapped onto CLAUDE_CODE_OAUTH_TOKEN (the only name the runtime
+        -- reads) and the inherited CLAUDE_CODE_OAUTH_TOKEN is stripped.
         -- CLAUDECODE is always unset and the parent process env is never
         -- mutated.
         --

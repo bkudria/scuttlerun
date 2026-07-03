@@ -44,14 +44,18 @@ describe('parseAuthMode', () => {
 });
 
 describe('detectSubscriptionCredentials', () => {
-  it('returns true when CLAUDE_CODE_OAUTH_TOKEN is set', () => {
-    expect(detectSubscriptionCredentials({ CLAUDE_CODE_OAUTH_TOKEN: 'tok' }, 'linux')).toBe(true);
+  it('returns true when CLAUDE_SDK_OAUTH_TOKEN is set', () => {
+    expect(detectSubscriptionCredentials({ CLAUDE_SDK_OAUTH_TOKEN: 'tok' }, 'linux')).toBe(true);
     expect(mockExistsSync).not.toHaveBeenCalled();
     expect(mockExecFileSync).not.toHaveBeenCalled();
   });
 
-  it('ignores a whitespace-only CLAUDE_CODE_OAUTH_TOKEN', () => {
-    expect(detectSubscriptionCredentials({ CLAUDE_CODE_OAUTH_TOKEN: '   ' }, 'linux')).toBe(false);
+  it('ignores a whitespace-only CLAUDE_SDK_OAUTH_TOKEN', () => {
+    expect(detectSubscriptionCredentials({ CLAUDE_SDK_OAUTH_TOKEN: '   ' }, 'linux')).toBe(false);
+  });
+
+  it('does not count CLAUDE_CODE_OAUTH_TOKEN as subscription evidence', () => {
+    expect(detectSubscriptionCredentials({ CLAUDE_CODE_OAUTH_TOKEN: 'tok' }, 'linux')).toBe(false);
   });
 
   it('returns true when the credentials file contains claudeAiOauth', () => {
@@ -133,12 +137,66 @@ describe('buildAuthEnv', () => {
     const result = buildAuthEnv('auto', {
       ANTHROPIC_API_KEY: 'sk-ant-key',
       ANTHROPIC_AUTH_TOKEN: 'bearer',
-      CLAUDE_CODE_OAUTH_TOKEN: 'tok',
+      CLAUDE_SDK_OAUTH_TOKEN: 'tok',
     });
 
     expect(result.ANTHROPIC_API_KEY).toBeUndefined();
     expect(result.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
     expect(result.CLAUDE_CODE_OAUTH_TOKEN).toBe('tok');
+  });
+
+  it('maps CLAUDE_SDK_OAUTH_TOKEN onto CLAUDE_CODE_OAUTH_TOKEN for the subprocess', () => {
+    const result = buildAuthEnv('auto', { CLAUDE_SDK_OAUTH_TOKEN: 'tok' }, 'linux');
+
+    expect(result.CLAUDE_CODE_OAUTH_TOKEN).toBe('tok');
+    expect(result.CLAUDE_SDK_OAUTH_TOKEN).toBeUndefined();
+  });
+
+  it('always strips an inherited CLAUDE_CODE_OAUTH_TOKEN', () => {
+    const result = buildAuthEnv(
+      'auto',
+      { ANTHROPIC_API_KEY: 'sk-ant-key', CLAUDE_CODE_OAUTH_TOKEN: 'inherited' },
+      'linux',
+    );
+
+    expect(result.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(result.ANTHROPIC_API_KEY).toBe('sk-ant-key');
+  });
+
+  it('CLAUDE_SDK_OAUTH_TOKEN wins over an inherited CLAUDE_CODE_OAUTH_TOKEN', () => {
+    const result = buildAuthEnv(
+      'auto',
+      { CLAUDE_CODE_OAUTH_TOKEN: 'inherited', CLAUDE_SDK_OAUTH_TOKEN: 'sdk-tok' },
+      'linux',
+    );
+
+    expect(result.CLAUDE_CODE_OAUTH_TOKEN).toBe('sdk-tok');
+  });
+
+  it('throws when CLAUDE_CODE_OAUTH_TOKEN is the only credential', () => {
+    expect(() => buildAuthEnv('auto', { CLAUDE_CODE_OAUTH_TOKEN: 'tok' }, 'linux')).toThrow(
+      /CLAUDE_SDK_OAUTH_TOKEN/,
+    );
+    expect(() => buildAuthEnv('subscription', { CLAUDE_CODE_OAUTH_TOKEN: 'tok' }, 'linux')).toThrow(
+      /CLAUDE_SDK_OAUTH_TOKEN/,
+    );
+  });
+
+  it('tolerates a set CLAUDE_CODE_OAUTH_TOKEN when another credential exists', () => {
+    expect(() =>
+      buildAuthEnv('auto', { CLAUDE_CODE_OAUTH_TOKEN: 'tok', ANTHROPIC_API_KEY: 'sk' }, 'linux'),
+    ).not.toThrow();
+    expect(() =>
+      buildAuthEnv(
+        'auto',
+        { CLAUDE_CODE_OAUTH_TOKEN: 'tok', CLAUDE_SDK_OAUTH_TOKEN: 'sdk' },
+        'linux',
+      ),
+    ).not.toThrow();
+
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ claudeAiOauth: {} }));
+    expect(() => buildAuthEnv('auto', { CLAUDE_CODE_OAUTH_TOKEN: 'tok' }, 'linux')).not.toThrow();
   });
 
   it('auto: keeps API credentials when no subscription credentials are found', () => {
@@ -167,14 +225,16 @@ describe('buildAuthEnv', () => {
     expect(mockExecFileSync).not.toHaveBeenCalled();
   });
 
-  it('api-key: strips CLAUDE_CODE_OAUTH_TOKEN and keeps the API key', () => {
+  it('api-key: strips both OAuth token variables and keeps the API key', () => {
     const result = buildAuthEnv('api-key', {
       ANTHROPIC_API_KEY: 'sk-ant-key',
       CLAUDE_CODE_OAUTH_TOKEN: 'tok',
+      CLAUDE_SDK_OAUTH_TOKEN: 'sdk-tok',
     });
 
     expect(result.ANTHROPIC_API_KEY).toBe('sk-ant-key');
     expect(result.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(result.CLAUDE_SDK_OAUTH_TOKEN).toBeUndefined();
   });
 
   it('api-key: throws when ANTHROPIC_API_KEY is unset or blank', () => {
@@ -195,17 +255,41 @@ describe('applyAuthMode', () => {
   });
 
   it('auto: strips API credentials only when subscription was detected', () => {
-    const env = { ANTHROPIC_API_KEY: 'sk', CLAUDE_CODE_OAUTH_TOKEN: 'tok' };
+    const env = { ANTHROPIC_API_KEY: 'sk', CLAUDE_SDK_OAUTH_TOKEN: 'tok' };
 
     expect(applyAuthMode('auto', env, true).ANTHROPIC_API_KEY).toBeUndefined();
     expect(applyAuthMode('auto', env, false).ANTHROPIC_API_KEY).toBe('sk');
   });
 
-  it('api-key: strips CLAUDE_CODE_OAUTH_TOKEN', () => {
-    const env = { ANTHROPIC_API_KEY: 'sk', CLAUDE_CODE_OAUTH_TOKEN: 'tok' };
+  it('maps CLAUDE_SDK_OAUTH_TOKEN onto CLAUDE_CODE_OAUTH_TOKEN', () => {
+    const env = { CLAUDE_SDK_OAUTH_TOKEN: 'tok', HOME: '/sb' };
+    const result = applyAuthMode('auto', env, true);
+
+    expect(result.CLAUDE_CODE_OAUTH_TOKEN).toBe('tok');
+    expect(result.CLAUDE_SDK_OAUTH_TOKEN).toBeUndefined();
+  });
+
+  it('leaves an explicit sdk.env CLAUDE_CODE_OAUTH_TOKEN in place', () => {
+    // Only sdk.env can put CLAUDE_CODE_OAUTH_TOKEN into the sandbox env
+    // (the allowlist drops the inherited one), so it wins over the
+    // ambient CLAUDE_SDK_OAUTH_TOKEN.
+    const env = { CLAUDE_CODE_OAUTH_TOKEN: 'explicit', CLAUDE_SDK_OAUTH_TOKEN: 'ambient' };
+    const result = applyAuthMode('auto', env, true);
+
+    expect(result.CLAUDE_CODE_OAUTH_TOKEN).toBe('explicit');
+    expect(result.CLAUDE_SDK_OAUTH_TOKEN).toBeUndefined();
+  });
+
+  it('api-key: strips both OAuth token variables', () => {
+    const env = {
+      ANTHROPIC_API_KEY: 'sk',
+      CLAUDE_CODE_OAUTH_TOKEN: 'tok',
+      CLAUDE_SDK_OAUTH_TOKEN: 'sdk-tok',
+    };
     const result = applyAuthMode('api-key', env, false);
 
     expect(result.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    expect(result.CLAUDE_SDK_OAUTH_TOKEN).toBeUndefined();
     expect(result.ANTHROPIC_API_KEY).toBe('sk');
   });
 });
