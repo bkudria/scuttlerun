@@ -187,7 +187,11 @@ describe('buildAuthEnv', () => {
       buildAuthEnv('auto', { CLAUDE_CODE_OAUTH_TOKEN: 'tok', ANTHROPIC_API_KEY: 'sk' }, 'linux'),
     ).not.toThrow();
     expect(() =>
-      buildAuthEnv('auto', { CLAUDE_CODE_OAUTH_TOKEN: 'tok', CLAUDE_SDK_OAUTH_TOKEN: 'sdk' }, 'linux'),
+      buildAuthEnv(
+        'auto',
+        { CLAUDE_CODE_OAUTH_TOKEN: 'tok', CLAUDE_SDK_OAUTH_TOKEN: 'sdk' },
+        'linux',
+      ),
     ).not.toThrow();
 
     mockExistsSync.mockReturnValue(true);

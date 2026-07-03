@@ -62,11 +62,11 @@ scuttlerun authenticates via the [Claude Agent SDK](https://platform.claude.com/
 
 When both a Claude subscription and an `ANTHROPIC_API_KEY` are available, scuttlerun prefers the subscription: it withholds the API-key variables from the SDK subprocesses so the run doesn't bill per-token. Control this with the `auth` config key or `--auth` flag:
 
-| Mode             | Behavior                                                                                     |
-| ---------------- | -------------------------------------------------------------------------------------------- |
-| `auto` (default) | Prefer the subscription when one is detected; otherwise use the API key                      |
-| `subscription`   | Always withhold API-key variables; requires a Claude Code login or `CLAUDE_SDK_OAUTH_TOKEN`  |
-| `api-key`        | Require `ANTHROPIC_API_KEY` (exit 1 if unset) and ignore any OAuth token variable            |
+| Mode             | Behavior                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| `auto` (default) | Prefer the subscription when one is detected; otherwise use the API key                     |
+| `subscription`   | Always withhold API-key variables; requires a Claude Code login or `CLAUDE_SDK_OAUTH_TOKEN` |
+| `api-key`        | Require `ANTHROPIC_API_KEY` (exit 1 if unset) and ignore any OAuth token variable           |
 
 Subscription detection checks `CLAUDE_SDK_OAUTH_TOKEN`, the Claude Code credentials file (`~/.claude/.credentials.json`, honoring `CLAUDE_CONFIG_DIR`), and — for the non-sandboxed agent and the oracle — the macOS Keychain. Cost figures in the transcript footer are unchanged: they remain the SDK's notional API-rate numbers, so `max_budget_usd` still works as a usage limiter on subscription runs.
 
