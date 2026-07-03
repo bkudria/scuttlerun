@@ -39,8 +39,11 @@ Session Config (YAML):
     # --- Credentials ---
     auth: auto                          # auto | subscription | api-key (default: auto)
                                         #   auto: prefer a Claude subscription (Claude Code
-                                        #   login or CLAUDE_CODE_OAUTH_TOKEN) when present,
-                                        #   otherwise use ANTHROPIC_API_KEY
+                                        #   login or CLAUDE_SDK_OAUTH_TOKEN) when present,
+                                        #   otherwise use ANTHROPIC_API_KEY.
+                                        #   CLAUDE_CODE_OAUTH_TOKEN is never used: it is
+                                        #   stripped so a stray export cannot override
+                                        #   your claude /login credentials.
 
     # --- Project Scaffolding ---
     # When present, configures the temp project directory.

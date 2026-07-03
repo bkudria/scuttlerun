@@ -42,7 +42,8 @@ export function linkOauthCredentialIntoSandbox(opts: {
  *
  * When the sandbox is enabled the agent runs under a redirected HOME and a
  * filtered env; the only credentials it can see are an allowlisted env var
- * (ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN) or a `.credentials.json`
+ * (ANTHROPIC_API_KEY, or CLAUDE_SDK_OAUTH_TOKEN mapped onto
+ * CLAUDE_CODE_OAUTH_TOKEN by applyAuthMode) or a `.credentials.json`
  * symlinked in by `linkOauthCredentialIntoSandbox`. A subscription `claude
  * /login` on macOS stores its credential in the Keychain, which the sandbox
  * cannot reach — so a logged-in operator with neither env var set and no
@@ -62,22 +63,25 @@ export function sandboxCredentialWarning(opts: {
   if (!opts.sandboxEnabled) return undefined;
   if (opts.credentialLinked) return undefined;
   const hasApiKey = (opts.env.ANTHROPIC_API_KEY ?? '').trim() !== '';
-  const hasOauthToken = (opts.env.CLAUDE_CODE_OAUTH_TOKEN ?? '').trim() !== '';
+  const hasOauthToken = (opts.env.CLAUDE_SDK_OAUTH_TOKEN ?? '').trim() !== '';
   if (hasApiKey || hasOauthToken) return undefined;
   return (
     '[scuttlerun] WARNING: sandbox is enabled but no credential is available to the agent ' +
-    '(no ANTHROPIC_API_KEY, no CLAUDE_CODE_OAUTH_TOKEN, and no ~/.claude/.credentials.json ' +
+    '(no ANTHROPIC_API_KEY, no CLAUDE_SDK_OAUTH_TOKEN, and no ~/.claude/.credentials.json ' +
     'to link). On macOS a subscription `claude /login` stores credentials in the Keychain, ' +
     'which is not visible inside the sandbox. Run `claude setup-token` and export ' +
-    'CLAUDE_CODE_OAUTH_TOKEN, or set sandbox.enabled: false.'
+    'CLAUDE_SDK_OAUTH_TOKEN, or set sandbox.enabled: false.'
   );
 }
 
 export const SAFE_ENV_VARS: ReadonlySet<string> = new Set([
   // Required for the agent subprocess to make API calls
   'ANTHROPIC_API_KEY',
-  // Long-lived OAuth bearer issued by `claude setup-token`
-  'CLAUDE_CODE_OAUTH_TOKEN',
+  // Tool-scoped OAuth bearer (e.g. from `claude setup-token`); applyAuthMode
+  // maps it onto CLAUDE_CODE_OAUTH_TOKEN for the subprocess. The inherited
+  // CLAUDE_CODE_OAUTH_TOKEN is deliberately NOT allowlisted — it would
+  // override the /login credential.
+  'CLAUDE_SDK_OAUTH_TOKEN',
   // Paths and execution
   'PATH',
   'HOME',

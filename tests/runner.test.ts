@@ -161,7 +161,8 @@ describe('runSession', () => {
     // Pin credential env vars so test behavior (credential linking, sandbox
     // credential warning) does not depend on the developer's or CI's shell env
     vi.stubEnv('ANTHROPIC_API_KEY', '');
-    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', 'test-oauth-token');
+    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', '');
+    vi.stubEnv('CLAUDE_SDK_OAUTH_TOKEN', 'test-oauth-token');
     stdoutOutput = '';
     process.stdout.write = ((chunk: string) => {
       stdoutOutput += chunk;
@@ -2667,6 +2668,7 @@ describe('runSession', () => {
   it('warns on stderr when the sandbox has no usable credential', async () => {
     vi.stubEnv('ANTHROPIC_API_KEY', '');
     vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', '');
+    vi.stubEnv('CLAUDE_SDK_OAUTH_TOKEN', '');
 
     const mockQuery = createMockQuery([
       {
@@ -2723,7 +2725,8 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
     // Pin credential env vars so test behavior (credential linking, sandbox
     // credential warning) does not depend on the developer's or CI's shell env
     vi.stubEnv('ANTHROPIC_API_KEY', '');
-    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', 'test-oauth-token');
+    vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', '');
+    vi.stubEnv('CLAUDE_SDK_OAUTH_TOKEN', 'test-oauth-token');
     stdoutOutput = '';
     process.stdout.write = ((chunk: string) => {
       stdoutOutput += chunk;
@@ -2862,7 +2865,8 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
     });
 
     it('auto prefers the subscription when both credential kinds are present', async () => {
-      // beforeEach stubs CLAUDE_CODE_OAUTH_TOKEN=test-oauth-token
+      // beforeEach stubs CLAUDE_SDK_OAUTH_TOKEN=test-oauth-token; the agent env
+      // assertion below also covers the mapping onto CLAUDE_CODE_OAUTH_TOKEN
       vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test');
       const getOptions = agentEnvCapture('s-auth-auto');
 
@@ -2875,7 +2879,7 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
 
     it('auto keeps the API key when no subscription credentials are detected', async () => {
       vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test');
-      vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', '');
+      vi.stubEnv('CLAUDE_SDK_OAUTH_TOKEN', '');
       const getOptions = agentEnvCapture('s-auth-auto-key');
 
       await runSession(minConfig({ sandbox: { ...minConfig().sandbox, enabled: false } }));

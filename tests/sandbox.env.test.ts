@@ -52,13 +52,22 @@ describe('buildSandboxEnv', () => {
     expect(env.ANTHROPIC_API_KEY).toBe('sk-ant-test');
   });
 
-  it('always includes CLAUDE_CODE_OAUTH_TOKEN', () => {
+  it('always includes CLAUDE_SDK_OAUTH_TOKEN', () => {
+    const env = buildSandboxEnv(
+      { CLAUDE_SDK_OAUTH_TOKEN: 'oauth-token-fake' },
+      undefined,
+      '/sandbox/home',
+    );
+    expect(env.CLAUDE_SDK_OAUTH_TOKEN).toBe('oauth-token-fake');
+  });
+
+  it('excludes an inherited CLAUDE_CODE_OAUTH_TOKEN', () => {
     const env = buildSandboxEnv(
       { CLAUDE_CODE_OAUTH_TOKEN: 'oauth-token-fake' },
       undefined,
       '/sandbox/home',
     );
-    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe('oauth-token-fake');
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
   });
 
   it('excludes other ANTHROPIC_ vars', () => {
@@ -108,8 +117,9 @@ describe('buildSandboxEnv', () => {
     expect(SAFE_ENV_VARS.has('ANTHROPIC_API_KEY')).toBe(true);
   });
 
-  it('SAFE_ENV_VARS includes CLAUDE_CODE_OAUTH_TOKEN', () => {
-    expect(SAFE_ENV_VARS.has('CLAUDE_CODE_OAUTH_TOKEN')).toBe(true);
+  it('SAFE_ENV_VARS includes CLAUDE_SDK_OAUTH_TOKEN but not CLAUDE_CODE_OAUTH_TOKEN', () => {
+    expect(SAFE_ENV_VARS.has('CLAUDE_SDK_OAUTH_TOKEN')).toBe(true);
+    expect(SAFE_ENV_VARS.has('CLAUDE_CODE_OAUTH_TOKEN')).toBe(false);
   });
 
   it('SAFE_ENV_PREFIXES includes LC_', () => {
