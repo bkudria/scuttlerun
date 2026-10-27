@@ -213,6 +213,12 @@ describe('parseSessionConfig', () => {
     expect(config.project?.git_init).toBeFalsy();
   });
 
+  it('rejects project.git_commit without project.git_init', () => {
+    expect(() =>
+      parseSessionConfig({ prompt: 'hi', project: { files: { 'a.txt': 'a' }, git_commit: true } }),
+    ).toThrow(/git_commit requires git_init/);
+  });
+
   it('applies sandbox defaults when omitted', () => {
     const config = parseSessionConfig({ prompt: 'hi' });
     expect(config.sandbox.enabled).toBe(true);

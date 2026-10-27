@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { scaffoldProject, createProjectDir, resolveConfigPath } from '../src/project.js';
 import type { ProjectConfig } from '../src/config.js';
 
@@ -116,6 +117,57 @@ describe('scaffoldProject', () => {
       await expect(fs.access(join(result.projectPath, '.git'))).rejects.toThrow();
     } finally {
       await fs.rm(result.projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('commits every scaffolded file when git_commit is true', async () => {
+    const config: ProjectConfig = {
+      git_init: true,
+      git_commit: true,
+      claude_md: '# guide',
+      files: { 'README.md': 'hello', 'src/index.ts': 'export {};' },
+    };
+    const result = await scaffoldProject(config, tempDir);
+    try {
+      const git = (...args: string[]) =>
+        execFileSync('git', args, { cwd: result.projectPath, encoding: 'utf8' });
+      expect(git('ls-files').trim().split('\n').sort()).toEqual([
+        'CLAUDE.md',
+        'README.md',
+        'src/index.ts',
+      ]);
+      expect(git('status', '--porcelain').trim()).toBe('');
+    } finally {
+      await fs.rm(result.projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('commits despite a host hook or signing requirement', async () => {
+    const hooks = await fs.mkdtemp(join(tmpdir(), 'scuttlerun-hooks-'));
+    await fs.writeFile(join(hooks, 'pre-commit'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    const gitConfig = join(hooks, 'gitconfig');
+    await fs.writeFile(
+      gitConfig,
+      `[core]\n\thooksPath = ${hooks}\n[commit]\n\tgpgsign = true\n[user]\n\tsigningkey = none\n`,
+    );
+    const previous = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = gitConfig;
+    try {
+      const config: ProjectConfig = { git_init: true, git_commit: true, files: { 'a.txt': 'a' } };
+      const result = await scaffoldProject(config, tempDir);
+      try {
+        const tracked = execFileSync('git', ['ls-files'], {
+          cwd: result.projectPath,
+          encoding: 'utf8',
+        });
+        expect(tracked.trim()).toBe('a.txt');
+      } finally {
+        await fs.rm(result.projectPath, { recursive: true, force: true });
+      }
+    } finally {
+      if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+      else process.env.GIT_CONFIG_GLOBAL = previous;
+      await fs.rm(hooks, { recursive: true, force: true });
     }
   });
 

@@ -133,16 +133,19 @@ prompt: |
 
 When present, scuttlerun populates the project temp directory.
 
-| Field               | Type                     | Default |
-| ------------------- | ------------------------ | ------- |
-| `project.claude_md` | string                   | —       |
-| `project.skills`    | string[]                 | —       |
-| `project.plugins`   | string[]                 | —       |
-| `project.settings`  | object                   | —       |
-| `project.files`     | Record\<string, string\> | —       |
-| `project.git_init`  | boolean                  | `false` |
+| Field                | Type                     | Default |
+| -------------------- | ------------------------ | ------- |
+| `project.claude_md`  | string                   | —       |
+| `project.skills`     | string[]                 | —       |
+| `project.plugins`    | string[]                 | —       |
+| `project.settings`   | object                   | —       |
+| `project.files`      | Record\<string, string\> | —       |
+| `project.git_init`   | boolean                  | `false` |
+| `project.git_commit` | boolean                  | `false` |
 
 `project.files` keys are relative paths written inside the temp project dir; values are the file contents. Useful for materializing fixtures, test data, or example source files alongside scaffolded CLAUDE.md/skills/settings.
+
+`project.git_commit` commits everything scaffolded (CLAUDE.md, skills, settings, and files) as one commit after the files are written, so the agent sees tracked files and a clean working tree. It requires `git_init: true`. The commit uses a fixed identity and ignores the host's hooks and signing settings, so it behaves the same on every machine.
 
 `project.plugins` is the preferred surface for loading local plugins. Each entry is a path to a plugin directory; at runtime entries are translated to `sdk.plugins` form (`{type: "local", path: <resolved>}`) and merged with any explicit `sdk.plugins`. Duplicates are dropped by resolved path on a first-wins basis, so `project.plugins` entries take precedence over `sdk.plugins` entries pointing at the same directory. `sdk.plugins` remains as an escape hatch for raw SDK passthrough.
 

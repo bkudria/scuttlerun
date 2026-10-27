@@ -114,6 +114,7 @@ export function buildDryRunSummary(config: SessionConfig): Record<string, unknow
             ...(proj.settings ? { settings: proj.settings } : {}),
             ...(proj.files ? { files: proj.files } : {}),
             ...(proj.git_init ? { git_init: proj.git_init } : {}),
+            ...(proj.git_commit ? { git_commit: proj.git_commit } : {}),
           },
         }
       : {}),

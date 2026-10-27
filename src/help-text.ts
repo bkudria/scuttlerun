@@ -64,6 +64,7 @@ Session Config (YAML):
         app.py: |
           print("hello")
       git_init: false                   # Run 'git init' in temp dir (default: false)
+      git_commit: false                 # Commit all scaffolded files; needs git_init (default: false)
 
     # --- Sandbox ---
     # Always enabled by default. The agent runs inside an OS-level sandbox
