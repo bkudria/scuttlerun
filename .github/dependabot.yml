@@ -9,6 +9,11 @@ updates:
       prefix: 'chore(deps)'
     labels:
       - 'dependencies'
+    ignore:
+      # typescript-eslint's peer range doesn't include TypeScript 7 yet; a
+      # TS major bump breaks `npm ci` on the peer conflict.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
     groups:
       anthropic:
         patterns:
