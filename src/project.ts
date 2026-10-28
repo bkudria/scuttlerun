@@ -57,7 +57,32 @@ export async function scaffoldProject(
     }
   }
 
+  if (config.git_commit) {
+    await commitScaffold(projectPath);
+  }
+
   return { projectPath };
+}
+
+// The fixture must commit the same way on every machine, so the host's
+// identity, hooks, and signing settings are overridden for this one commit.
+async function commitScaffold(projectPath: string): Promise<void> {
+  const isolated = [
+    '-c',
+    'user.name=scuttlerun',
+    '-c',
+    'user.email=scuttlerun@localhost',
+    '-c',
+    'core.hooksPath=/dev/null',
+    '-c',
+    'commit.gpgsign=false',
+  ];
+  await execFileAsync('git', [...isolated, 'add', '-A'], { cwd: projectPath });
+  await execFileAsync(
+    'git',
+    [...isolated, 'commit', '--allow-empty', '-q', '-m', 'Scaffold project'],
+    { cwd: projectPath },
+  );
 }
 
 async function validateSkills(

@@ -54,8 +54,13 @@ const ProjectConfigSchema = z
     settings: z.record(z.string(), z.unknown()).optional(),
     files: z.record(z.string(), z.string()).optional(),
     git_init: z.boolean().optional(),
+    git_commit: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine((p) => !p.git_commit || p.git_init, {
+    message: 'project.git_commit requires git_init: true',
+    path: ['git_commit'],
+  });
 
 const UserConfigSchema = z
   .object({
