@@ -90,6 +90,7 @@ export function buildDryRunSummary(config: SessionConfig): Record<string, unknow
       (proj.skills && proj.skills.length > 0) ||
       (proj.plugins && proj.plugins.length > 0) ||
       proj.files ||
+      proj.claude_dir ||
       proj.git_init);
 
   return {
@@ -113,6 +114,7 @@ export function buildDryRunSummary(config: SessionConfig): Record<string, unknow
             ...(proj.plugins && proj.plugins.length > 0 ? { plugins: proj.plugins } : {}),
             ...(proj.settings ? { settings: proj.settings } : {}),
             ...(proj.files ? { files: proj.files } : {}),
+            ...(proj.claude_dir ? { claude_dir: proj.claude_dir } : {}),
             ...(proj.git_init ? { git_init: proj.git_init } : {}),
             ...(proj.git_commit ? { git_commit: proj.git_commit } : {}),
           },

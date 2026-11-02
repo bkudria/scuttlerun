@@ -32,7 +32,7 @@ The sandbox (redirecting `$HOME`, constraining network/filesystem access) exists
 
 ## Controlled Environment for Testing
 
-Project scaffolding (CLAUDE.md, skill symlinks, settings.json) creates a **controlled environment** for testing and evaluating Claude Code configurations — skills, prompts, sub-agents, plugins, and any other project-level setup. Each session gets a fresh, isolated project directory with exactly the context the agent should see.
+Project scaffolding (CLAUDE.md, skill symlinks, settings.json, a seeded Claude config directory) creates a **controlled environment** for testing and evaluating Claude Code configurations — skills, prompts, sub-agents, plugins, and any other project-level setup. Each session gets a fresh, isolated project directory with exactly the context the agent should see.
 
 ## LLM-Driven Synthetic User
 

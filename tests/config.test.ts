@@ -219,6 +219,14 @@ describe('parseSessionConfig', () => {
     ).toThrow(/git_commit requires git_init/);
   });
 
+  it('accepts project.claude_dir as a path string', () => {
+    const config = parseSessionConfig({
+      prompt: 'hi',
+      project: { claude_dir: './fixtures/config' },
+    });
+    expect(config.project?.claude_dir).toBe('./fixtures/config');
+  });
+
   it('applies sandbox defaults when omitted', () => {
     const config = parseSessionConfig({ prompt: 'hi' });
     expect(config.sandbox.enabled).toBe(true);

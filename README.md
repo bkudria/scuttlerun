@@ -140,10 +140,13 @@ When present, scuttlerun populates the project temp directory.
 | `project.plugins`    | string[]                 | —       |
 | `project.settings`   | object                   | —       |
 | `project.files`      | Record\<string, string\> | —       |
+| `project.claude_dir` | string                   | —       |
 | `project.git_init`   | boolean                  | `false` |
 | `project.git_commit` | boolean                  | `false` |
 
 `project.files` keys are relative paths written inside the temp project dir; values are the file contents. Useful for materializing fixtures, test data, or example source files alongside scaffolded CLAUDE.md/skills/settings.
+
+`project.claude_dir` seeds the agent's Claude Code config directory. The directory it names (`~` and config-relative paths supported) is copied into the project temp dir at `<tempdir>/.home/.claude`, and the agent runs with `CLAUDE_CONFIG_DIR` pointing at the copy, whether or not the sandbox is enabled. Use it to give a session pre-existing state that lives under `~/.claude` rather than in the project: a transcript corpus under `projects/`, a settings file, session history. Claude Code treats its config directory as live state and writes session files, backups and caches into it, so the copy keeps every run isolated and the source tree untouched; two concurrent runs never see each other's sessions. The copy is where the sandbox already places the config directory, so the OAuth credentials carve-out described under [`sandbox`](#sandbox-os-level-isolation) still applies. `project.claude_dir` sets `CLAUDE_CONFIG_DIR` even when `sdk.env` names it.
 
 `project.git_commit` commits everything scaffolded (CLAUDE.md, skills, settings, and files) as one commit after the files are written, so the agent sees tracked files and a clean working tree. It requires `git_init: true`. The commit uses a fixed identity and ignores the host's hooks and signing settings, so it behaves the same on every machine.
 

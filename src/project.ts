@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile);
 
 export interface ScaffoldResult {
   projectPath: string;
+  claudeDir?: string;
 }
 
 export async function createProjectDir(): Promise<string> {
@@ -17,11 +18,12 @@ export async function createProjectDir(): Promise<string> {
 
 export async function scaffoldProject(
   config: ProjectConfig,
-  _configDir: string,
+  configDir: string,
 ): Promise<ScaffoldResult> {
   // Validate every input before any filesystem mutation. A failure
   // here rejects the whole scaffold and leaves no workspace behind.
-  const resolvedSkills = await validateSkills(config.skills, _configDir);
+  const resolvedSkills = await validateSkills(config.skills, configDir);
+  const resolvedClaudeDir = await validateClaudeDir(config.claude_dir, configDir);
   validateFilePaths(config.files);
 
   const projectPath = await fs.mkdtemp(join(tmpdir(), 'scuttlerun-project-'));
@@ -59,6 +61,17 @@ export async function scaffoldProject(
 
   if (config.git_commit) {
     await commitScaffold(projectPath);
+  }
+
+  // The seed is copied, never linked: the agent treats its config dir as
+  // live state (sessions, backups, caches), and none of that may reach the
+  // source. It lands where the sandbox HOME already puts the config dir, so
+  // the credentials carve-out composes with it. Copied after the scaffold
+  // commit because it is not project content.
+  if (resolvedClaudeDir) {
+    const claudeDir = join(projectPath, '.home', '.claude');
+    await fs.cp(resolvedClaudeDir, claudeDir, { recursive: true });
+    return { projectPath, claudeDir };
   }
 
   return { projectPath };
@@ -116,6 +129,24 @@ function validateFilePaths(files: Record<string, string> | undefined): void {
       throw new Error(`File path escapes project directory: "${filePath}"`);
     }
   }
+}
+
+async function validateClaudeDir(
+  claudeDir: string | undefined,
+  configDir: string,
+): Promise<string | undefined> {
+  if (!claudeDir) return undefined;
+  const resolvedPath = resolveConfigPath(claudeDir, configDir);
+  let stat;
+  try {
+    stat = await fs.stat(resolvedPath);
+  } catch {
+    throw new Error(`claude_dir does not exist: "${claudeDir}" (resolved to ${resolvedPath})`);
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`claude_dir is not a directory: "${claudeDir}" (resolved to ${resolvedPath})`);
+  }
+  return resolvedPath;
 }
 
 async function validateSkillPath(originalPath: string, resolvedPath: string): Promise<void> {

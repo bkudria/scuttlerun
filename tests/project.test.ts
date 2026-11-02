@@ -99,6 +99,77 @@ describe('scaffoldProject', () => {
     }
   });
 
+  it('copies claude_dir into <workspace>/.home/.claude and reports the copy', async () => {
+    const source = join(tempDir, 'claude-src');
+    await fs.mkdir(join(source, 'projects', '-tmp-demo'), { recursive: true });
+    await fs.writeFile(join(source, 'settings.json'), '{"theme":"dark"}');
+    await fs.writeFile(join(source, 'projects', '-tmp-demo', 'abc.jsonl'), '{"type":"user"}\n');
+    const result = await scaffoldProject({ claude_dir: source }, tempDir);
+    try {
+      const claudeDir = join(result.projectPath, '.home', '.claude');
+      expect(result.claudeDir).toBe(claudeDir);
+      expect(await fs.readFile(join(claudeDir, 'settings.json'), 'utf8')).toBe('{"theme":"dark"}');
+      expect(await fs.readFile(join(claudeDir, 'projects', '-tmp-demo', 'abc.jsonl'), 'utf8')).toBe(
+        '{"type":"user"}\n',
+      );
+    } finally {
+      await fs.rm(result.projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the claude_dir source apart from the copy', async () => {
+    const source = join(tempDir, 'claude-src');
+    await fs.mkdir(source, { recursive: true });
+    await fs.writeFile(join(source, 'settings.json'), '{}');
+    const result = await scaffoldProject({ claude_dir: source }, tempDir);
+    try {
+      await fs.writeFile(
+        join(result.projectPath, '.home', '.claude', 'history.jsonl'),
+        'written by the agent',
+      );
+      expect((await fs.readdir(source)).sort()).toEqual(['settings.json']);
+    } finally {
+      await fs.rm(result.projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('resolves a relative claude_dir against the config directory', async () => {
+    await fs.mkdir(join(tempDir, 'claude-src'), { recursive: true });
+    await fs.writeFile(join(tempDir, 'claude-src', 'settings.json'), '{}');
+    const result = await scaffoldProject({ claude_dir: 'claude-src' }, tempDir);
+    try {
+      await expect(
+        fs.access(join(result.projectPath, '.home', '.claude', 'settings.json')),
+      ).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(result.projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('reports no claudeDir and creates no .home when claude_dir is absent', async () => {
+    const result = await scaffoldProject({ claude_md: 'x' }, tempDir);
+    try {
+      expect(result.claudeDir).toBeUndefined();
+      await expect(fs.access(join(result.projectPath, '.home'))).rejects.toThrow();
+    } finally {
+      await fs.rm(result.projectPath, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a claude_dir that does not exist', async () => {
+    await expect(
+      scaffoldProject({ claude_dir: join(tempDir, 'missing') }, tempDir),
+    ).rejects.toThrow(/claude_dir does not exist/);
+  });
+
+  it('rejects a claude_dir that is not a directory', async () => {
+    const file = join(tempDir, 'not-a-dir');
+    await fs.writeFile(file, 'x');
+    await expect(scaffoldProject({ claude_dir: file }, tempDir)).rejects.toThrow(
+      /claude_dir is not a directory/,
+    );
+  });
+
   it('runs git init when git_init is true', async () => {
     const config: ProjectConfig = { git_init: true };
     const result = await scaffoldProject(config, tempDir);

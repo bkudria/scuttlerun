@@ -76,10 +76,10 @@ export async function runSession(
 
   // Always create a project directory
   let projectDir: string;
+  let claudeDir: string | undefined;
   if (config.project) {
     const configDir = options.configDir || process.cwd();
-    const result = await scaffoldProject(config.project, configDir);
-    projectDir = result.projectPath;
+    ({ projectPath: projectDir, claudeDir } = await scaffoldProject(config.project, configDir));
     if (verbose) {
       process.stderr.write(`[scuttlerun] Scaffolded project at ${projectDir}\n`);
     }
@@ -198,6 +198,7 @@ export async function runSession(
     const sdkOptions = buildSdkOptions(config, options, {
       cwd,
       sandboxHome,
+      claudeDir,
       abortController,
       verbose,
       parentAuthEnv,
@@ -275,7 +276,7 @@ export async function runSession(
         syntheticUser = new SyntheticUser(oracle, config.user, config.prompt);
 
         // Write YAML header and first user message
-        const sdkSessionPath = buildSdkSessionPath(cwd, sessionId, sandboxHome);
+        const sdkSessionPath = buildSdkSessionPath(cwd, sessionId, sandboxHome, claudeDir);
         writeHeader({
           session: sessionId,
           configPaths: options.configPaths || [],
@@ -440,6 +441,7 @@ function recordToolFile(
 interface BuildSdkOptionsCtx {
   cwd: string;
   sandboxHome: string | undefined;
+  claudeDir: string | undefined;
   abortController: AbortController;
   verbose: boolean;
   parentAuthEnv: Record<string, string | undefined>;
@@ -451,8 +453,15 @@ function buildSdkOptions(
   options: RunOptions,
   ctx: BuildSdkOptionsCtx,
 ): Record<string, unknown> {
-  const { cwd, sandboxHome, abortController, verbose, parentAuthEnv, agentPrefersSubscription } =
-    ctx;
+  const {
+    cwd,
+    sandboxHome,
+    claudeDir,
+    abortController,
+    verbose,
+    parentAuthEnv,
+    agentPrefersSubscription,
+  } = ctx;
   const sdkOptions: Record<string, unknown> = {
     cwd,
     permissionMode: config.permission_mode,
@@ -524,6 +533,14 @@ function buildSdkOptions(
     // Auth-shaped parent env; CLAUDECODE is already unset (SDK rejects nested sessions)
     sdkOptions.env = parentAuthEnv;
   }
+  // A seeded config dir is the agent's config dir in every branch, like HOME
+  // in the sandbox: the operator asked for that tree, not for the real one.
+  if (claudeDir) {
+    sdkOptions.env = {
+      ...(sdkOptions.env as Record<string, unknown>),
+      CLAUDE_CONFIG_DIR: claudeDir,
+    };
+  }
 
   if (config.sandbox.enabled) {
     sdkOptions.sandbox = {
@@ -551,9 +568,14 @@ function buildSdkOptions(
   return sdkOptions;
 }
 
-function buildSdkSessionPath(cwd: string, sessionId: string, sandboxHome?: string): string {
+function buildSdkSessionPath(
+  cwd: string,
+  sessionId: string,
+  sandboxHome?: string,
+  claudeDir?: string,
+): string {
   const home = sandboxHome || process.env.HOME;
-  if (!home) {
+  if (!home && !claudeDir) {
     throw new Error(
       'Cannot locate SDK session file: HOME is not set. scuttlerun requires HOME to be set when sandbox is disabled.',
     );
@@ -565,5 +587,5 @@ function buildSdkSessionPath(cwd: string, sessionId: string, sandboxHome?: strin
     resolved = cwd;
   }
   const encodedCwd = resolved.replace(/[/_]/g, '-');
-  return `${home}/.claude/projects/${encodedCwd}/${sessionId}.jsonl`;
+  return `${claudeDir ?? `${home}/.claude`}/projects/${encodedCwd}/${sessionId}.jsonl`;
 }

@@ -63,6 +63,8 @@ Session Config (YAML):
       files:                            # Written to <tempdir>/<path> (key=path, value=content)
         app.py: |
           print("hello")
+      claude_dir: ./fixtures/claude     # Copied to <tempdir>/.home/.claude and used as the
+                                        #   agent's CLAUDE_CONFIG_DIR; the source stays untouched
       git_init: false                   # Run 'git init' in temp dir (default: false)
       git_commit: false                 # Commit all scaffolded files; needs git_init (default: false)
 
