@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Release sections below are generated automatically by release-please from Conventional Commit messages.
 
+## [0.5.0](https://github.com/bkudria/scuttlerun/compare/v0.4.0...v0.5.0) (2026-11-02)
+
+
+### Features
+
+* **project:** add claude_dir to seed the agent's Claude config dir ([#90](https://github.com/bkudria/scuttlerun/issues/90)) ([e090813](https://github.com/bkudria/scuttlerun/commit/e09081313b5e0df890fab5b11d0295dbde361c8f))
+
 ## [0.4.0](https://github.com/bkudria/scuttlerun/compare/v0.3.0...v0.4.0) (2026-10-28)
 
 
