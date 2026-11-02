@@ -126,6 +126,17 @@ project:
     expect(summary.project?.claude_md).toBe('# Hello\n');
   });
 
+  it('emits the project block when claude_dir is the only project field set', async () => {
+    const yaml = `
+prompt: hi
+project:
+  claude_dir: ./fixtures/config
+`;
+    const config = await buildConfig([yaml], {});
+    const summary = buildDryRunSummary(config) as { project?: Record<string, unknown> };
+    expect(summary.project).toEqual({ claude_dir: './fixtures/config' });
+  });
+
   it('emits the project block even when plugins is the only project field set', async () => {
     const yaml = `
 prompt: hi

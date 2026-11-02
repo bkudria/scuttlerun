@@ -881,6 +881,95 @@ describe('runSession', () => {
     expect(env.HOME).toBe('/tmp/scuttlerun-project-test123/.home');
   });
 
+  function seededScaffold() {
+    const projectPath = '/tmp/scuttlerun-project-scaffold123';
+    const claudeDir = `${projectPath}/.home/.claude`;
+    (mockScaffoldProject as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      projectPath,
+      claudeDir,
+    });
+    return { projectPath, claudeDir };
+  }
+
+  function captureOptions(sessionId: string) {
+    let capturedOptions: Record<string, unknown> | undefined;
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
+      (opts: Record<string, Record<string, unknown>>) => {
+        capturedOptions = opts.options;
+        return createMockQuery([
+          { type: 'system', subtype: 'init', session_id: sessionId, tools: [], model: 'm' },
+          {
+            type: 'result',
+            subtype: 'success',
+            session_id: sessionId,
+            num_turns: 1,
+            total_cost_usd: 0,
+          },
+        ]);
+      },
+    );
+    return () => capturedOptions;
+  }
+
+  const noSandbox = {
+    enabled: false,
+    network: { allowed_domains: [], allow_local_binding: false },
+    filesystem: { deny_read: [], allow_write: [], deny_write: [] },
+  };
+
+  it('exports CLAUDE_CONFIG_DIR for a seeded claude_dir in the sandbox env', async () => {
+    const { projectPath, claudeDir } = seededScaffold();
+    const options = captureOptions('s-claude-dir');
+
+    await runSession(minConfig({ project: { claude_dir: 'fixtures/config' } }));
+
+    const env = options()?.env as Record<string, string>;
+    expect(env.HOME).toBe(`${projectPath}/.home`);
+    expect(env.CLAUDE_CONFIG_DIR).toBe(claudeDir);
+  });
+
+  it('exports CLAUDE_CONFIG_DIR over an explicit sdk.env when the sandbox is disabled', async () => {
+    const { claudeDir } = seededScaffold();
+    const options = captureOptions('s-claude-dir-env');
+
+    await runSession(
+      minConfig({
+        project: { claude_dir: 'fixtures/config' },
+        sandbox: noSandbox,
+        sdk: {
+          system_prompt: { preset: 'claude_code' as const },
+          env: { FOO: 'bar', CLAUDE_CONFIG_DIR: '/elsewhere' },
+          setting_sources: [],
+        },
+      }),
+    );
+
+    expect(options()?.env).toEqual({ FOO: 'bar', CLAUDE_CONFIG_DIR: claudeDir });
+  });
+
+  it('exports CLAUDE_CONFIG_DIR in the inherited env when the sandbox is disabled', async () => {
+    const { claudeDir } = seededScaffold();
+    const options = captureOptions('s-claude-dir-inherit');
+
+    await runSession(minConfig({ project: { claude_dir: 'fixtures/config' }, sandbox: noSandbox }));
+
+    const env = options()?.env as Record<string, string | undefined>;
+    expect(env.CLAUDE_CONFIG_DIR).toBe(claudeDir);
+    expect(env.PATH).toBe(process.env.PATH);
+  });
+
+  it('locates the SDK session file under the seeded claude_dir', async () => {
+    const { projectPath, claudeDir } = seededScaffold();
+    captureOptions('s-claude-dir-path');
+
+    await runSession(minConfig({ project: { claude_dir: 'fixtures/config' } }));
+
+    const unfolded = stdoutOutput.replace(/transcript: >-\n\s+/, 'transcript: ');
+    expect(unfolded).toContain(
+      `transcript: ${claudeDir}/projects/${projectPath.replace(/[/_]/g, '-')}/s-claude-dir-path.jsonl`,
+    );
+  });
+
   it('inherits process.env with CLAUDECODE cleared when sandbox is disabled and no sdk.env', async () => {
     process.env.SCUTTLERUN_INHERIT_TEST = 'inherited-value';
 

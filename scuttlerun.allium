@@ -192,6 +192,7 @@ value ProjectTemplate {
     plugins: List<String>
     settings: Map<String, Any>?
     files: Map<String, String>?
+    claude_dir: String?
     git_init: Boolean
 
     @guidance
@@ -216,6 +217,14 @@ value ProjectTemplate {
         -- before the Agent SDK is invoked. Per-plugin validation
         -- (whether the path exists, whether it is a valid plugin) is
         -- delegated to the Agent SDK.
+        --
+        -- claude_dir seeds the agent's Claude Code config directory
+        -- (the directory Claude Code reads as CLAUDE_CONFIG_DIR). It is
+        -- a path string, resolved like a skill path (~ and paths
+        -- relative to the config file's directory). It must resolve to
+        -- an existing directory; otherwise the session is rejected as a
+        -- configuration error before any workspace is created. See
+        -- WorkspaceSeedsClaudeDir and SeededClaudeDirIsACopy.
 }
 
 value Sandbox {
@@ -1040,6 +1049,31 @@ rule StaleWorkspacesRemoved {
         -- per-invocation tuning is out of scope.
 }
 
+rule WorkspaceSeedsClaudeDir {
+    when: SessionRequested(caller, input, started_at)
+
+    requires: input.project != null
+    requires: input.project.claude_dir != null
+    requires: is_directory(input.project.claude_dir)
+
+    for workspace in Workspaces where workspace.created_at = started_at:
+        ensures: ClaudeDirSeeded(input.project.claude_dir, workspace)
+
+    @guidance
+        -- The seed directory is copied recursively to
+        -- <workspace>/.home/.claude after the scaffold commit (it is not
+        -- project content), and the agent subprocess env carries
+        -- CLAUDE_CONFIG_DIR = <workspace>/.home/.claude in every env
+        -- branch: the sandbox allowlist, an explicit sdk.env (which it
+        -- overrides for this one variable, as HOME is overridden in the
+        -- sandbox) and the inherited parent env. The location is the
+        -- config directory the sandbox HOME redirection already implies,
+        -- so the credentials carve-out on Workspace lands inside the
+        -- seeded tree. The SDK session-file path reported in the
+        -- transcript preamble is derived from the seeded directory when
+        -- one exists.
+}
+
 rule WorkspaceScaffoldsSkill {
     when: SkillReferenced(template, skill_path, workspace)
 
@@ -1180,6 +1214,19 @@ invariant ScaffoldedFilesStayInProject {
             and not starts_with(path, ".git/")
             and not escapes_workspace(path)
             and not starts_with(path, "/")
+}
+
+invariant SeededClaudeDirIsACopy {
+    -- The agent's config directory is a copy of the seed, never the seed
+    -- itself or a link to it. Claude Code treats its config directory as
+    -- live state (session files, backups, caches), and none of that may
+    -- reach the operator's source tree; concurrent sessions seeded from
+    -- the same directory never observe each other's writes.
+    for session in Sessions where session.input.project != null
+                              and session.input.project.claude_dir != null:
+        session.workspace.claude_dir = session.workspace.path + "/.home/.claude"
+        and session.workspace.claude_dir != resolve(session.input.project.claude_dir)
+        and not is_symlink(session.workspace.claude_dir)
 }
 
 invariant FollowUpsRespectCap {

@@ -53,6 +53,7 @@ const ProjectConfigSchema = z
     plugins: z.array(z.string()).optional(),
     settings: z.record(z.string(), z.unknown()).optional(),
     files: z.record(z.string(), z.string()).optional(),
+    claude_dir: z.string().optional(),
     git_init: z.boolean().optional(),
     git_commit: z.boolean().optional(),
   })
