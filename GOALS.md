@@ -28,7 +28,7 @@ scuttlerun is fully headless — no human intervention required during a session
 
 Project directories are preserved after each session so artifacts remain available for inspection. At the start of each session, scuttlerun garbage-collects its own project directories in `$TMPDIR` that are older than 7 days (matching the `scuttlerun-project-` prefix); recent artifacts are never touched.
 
-The sandbox (redirecting `$HOME`, constraining network/filesystem access) exists for **safety** — preventing the agent from affecting the real system.
+The sandbox (redirecting `$HOME`, constraining what the agent's shell commands can reach on the network and filesystem) exists for **safety** — preventing the agent from affecting the real system. Its boundary is the OS sandbox around shell commands; the file tools sit outside it, and confining their writes is left to an opt-in Claude Code setting rather than imposed by default, because that setting also refuses edits to Claude settings files — exactly the behaviour some evaluations exist to observe. The docs say plainly where each boundary stops, so the isolation is never assumed to be wider than it is.
 
 ## Controlled Environment for Testing
 
