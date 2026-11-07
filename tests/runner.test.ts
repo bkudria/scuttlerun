@@ -23,6 +23,7 @@ type OracleReply =
   | {
       structured: unknown;
       usage?: { input_tokens: number; output_tokens: number };
+      costUsd?: number;
       delayMs?: number;
     }
   | { error: unknown; delayMs?: number };
@@ -42,7 +43,7 @@ function oracleQueryHandle(reply: OracleReply | undefined) {
         structured_output: reply.structured,
         result: JSON.stringify(reply.structured),
         usage: reply.usage ?? { input_tokens: 100, output_tokens: 50 },
-        total_cost_usd: 0,
+        total_cost_usd: reply.costUsd ?? 0,
       };
     },
   };
@@ -3209,6 +3210,73 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
       expect(stdoutOutput).toContain('duration_s:');
       // No SDK result arrived, so the agent cost is unknown/incomplete —
       // the footer flags it rather than silently reading as $0.
+      expect(stdoutOutput).toContain('cost_incomplete: true');
+    });
+
+    it("reports the oracle's SDK-reported cost in the footer, failed attempts included", async () => {
+      oracleReplies.push(
+        { structured: { wrong: 'shape' }, costUsd: 0.0004 },
+        { structured: { decision: 'end', reasoning: 'done' }, costUsd: 0.0006 },
+      );
+      const agentQuery = createMockQuery([
+        {
+          type: 'system',
+          subtype: 'init',
+          session_id: 's-oracle-cost',
+          tools: [],
+          model: 'claude-haiku-4-5',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          session_id: 's-oracle-cost',
+          num_turns: 1,
+          total_cost_usd: 0.01,
+        },
+      ]);
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt: unknown }) =>
+        typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : agentQuery,
+      );
+
+      await runSession(minConfig({ user: { oracle_model: 'claude-haiku-4-5', max_turns: 1 } }));
+
+      expect(stdoutOutput).toContain('cost_usd: 0.011\n');
+      expect(stdoutOutput).toContain('oracle_cost_usd: 0.001\n');
+      expect(stdoutOutput).toContain('calls: 2\n');
+      expect(stdoutOutput).not.toContain('cost_incomplete');
+    });
+
+    it('flags cost_incomplete when an oracle query ended without reporting its cost', async () => {
+      oracleReplies.push(
+        { error: new Error('oracle subprocess crashed') },
+        { structured: { decision: 'end', reasoning: 'done' } },
+      );
+      const agentQuery = createMockQuery([
+        {
+          type: 'system',
+          subtype: 'init',
+          session_id: 's-oracle-cost-unknown',
+          tools: [],
+          model: 'claude-haiku-4-5',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          session_id: 's-oracle-cost-unknown',
+          num_turns: 1,
+          total_cost_usd: 0.01,
+        },
+      ]);
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt: unknown }) =>
+        typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : agentQuery,
+      );
+
+      const result = await runSession(
+        minConfig({ user: { oracle_model: 'claude-haiku-4-5', max_turns: 1 } }),
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(oracleQueryCalls()).toHaveLength(2);
       expect(stdoutOutput).toContain('cost_incomplete: true');
     });
 

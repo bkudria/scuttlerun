@@ -23,7 +23,8 @@
 --     round trips, and the hand-written JSON schema mirroring the Zod
 --     validators)
 --   - Sandbox enforcement (delegated to the Agent SDK; scuttlerun configures the sandbox via SessionInput.sandbox)
---   - Pricing table maintenance (a data file, not behaviour)
+--   - Model pricing (the Agent SDK prices every agent and oracle query;
+--     scuttlerun reads the SDK's estimate rather than pricing tokens itself)
 
 -- Self-reference. scuttlerun's external entities (AgentSdkClient,
 -- OracleSdkClient, Environment, Caller) sit at code-to-code or
@@ -1210,36 +1211,51 @@ rule AssistantToolCallEmitted {
 -- Rules: Cost accumulation
 -- =============================================================
 
-rule OracleCallTracked {
-    when: OracleCallCompleted(oracle, session, usage)
+rule OracleQueryTracked {
+    when: OracleQueryCompleted(oracle, session, usage, query_cost)
 
-    ensures: session.oracle_cost = session.oracle_cost
-        + (usage.input_tokens * input_rate(session.input.oracle_model)
-         + usage.output_tokens * output_rate(session.input.oracle_model)
-         + usage.cache_creation_input_tokens * cache_creation_rate(session.input.oracle_model)
-         + usage.cache_read_input_tokens * cache_read_rate(session.input.oracle_model))
-            / 1_000_000
+    ensures: session.oracle_cost = session.oracle_cost + query_cost
 
     @guidance
-        -- The cost increment combines input, output, cache-creation and
-        -- cache-read token counts reported on the oracle's SDK result
-        -- message with the model's per-million-token rates: input tokens
-        -- times the input
-        -- rate, output tokens times the output rate, plus cache-creation
-        -- and cache-read tokens against their own rate columns. The
-        -- cache columns are derived from the input rate by fixed
-        -- multipliers: cache-creation tokens are billed at 1.25 times
-        -- the input rate, and cache-read tokens at 0.10 times the input
-        -- rate. Unknown models fall back to a family rate or to the
-        -- default oracle model's rate; the rate-table lookup is
-        -- implementation detail.
-        --
-        -- The per-call accumulation expressed by this rule is the
-        -- logical model. The implementation accumulates raw token
-        -- totals across calls and computes the cost once at session
-        -- finalisation; intermediate session.oracle_cost values are
-        -- not observable to callers and need not match per-call
-        -- arithmetic until the footer is emitted.
+        -- Fires once per oracle SDK query() that produced a result
+        -- message — every attempt, not only the one whose output the
+        -- oracle call finally uses. Attempts whose structured output
+        -- fails schema or semantic validation and is retried, SDK
+        -- error-subtype results, and every attempt of an oracle call
+        -- that exhausts its retries all add their usage and cost, so
+        -- oracle_cost is the total oracle spend. usage is the result
+        -- message's token counts (input, output, cache-creation,
+        -- cache-read), accumulated into the footer's oracle_usage;
+        -- query_cost is the result message's total_cost_usd: the Agent
+        -- SDK's own notional API-rate estimate for that query, the same
+        -- pricing basis as agent_cost. total_cost_usd is cumulative
+        -- within a query, so the query's last result message is the one
+        -- counted. scuttlerun keeps no pricing table of its own, so the
+        -- SDK's per-model rates and cache-write lifetimes apply to every
+        -- oracle model the SDK knows.
+}
+
+rule OracleQueryCostUnknown {
+    when: OracleQueryCostUnreported(oracle, session)
+
+    ensures: session.cost_incomplete = true
+
+    @guidance
+        -- Fires for an oracle query() whose spend the SDK did not report:
+        -- one that ends — by throwing or by finishing its stream — before
+        -- any result message, or one whose result is an error subtype
+        -- with total_cost_usd of zero. The SDK reports a query's cost only
+        -- on its result message, and scuttlerun reads the query's token
+        -- totals from that same message, so a query with no result adds
+        -- nothing to oracle_cost or the token totals. The SDK may zero the
+        -- figures on a crash or startup-error result, so a zero-cost error
+        -- result is likewise indistinguishable from unreported spend; its
+        -- (zero) usage and cost still accumulate via OracleQueryTracked. A
+        -- successful result reporting zero cost is taken at its word.
+        -- Either way the query may have spent tokens, so the session's
+        -- cost is flagged incomplete rather than presenting the unknown
+        -- spend as a confirmed zero. The query still counts toward
+        -- oracle_usage.calls.
 }
 
 
@@ -1395,7 +1411,8 @@ surface CommandLineInvocation {
         -- error (exit 1) naming CLAUDE_SDK_OAUTH_TOKEN (see SessionStarts).
         -- The resolved auth value is echoed in the --dry-run summary. The
         -- auth mode does not affect cost: transcript footer costs remain
-        -- notional API-rate figures computed from token usage, and
+        -- the Agent SDK's notional API-rate estimates (each query's
+        -- total_cost_usd) whichever credential is used, and
         -- max_budget_usd is unchanged.
 }
 
@@ -1424,14 +1441,19 @@ surface StreamingTranscript {
         -- `cost_usd` (Decimal: agent + oracle total) appears when the
         -- total is greater than zero; `oracle_cost_usd` (Decimal)
         -- appears when the oracle cost is greater than zero;
-        -- `oracle_usage` appears when the oracle has been called at
-        -- least once and is a flat mapping with `input_tokens`,
+        -- `oracle_usage` appears when the oracle has issued at least
+        -- one SDK query and is a flat mapping with `input_tokens`,
         -- `output_tokens`, `cache_creation_input_tokens`,
-        -- `cache_read_input_tokens`, `calls` and `cost_usd`;
+        -- `cache_read_input_tokens`, `calls` (SDK queries issued,
+        -- retried attempts included) and `cost_usd` (equal to
+        -- oracle_cost); the token counts and costs cover every attempt
+        -- (see OracleQueryTracked);
         -- `cost_incomplete` (Boolean) appears only when truthy and means
-        -- the session terminated before the in-flight turn reported a
-        -- final result, so the agent cost shown or omitted is
-        -- incomplete/unknown rather than a confirmed $0;
+        -- some spend went unreported — the session terminated before the
+        -- in-flight agent turn reported a final result, or an oracle
+        -- query ended without a result message or with a zero-cost error
+        -- result (OracleQueryCostUnknown) — so the cost shown or omitted
+        -- is incomplete/unknown rather than a confirmed $0;
         -- `timed_out`
         -- (Boolean) appears only when truthy; and `files_written`,
         -- `files_edited`, `files_read` each appear only when their
@@ -1553,7 +1575,8 @@ surface OracleSdkBoundary {
     context session: Session
 
     provides:
-        OracleCallCompleted(oracle, session, usage)
+        OracleQueryCompleted(oracle, session, usage, query_cost)
+        OracleQueryCostUnreported(oracle, session)
         TurnPolicyDecided(session, decision, message, reasoning)
 
     contracts:
@@ -1578,8 +1601,8 @@ surface OracleSdkBoundary {
         -- authenticates through the same Claude Code credential surface as
         -- the agent session. A subscription-only environment now works end
         -- to end: oracle features no longer require a separate API key.
-        -- Usage and cost accounting are unchanged — token usage is read from
-        -- the SDK result message and costed from the pricing table.
+        -- Token usage and cost are both read from each query's SDK result
+        -- message (see OracleQueryTracked).
 
     @guarantee OracleIsolatedFromHostConfiguration
         -- The oracle query loads no Claude Code configuration from the
@@ -1685,7 +1708,12 @@ contract StructuredOutputParse {
         -- with corrective feedback stating the expected shape.
 
     @invariant UsageReported
-        -- The SDK result message carries token-usage counts (input, output,
-        -- cache-creation, cache-read) used by scuttlerun for cost
-        -- accounting, unchanged by the move to the Agent SDK.
+        -- Each attempt's SDK result message carries token-usage counts
+        -- (input, output, cache-creation, cache-read) and total_cost_usd,
+        -- the SDK's cost estimate for that query. Every attempt reports its
+        -- usage and cost to the caller's accounting, whether or not its
+        -- output passes validation; an attempt that ends without a result
+        -- message, or whose result is an error subtype carrying a zero
+        -- total_cost_usd (the SDK may zero a crash or startup-error
+        -- result's figures), reports that its cost is unknown.
 }

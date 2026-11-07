@@ -24,7 +24,7 @@ interface MockUsage {
 }
 
 /** One-shot successful oracle query: a result message carrying structured output. */
-function oracleResult(structured: unknown, usage: MockUsage): Query {
+function oracleResult(structured: unknown, usage: MockUsage, totalCostUsd = 0): Query {
   return {
     async *[Symbol.asyncIterator]() {
       yield {
@@ -33,7 +33,7 @@ function oracleResult(structured: unknown, usage: MockUsage): Query {
         structured_output: structured,
         result: structured == null ? 'no structured output here' : JSON.stringify(structured),
         usage,
-        total_cost_usd: 0,
+        total_cost_usd: totalCostUsd,
       };
     },
   } as unknown as Query;
@@ -56,15 +56,20 @@ function oracleRawResult(resultText: string, usage: MockUsage): Query {
 }
 
 /** SDK-level error result (e.g. error_during_execution). */
-function oracleErrorResult(subtype: string, errors: string[]): Query {
+function oracleErrorResult(
+  subtype: string,
+  errors: string[],
+  usage: MockUsage = { input_tokens: 0, output_tokens: 0 },
+  totalCostUsd = 0,
+): Query {
   return {
     async *[Symbol.asyncIterator]() {
       yield {
         type: 'result',
         subtype,
         errors,
-        usage: { input_tokens: 0, output_tokens: 0 },
-        total_cost_usd: 0,
+        usage,
+        total_cost_usd: totalCostUsd,
       };
     },
   } as unknown as Query;
@@ -780,32 +785,23 @@ describe('Oracle', () => {
   });
 
   describe('usage tracking', () => {
+    const endDecision = { decision: 'end', reasoning: 'done' };
+    const turnParams = { persona: 't', originalPrompt: 't', conversationContext: [] };
+
     it('accumulates usage across calls', async () => {
       mockQuery
         .mockReturnValueOnce(
           oracleResult(answersOutput(), { input_tokens: 100, output_tokens: 50 }),
         )
-        .mockReturnValueOnce(
-          oracleResult(
-            { decision: 'end', reasoning: 'done' },
-            { input_tokens: 200, output_tokens: 80 },
-          ),
-        );
+        .mockReturnValueOnce(oracleResult(endDecision, { input_tokens: 200, output_tokens: 80 }));
 
       await oracle.answerQuestions(singleQuestion());
-      await oracle.decideTurnPolicy({
-        persona: 't',
-        originalPrompt: 't',
-        conversationContext: [],
-      });
+      await oracle.decideTurnPolicy(turnParams);
 
       const total = oracle.getTotalUsage();
       expect(total.input_tokens).toBe(300);
       expect(total.output_tokens).toBe(130);
       expect(total.calls).toBe(2);
-      // Default oracle model is claude-haiku-4-5: $1/MTok input + $5/MTok output
-      // 300 input * $1/1M + 130 output * $5/1M = 0.0003 + 0.00065 = 0.00095
-      expect(total.cost_usd).toBeCloseTo(0.00095, 8);
     });
 
     it('accumulates cache_creation_input_tokens and cache_read_input_tokens across calls', async () => {
@@ -819,45 +815,20 @@ describe('Oracle', () => {
           }),
         )
         .mockReturnValueOnce(
-          oracleResult(
-            { decision: 'end', reasoning: 'done' },
-            {
-              input_tokens: 150,
-              output_tokens: 30,
-              cache_creation_input_tokens: 50,
-              cache_read_input_tokens: 1200,
-            },
-          ),
+          oracleResult(endDecision, {
+            input_tokens: 150,
+            output_tokens: 30,
+            cache_creation_input_tokens: 50,
+            cache_read_input_tokens: 1200,
+          }),
         );
 
       await oracle.answerQuestions(singleQuestion());
-      await oracle.decideTurnPolicy({
-        persona: 't',
-        originalPrompt: 't',
-        conversationContext: [],
-      });
+      await oracle.decideTurnPolicy(turnParams);
 
       const total = oracle.getTotalUsage();
       expect(total.cache_creation_input_tokens).toBe(250);
       expect(total.cache_read_input_tokens).toBe(2000);
-    });
-
-    it('reflects cache pricing in cost_usd when cache tokens are present', async () => {
-      mockQuery.mockReturnValueOnce(
-        oracleResult(answersOutput(), {
-          input_tokens: 100_000,
-          output_tokens: 50_000,
-          cache_creation_input_tokens: 200_000,
-          cache_read_input_tokens: 800_000,
-        }),
-      );
-
-      await oracle.answerQuestions(singleQuestion());
-
-      // haiku-4-5: $1/MTok input, $5/MTok output, $1.25/MTok cache_creation, $0.10/MTok cache_read
-      // 100k * 1 + 50k * 5 + 200k * 1.25 + 800k * 0.10 = 0.1 + 0.25 + 0.25 + 0.08 = 0.68
-      const total = oracle.getTotalUsage();
-      expect(total.cost_usd).toBeCloseTo(0.68, 6);
     });
 
     it('treats missing cache fields as zero', async () => {
@@ -870,8 +841,173 @@ describe('Oracle', () => {
       const total = oracle.getTotalUsage();
       expect(total.cache_creation_input_tokens).toBe(0);
       expect(total.cache_read_input_tokens).toBe(0);
-      // 100 * 1/1M + 50 * 5/1M = 0.0001 + 0.00025 = 0.00035
-      expect(total.cost_usd).toBeCloseTo(0.00035, 8);
+    });
+
+    it("takes cost_usd from each SDK result's total_cost_usd, whatever the model", async () => {
+      const o = new Oracle('claude-haiku-5-5');
+      mockQuery
+        .mockReturnValueOnce(oracleResult(answersOutput(), USAGE, 0.0125))
+        .mockReturnValueOnce(oracleResult(endDecision, USAGE, 0.0031));
+
+      await o.answerQuestions(singleQuestion());
+      await o.decideTurnPolicy(turnParams);
+
+      expect(o.getTotalUsage().cost_usd).toBeCloseTo(0.0156, 10);
+    });
+
+    it('counts usage and cost of attempts that fail schema validation and are retried', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      mockQuery
+        .mockReturnValueOnce(
+          oracleResult({ wrong: 'shape' }, { input_tokens: 10, output_tokens: 5 }, 0.001),
+        )
+        .mockReturnValueOnce(
+          oracleResult(answersOutput(), { input_tokens: 20, output_tokens: 7 }, 0.002),
+        );
+
+      await o.answerQuestions(singleQuestion());
+
+      const total = o.getTotalUsage();
+      expect(total.input_tokens).toBe(30);
+      expect(total.output_tokens).toBe(12);
+      expect(total.cost_usd).toBeCloseTo(0.003, 10);
+    });
+
+    it('counts usage and cost of attempts re-prompted after a semantic mismatch', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      const tooMany = {
+        answers: [
+          { question: 'Q', answer: 'A' },
+          { question: 'Q', answer: 'B' },
+        ],
+        reasoning: 'r',
+      };
+      mockQuery
+        .mockReturnValueOnce(oracleResult(tooMany, { input_tokens: 40, output_tokens: 4 }, 0.004))
+        .mockReturnValueOnce(
+          oracleResult(answersOutput(), { input_tokens: 50, output_tokens: 5 }, 0.005),
+        );
+
+      await o.answerQuestions(singleQuestion());
+
+      const total = o.getTotalUsage();
+      expect(total.input_tokens).toBe(90);
+      expect(total.output_tokens).toBe(9);
+      expect(total.cost_usd).toBeCloseTo(0.009, 10);
+    });
+
+    it('counts usage and cost carried by SDK error results', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      mockQuery
+        .mockReturnValueOnce(
+          oracleErrorResult(
+            'error_max_structured_output_retries',
+            ['gave up'],
+            { input_tokens: 300, output_tokens: 60, cache_read_input_tokens: 900 },
+            0.03,
+          ),
+        )
+        .mockReturnValueOnce(oracleResult(answersOutput(), USAGE, 0.01));
+
+      await o.answerQuestions(singleQuestion());
+
+      const total = o.getTotalUsage();
+      expect(total.input_tokens).toBe(400);
+      expect(total.output_tokens).toBe(110);
+      expect(total.cache_read_input_tokens).toBe(900);
+      expect(total.cost_usd).toBeCloseTo(0.04, 10);
+    });
+
+    it('counts usage and cost of every attempt of a call that exhausts its retries', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      mockQuery.mockImplementation(() =>
+        oracleResult({ wrong: 'shape' }, { input_tokens: 10, output_tokens: 1 }, 0.001),
+      );
+
+      await expect(o.answerQuestions(singleQuestion())).rejects.toThrow(/exhausted/);
+
+      const total = o.getTotalUsage();
+      expect(total.input_tokens).toBe(40);
+      expect(total.output_tokens).toBe(4);
+      expect(total.cost_usd).toBeCloseTo(0.004, 10);
+    });
+
+    it('counts every SDK query issued in calls, including retried attempts', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      mockQuery
+        .mockReturnValueOnce(oracleTransportFailure(new Error('network down')))
+        .mockReturnValueOnce(oracleResult({ wrong: 'shape' }, USAGE))
+        .mockReturnValueOnce(oracleResult(answersOutput(), USAGE))
+        .mockReturnValueOnce(oracleResult(endDecision, USAGE));
+
+      await o.answerQuestions(singleQuestion());
+      await o.decideTurnPolicy(turnParams);
+
+      expect(o.getTotalUsage().calls).toBe(4);
+    });
+
+    it('reports cost as known when every query reported a cost', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      mockQuery
+        .mockReturnValueOnce(oracleErrorResult('error_max_turns', ['boom'], USAGE, 0.004))
+        .mockReturnValueOnce(oracleResult(answersOutput(), USAGE, 0.01));
+
+      await o.answerQuestions(singleQuestion());
+
+      expect(o.hasUnknownCost()).toBe(false);
+    });
+
+    it('marks cost unknown when an error result carries a zeroed cost', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      mockQuery
+        .mockReturnValueOnce(oracleErrorResult('error_during_execution', ['boom']))
+        .mockReturnValueOnce(oracleResult(answersOutput(), USAGE, 0.01));
+
+      await o.answerQuestions(singleQuestion());
+
+      expect(o.hasUnknownCost()).toBe(true);
+      expect(o.getTotalUsage().cost_usd).toBeCloseTo(0.01, 10);
+    });
+
+    it('marks cost unknown when a query ends without a result message', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      mockQuery
+        .mockReturnValueOnce(oracleTransportFailure(new Error('subprocess crashed')))
+        .mockReturnValueOnce(oracleResult(answersOutput(), USAGE, 0.01));
+
+      await o.answerQuestions(singleQuestion());
+
+      const total = o.getTotalUsage();
+      expect(o.hasUnknownCost()).toBe(true);
+      expect(total.input_tokens).toBe(USAGE.input_tokens);
+      expect(total.cost_usd).toBeCloseTo(0.01, 10);
+    });
+
+    it('keeps a result message counted when the query throws after it', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      const resultThenThrow = {
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: 'result',
+            subtype: 'success',
+            structured_output: answersOutput(),
+            result: '',
+            usage: { input_tokens: 70, output_tokens: 7 },
+            total_cost_usd: 0.007,
+          };
+          throw new Error('stream torn down');
+        },
+      } as unknown as Query;
+      mockQuery
+        .mockReturnValueOnce(resultThenThrow)
+        .mockReturnValueOnce(oracleResult(answersOutput(), USAGE, 0.01));
+
+      await o.answerQuestions(singleQuestion());
+
+      const total = o.getTotalUsage();
+      expect(o.hasUnknownCost()).toBe(false);
+      expect(total.input_tokens).toBe(170);
+      expect(total.cost_usd).toBeCloseTo(0.017, 10);
     });
   });
 });
