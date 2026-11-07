@@ -13,6 +13,7 @@ import {
 } from './sandbox.js';
 import { applyAuthMode, buildAuthEnv, detectSubscriptionCredentials } from './auth.js';
 import { unregisteredSlashCommand } from './slash-command.js';
+import { lostThisSessionsTranscript, transcriptLostWarning } from './sdk-diagnostics.js';
 import { type SessionConfig, DEFAULT_SESSION_TIMEOUT_SECONDS } from './config.js';
 import { Oracle, AskUserQuestionInputSchema } from './oracle.js';
 import { SyntheticUser } from './synthetic-user.js';
@@ -158,6 +159,8 @@ export async function runSession(
   // still marks the agent cost incomplete. The SDK only reports a dollar total
   // on the result message, so without one the turn's spend is unknown.
   let resultArrived = false;
+  let transcriptIncomplete = false;
+  let sdkSessionPath: string | undefined;
   const filesWritten = new Set<string>();
   const filesEdited = new Set<string>();
   const filesRead = new Set<string>();
@@ -280,7 +283,7 @@ export async function runSession(
         syntheticUser = new SyntheticUser(oracle, config.user, config.prompt);
 
         // Write YAML header and first user message
-        const sdkSessionPath = buildSdkSessionPath(cwd, sessionId, sandboxHome, claudeDir);
+        sdkSessionPath = buildSdkSessionPath(cwd, sessionId, sandboxHome, claudeDir);
         writeHeader({
           session: sessionId,
           configPaths: options.configPaths || [],
@@ -291,6 +294,11 @@ export async function runSession(
 
         // Add initial prompt to conversation buffer
         syntheticUser.addUserMessage(config.prompt);
+      } else if (message.type === 'system' && message.subtype === 'session_writes_lost') {
+        if (lostThisSessionsTranscript(message, sessionId)) {
+          transcriptIncomplete = true;
+          process.stderr.write(transcriptLostWarning(message, sdkSessionPath));
+        }
       } else if (message.type === 'assistant') {
         const content = message.message?.content;
         if (content && Array.isArray(content)) {
@@ -387,6 +395,7 @@ export async function runSession(
         durationMs: duration,
         totalCostUsd: resultTotalCostUsd + oracleUsage.cost_usd,
         costIncomplete: !resultArrived,
+        transcriptIncomplete,
         oracleCostUsd: oracleUsage.cost_usd,
         timedOut,
         filesWritten: Array.from(filesWritten),

@@ -46,6 +46,7 @@ export interface FooterStats {
   durationMs: number;
   totalCostUsd: number;
   costIncomplete?: boolean;
+  transcriptIncomplete?: boolean;
   oracleCostUsd?: number;
   timedOut?: boolean;
   filesWritten?: string[];
@@ -184,6 +185,9 @@ export function writeFooter(stats: FooterStats): void {
   }
   if (stats.costIncomplete) {
     footer.cost_incomplete = true;
+  }
+  if (stats.transcriptIncomplete) {
+    footer.transcript_incomplete = true;
   }
   if (stats.timedOut) {
     footer.timed_out = true;

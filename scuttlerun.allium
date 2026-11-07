@@ -355,6 +355,7 @@ entity Session {
     agent_cost: Decimal
     oracle_cost: Decimal
     cost_incomplete: Boolean
+    transcript_incomplete: Boolean
     timed_out_observed: Boolean
 
     transitions status {
@@ -571,6 +572,7 @@ rule SessionStarts {
         agent_cost: 0,
         oracle_cost: 0,
         cost_incomplete: false,
+        transcript_incomplete: false,
         timed_out_observed: false
     )
 
@@ -1024,6 +1026,45 @@ rule SessionInterruptedByOperator {
 }
 
 
+rule SessionTranscriptWritesLost {
+    when: AgentSessionWritesLost(client, session, error_code, lost, transcript_session_ids)
+
+    requires: "transcript" in lost
+    requires: session.sdk_session_id = null
+        or session.sdk_session_id in transcript_session_ids
+
+    ensures: session.transcript_incomplete = true
+
+    @guidance
+        -- The Agent SDK reports, at most once and as the CLI exits (after
+        -- the last result, if any), that a full disk ("ENOSPC") or an
+        -- exhausted quota ("EDQUOT") kept it from saving lines of a session
+        -- transcript, changes to the global Claude config, or both. `lost`
+        -- names what was not saved; `transcript_session_ids` names the
+        -- sessions whose transcripts lost lines. Only a loss that reaches
+        -- this run's SDK session JSONL matters to scuttlerun: a loss
+        -- confined to the global config, or attributed only to other
+        -- sessions, is ignored. Before the init message there is no
+        -- session id to match, so any transcript loss is presumed to be
+        -- this run's.
+        --
+        -- The runner writes a single `[scuttlerun] WARNING: ...` line to
+        -- stderr naming the error code and the JSONL path announced in
+        -- the preamble (or the SDK session JSONL generically when no
+        -- preamble was written). The line is informational and downstream
+        -- tools should not parse it; the footer's `transcript_incomplete`
+        -- key is the machine-readable signal.
+        --
+        -- This rule does not touch `status`: the results already received
+        -- stand, the SDK does not change the CLI's exit status for this
+        -- loss, and the exit code is unchanged (ExitCodeReflectsOutcome).
+        -- The report arrives after the final result while the runner
+        -- drains the message stream, so it is observed on every path that
+        -- lets the stream drain; a timeout or signal stops the drain and
+        -- may leave it unobserved.
+}
+
+
 -- =============================================================
 -- Rules: Workspace lifecycle
 -- =============================================================
@@ -1293,6 +1334,7 @@ surface CommandLineInvocation {
         session.tool_call_count
         session.total_cost
         session.cost_incomplete
+        session.transcript_incomplete
         session.workspace.path
         session.transcript
 
@@ -1373,6 +1415,9 @@ surface StreamingTranscript {
         -- the session terminated before the in-flight turn reported a
         -- final result, so the agent cost shown or omitted is
         -- incomplete/unknown rather than a confirmed $0;
+        -- `transcript_incomplete` (Boolean) appears only when truthy and
+        -- means the SDK session JSONL announced in the preamble is
+        -- missing lines (see SessionTranscriptWritesLost);
         -- `timed_out`
         -- (Boolean) appears only when truthy; and `files_written`,
         -- `files_edited`, `files_read` each appear only when their
@@ -1394,6 +1439,12 @@ surface StreamingTranscript {
         -- and thinking) is preserved by the Agent SDK in a JSONL file
         -- whose path is announced in the preamble. scuttlerun does not
         -- own this file.
+        --
+        -- Failure case: when the SDK reports that a full disk or exhausted
+        -- quota kept it from writing this session's transcript, the JSONL
+        -- is missing lines. scuttlerun then sets `transcript_incomplete`
+        -- in the footer and warns on stderr (SessionTranscriptWritesLost),
+        -- so readers know the JSONL is not the full conversation.
 
     @guarantee TranscriptToolFieldContract
         -- The transcript captures tool invocations as observations, not
@@ -1443,6 +1494,7 @@ surface AgentSdkBoundary {
         AgentEmitsAssistantMessage(client, session, text_blocks)
         AgentEmitsThinking(client, session, text)
         AgentEmitsToolCall(client, session, tool_name)
+        AgentSessionWritesLost(client, session, error_code, lost, transcript_session_ids)
         RunnerCaughtException(session)
 
     contracts:
@@ -1571,6 +1623,11 @@ contract SessionPersistence {
         -- tool uses, tool results, thinking, system) is written to the
         -- SDK's native JSONL file. scuttlerun surfaces the file's path
         -- in the preamble but never modifies its contents.
+        --
+        -- The SDK breaks this invariant when the disk is full or the
+        -- quota is exhausted, and reports the breach once as the CLI
+        -- exits (AgentSessionWritesLost). scuttlerun does not repair the
+        -- file; it records the breach as `transcript_incomplete`.
 }
 
 contract AbortableExecution {

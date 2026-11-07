@@ -422,6 +422,28 @@ describe('transcript', () => {
       expect(output).not.toContain('cost_incomplete');
     });
 
+    it('emits transcript_incomplete when the SDK session JSONL lost writes', () => {
+      writeFooter({
+        turns: 1,
+        toolCalls: 0,
+        durationMs: 5000,
+        totalCostUsd: 0.05,
+        transcriptIncomplete: true,
+      });
+      const parsed = parseYaml(output);
+      expect(parsed.transcript_incomplete).toBe(true);
+    });
+
+    it('omits transcript_incomplete when the SDK session JSONL is whole', () => {
+      writeFooter({
+        turns: 1,
+        toolCalls: 0,
+        durationMs: 5000,
+        totalCostUsd: 0.05,
+      });
+      expect(output).not.toContain('transcript_incomplete');
+    });
+
     it('writes file lists when provided', () => {
       writeFooter({
         turns: 1,

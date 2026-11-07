@@ -54,4 +54,4 @@ The reactive turn policy (where the oracle decides whether to continue or end th
 
 ## Readable, Structured Output
 
-scuttlerun streams YAML to stdout — both human-readable and machine-parseable, no separate formats needed. The transcript links to the full SDK session event log (JSONL) for deeper inspection when needed. When a session ends before its in-flight turn reports a final cost, the footer flags the agent cost as incomplete rather than silently conflating an unknown spend with a confirmed zero.
+scuttlerun streams YAML to stdout — both human-readable and machine-parseable, no separate formats needed. The transcript links to the full SDK session event log (JSONL) for deeper inspection when needed. When a session ends before its in-flight turn reports a final cost, the footer flags the agent cost as incomplete rather than silently conflating an unknown spend with a confirmed zero. Likewise, when Claude Code reports that a full disk or quota kept it from saving the session log, the footer flags the transcript as incomplete, so a reader never mistakes a truncated log for the whole conversation.

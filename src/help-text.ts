@@ -156,6 +156,8 @@ Output:
 
   The SDK session file (full conversation JSONL) is preserved at
   ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl
+  If a full disk or quota kept Claude Code from saving all of it, the summary
+  carries transcript_incomplete: true and a warning goes to stderr.
 
   The project temp dir in $TMPDIR is preserved after the session ends.
 
