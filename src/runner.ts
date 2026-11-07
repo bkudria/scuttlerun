@@ -2,6 +2,7 @@ import {
   query,
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
   type SDKResultMessage,
+  type SDKStartupFailureReason,
 } from '@anthropic-ai/claude-agent-sdk';
 import { mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -13,7 +14,11 @@ import {
 } from './sandbox.js';
 import { applyAuthMode, buildAuthEnv, detectSubscriptionCredentials } from './auth.js';
 import { unregisteredSlashCommand } from './slash-command.js';
-import { lostThisSessionsTranscript, transcriptLostWarning } from './sdk-diagnostics.js';
+import {
+  lostThisSessionsTranscript,
+  startupFailureHint,
+  transcriptLostWarning,
+} from './sdk-diagnostics.js';
 import { type SessionConfig, DEFAULT_SESSION_TIMEOUT_SECONDS } from './config.js';
 import { Oracle, AskUserQuestionInputSchema } from './oracle.js';
 import { SyntheticUser } from './synthetic-user.js';
@@ -438,6 +443,10 @@ function exitCodeForUnfinishedResult(message: SDKResultMessage): number {
   if (sdkErrors && sdkErrors.length > 0) {
     process.stderr.write(`[scuttlerun] ${sdkErrors.join('\n')}\n`);
   }
+  const hint = startupFailureHint(
+    (message as { startup_failure_reason?: SDKStartupFailureReason }).startup_failure_reason,
+  );
+  if (hint) process.stderr.write(hint);
   return EXIT_RUNTIME_ERROR;
 }
 

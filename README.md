@@ -170,6 +170,8 @@ When present, scuttlerun populates the project temp directory.
 
 Enabled by default. Restricts the agent's filesystem and network access. When the sandbox is enabled, `$HOME` is redirected to `<projectDir>/.home` so tools (npm, pip, cargo) write caches inside the sandbox rather than your real home directory.
 
+The sandbox needs OS support; on Linux that means `bubblewrap` and `socat` installed. If it can't run, the session fails at startup (exit `2`) rather than running unsandboxed, and scuttlerun prints a hint to stderr: install the dependencies (see the Claude Code sandboxing docs), or set `sandbox.enabled: false`.
+
 For OAuth-based auth (Claude Code subscription login), there's a single carve-out: when no `ANTHROPIC_API_KEY` is set and `~/.claude/.credentials.json` exists (the Linux/Windows login location), scuttlerun symlinks that one file into the sandbox so the Agent SDK can find it. Nothing else under `~/.claude/` (skills, plugins, commands, agents, settings, session history) is exposed. On macOS the login credential lives in the Keychain rather than that file, so the carve-out finds nothing — set `CLAUDE_SDK_OAUTH_TOKEN` (see [Requirements](#requirements)) or disable the sandbox. scuttlerun prints a warning at session start when a sandboxed run has no credential it can reach.
 
 | Field                                 | Type     | Default                                   |

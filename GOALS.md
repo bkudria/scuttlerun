@@ -28,7 +28,7 @@ scuttlerun is fully headless — no human intervention required during a session
 
 Project directories are preserved after each session so artifacts remain available for inspection. At the start of each session, scuttlerun garbage-collects its own project directories in `$TMPDIR` that are older than 7 days (matching the `scuttlerun-project-` prefix); recent artifacts are never touched.
 
-The sandbox (redirecting `$HOME`, constraining network/filesystem access) exists for **safety** — preventing the agent from affecting the real system.
+The sandbox (redirecting `$HOME`, constraining network/filesystem access) exists for **safety** — preventing the agent from affecting the real system. Because it is a safety boundary, an enabled sandbox that cannot run fails the session rather than silently running the agent unsandboxed, and scuttlerun names the fix: install the sandbox's dependencies or turn the sandbox off explicitly.
 
 ## Controlled Environment for Testing
 

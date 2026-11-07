@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { SDKSessionWritesLostMessage } from '@anthropic-ai/claude-agent-sdk';
-import { lostThisSessionsTranscript, transcriptLostWarning } from '../src/sdk-diagnostics.js';
+import {
+  lostThisSessionsTranscript,
+  startupFailureHint,
+  transcriptLostWarning,
+} from '../src/sdk-diagnostics.js';
 
 function writesLost(fields: Partial<SDKSessionWritesLostMessage>): SDKSessionWritesLostMessage {
   return {
@@ -49,5 +53,23 @@ describe('transcriptLostWarning', () => {
   it('falls back to a generic name when no JSONL path was announced', () => {
     const warning = transcriptLostWarning(writesLost({}), undefined);
     expect(warning).toContain('the SDK session JSONL is incomplete');
+  });
+});
+
+describe('startupFailureHint', () => {
+  it('suggests installing the sandbox dependencies or disabling the sandbox', () => {
+    const hint = startupFailureHint('sandbox_required_unavailable');
+    expect(hint).toMatch(/^\[scuttlerun\] /);
+    expect(hint).toContain('bubblewrap');
+    expect(hint).toContain('sandbox.enabled: false');
+    expect(hint).toMatch(/\n$/);
+  });
+
+  it('offers no hint for other startup failures', () => {
+    expect(startupFailureHint('cwd_unavailable')).toBeUndefined();
+  });
+
+  it('offers no hint when the result names no startup failure', () => {
+    expect(startupFailureHint(undefined)).toBeUndefined();
   });
 });

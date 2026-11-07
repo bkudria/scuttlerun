@@ -360,6 +360,7 @@ entity Session {
 
     transitions status {
         pending -> running
+        pending -> failed
         running -> completed_success
         running -> exhausted_turns
         running -> exhausted_budget
@@ -705,7 +706,7 @@ rule SyntheticUserAnswersClarifyingQuestion {
 -- =============================================================
 
 rule AgentTurnSucceeds {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: subtype = success
@@ -816,7 +817,7 @@ rule TurnPolicyEndsByCap {
 }
 
 rule AgentTurnExhaustsTurns {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
@@ -828,7 +829,7 @@ rule AgentTurnExhaustsTurns {
 }
 
 rule AgentTurnHitsTurnCapDuringExecution {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
@@ -854,7 +855,7 @@ rule AgentTurnHitsTurnCapDuringExecution {
 }
 
 rule AgentTurnExhaustsBudget {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
@@ -866,9 +867,9 @@ rule AgentTurnExhaustsBudget {
 }
 
 rule AgentTurnFailsAtRuntime {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
 
-    requires: session.status = running
+    requires: session.status in {pending, running}
     requires: session.timed_out_observed = false
     requires: subtype = error_during_execution
     requires: terminal_reason != max_turns
@@ -894,6 +895,39 @@ rule AgentTurnFailsAtRuntime {
         -- it; an empty or absent `errors` array emits nothing. This is
         -- what makes a runtime failure observable instead of surfacing
         -- only as a bare exit code 2.
+        --
+        -- The session may still be pending: when Claude Code refuses to
+        -- start, the SDK writes a zeroed error_during_execution result
+        -- carrying `startup_failure_reason`, possibly before any init
+        -- message. That result fails the session directly (pending ->
+        -- failed) with the same exit code and diagnostic line; no
+        -- preamble is written because no session id was announced.
+}
+
+rule StartupFailureSuggestsSandboxFix {
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+
+    requires: subtype = error_during_execution
+    requires: startup_failure_reason = sandbox_required_unavailable
+
+    ensures: SandboxFixSuggested(session)
+
+    @guidance
+        -- The sandbox is enabled by default (Sandbox) and scuttlerun does
+        -- not relax the Agent SDK's requirement that an enabled sandbox
+        -- actually run, so a host without the sandbox's OS dependencies
+        -- fails at startup. Alongside the SDK error line written under
+        -- AgentTurnFailsAtRuntime, the runner writes one actionable
+        -- `[scuttlerun] ...` line to stderr: install the sandbox's OS
+        -- dependencies (on Linux, bubblewrap and socat), or set
+        -- `sandbox.enabled: false` in the session config. Like the other
+        -- stderr diagnostics it is informational and not for parsing.
+        --
+        -- This rule does not touch `status`; AgentTurnFailsAtRuntime
+        -- commits the failure and the exit code stays the runtime-error
+        -- code. It requires no particular status because the result may
+        -- arrive before init. Any other startup_failure_reason, or none,
+        -- adds no hint.
 }
 
 rule SessionFailsFromUncaughtException {
@@ -1489,7 +1523,7 @@ surface AgentSdkBoundary {
 
     provides:
         AgentInitialized(client, session)
-        AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+        AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
         AgentAsksClarifyingQuestion(client, session)
         AgentEmitsAssistantMessage(client, session, text_blocks)
         AgentEmitsThinking(client, session, text)

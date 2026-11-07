@@ -535,6 +535,40 @@ describe('runSession', () => {
     }
   });
 
+  it('adds a sandbox hint when startup fails for want of a sandbox, before any init', async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        session_id: 's-no-sandbox',
+        is_error: true,
+        num_turns: 0,
+        total_cost_usd: 0,
+        errors: ['Sandbox is required but unavailable'],
+        startup_failure_reason: 'sandbox_required_unavailable',
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(minConfig());
+      expect(result.exitCode).toBe(2);
+      expect(result.sessionId).toBeUndefined();
+      expect(stderrOutput).toContain('[scuttlerun] Sandbox is required but unavailable');
+      expect(stderrOutput).toContain('sandbox.enabled: false');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
+
   it('emits no diagnostic line for error_during_execution with empty errors', async () => {
     const mockQuery = createMockQuery([
       {
