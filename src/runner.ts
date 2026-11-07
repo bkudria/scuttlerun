@@ -360,7 +360,7 @@ export async function runSession(
           }
         } else {
           resolveNextAction?.({ type: 'end' });
-          exitCode = exitCodeForUnfinishedResult(message);
+          exitCode = exitCodeForUnfinishedResult(message, config.sandbox.enabled);
         }
       }
     }
@@ -423,7 +423,7 @@ export async function runSession(
 
 // Covers error subtypes, and a success result that arrives before init (no
 // synthetic user to consult), which can only end the session as a failure.
-function exitCodeForUnfinishedResult(message: SDKResultMessage): number {
+function exitCodeForUnfinishedResult(message: SDKResultMessage, sandboxEnabled: boolean): number {
   if (message.subtype === 'error_max_turns') return EXIT_MAX_TURNS;
   if (message.subtype === 'error_max_budget_usd') return EXIT_BUDGET_EXCEEDED;
   if ((message as { terminal_reason?: string }).terminal_reason === 'max_turns') {
@@ -445,6 +445,7 @@ function exitCodeForUnfinishedResult(message: SDKResultMessage): number {
   }
   const hint = startupFailureHint(
     (message as { startup_failure_reason?: SDKStartupFailureReason }).startup_failure_reason,
+    sandboxEnabled,
   );
   if (hint) process.stderr.write(hint);
   return EXIT_RUNTIME_ERROR;

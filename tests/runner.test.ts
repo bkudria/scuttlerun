@@ -569,6 +569,47 @@ describe('runSession', () => {
     }
   });
 
+  it('attributes a sandbox requirement to Claude Code settings when the sandbox is disabled', async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        session_id: 's-required-elsewhere',
+        is_error: true,
+        num_turns: 0,
+        total_cost_usd: 0,
+        errors: ['Sandbox is required but unavailable'],
+        startup_failure_reason: 'sandbox_required_unavailable',
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(
+        minConfig({
+          sandbox: {
+            enabled: false,
+            network: { allowed_domains: [], allow_local_binding: false },
+            filesystem: { deny_read: [], allow_write: [], deny_write: [] },
+          },
+        }),
+      );
+      expect(result.exitCode).toBe(2);
+      expect(stderrOutput).toContain('Claude Code settings');
+      expect(stderrOutput).not.toContain('sandbox.enabled: false');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
+
   it('emits no diagnostic line for error_during_execution with empty errors', async () => {
     const mockQuery = createMockQuery([
       {

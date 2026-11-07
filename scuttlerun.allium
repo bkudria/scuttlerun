@@ -916,12 +916,19 @@ rule StartupFailureSuggestsSandboxFix {
         -- The sandbox is enabled by default (Sandbox) and scuttlerun does
         -- not relax the Agent SDK's requirement that an enabled sandbox
         -- actually run, so a host without the sandbox's OS dependencies
-        -- fails at startup. Alongside the SDK error line written under
-        -- AgentTurnFailsAtRuntime, the runner writes one actionable
-        -- `[scuttlerun] ...` line to stderr: install the sandbox's OS
-        -- dependencies (on Linux, bubblewrap and socat), or set
-        -- `sandbox.enabled: false` in the session config. Like the other
-        -- stderr diagnostics it is informational and not for parsing.
+        -- fails at startup. Claude Code settings (managed, user or
+        -- project, e.g. loaded via `sdk.setting_sources` or a seeded
+        -- `project.claude_dir`) can impose the same requirement while
+        -- scuttlerun's own sandbox is off. Alongside the SDK error line
+        -- written under AgentTurnFailsAtRuntime, the runner writes one
+        -- actionable `[scuttlerun] ...` line to stderr that first says to
+        -- install the sandbox's OS dependencies (on Linux, bubblewrap
+        -- and socat). When `sandbox.enabled` is true it then offers
+        -- setting `sandbox.enabled: false` in the session config; when
+        -- it is false, that switch is already off and cannot help, so
+        -- the line instead attributes the requirement to Claude Code
+        -- settings and says to lift it there. Like the other stderr
+        -- diagnostics it is informational and not for parsing.
         --
         -- This rule does not touch `status`; AgentTurnFailsAtRuntime
         -- commits the failure and the exit code stays the runtime-error

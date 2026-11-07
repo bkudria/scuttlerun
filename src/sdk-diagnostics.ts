@@ -24,13 +24,27 @@ export function transcriptLostWarning(
   );
 }
 
+const SANDBOX_DEPENDENCIES =
+  'Install its OS dependencies (on Linux, bubblewrap and socat; see the Claude Code ' +
+  'sandboxing docs)';
+
+// A sandbox requirement can also come from Claude Code settings (managed,
+// user or project), in which case scuttlerun's own sandbox switch is already
+// off and cannot clear it.
 export function startupFailureHint(
   reason: SDKStartupFailureReason | undefined,
+  scuttlerunEnabledSandbox: boolean,
 ): string | undefined {
   if (reason !== 'sandbox_required_unavailable') return undefined;
+  if (scuttlerunEnabledSandbox) {
+    return (
+      `[scuttlerun] The sandbox is enabled but cannot run here. ${SANDBOX_DEPENDENCIES}, ` +
+      `or set sandbox.enabled: false in the session config to run without it.\n`
+    );
+  }
   return (
-    `[scuttlerun] The sandbox is enabled but cannot run here. Install its OS ` +
-    `dependencies (on Linux, bubblewrap and socat; see the Claude Code sandboxing ` +
-    `docs), or set sandbox.enabled: false in the session config to run without it.\n`
+    `[scuttlerun] A working sandbox is required but cannot run here. ${SANDBOX_DEPENDENCIES}, ` +
+    `or lift the sandbox requirement in the Claude Code settings (managed, user or ` +
+    `project) that impose it.\n`
   );
 }

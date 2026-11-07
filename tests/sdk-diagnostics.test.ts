@@ -57,19 +57,28 @@ describe('transcriptLostWarning', () => {
 });
 
 describe('startupFailureHint', () => {
-  it('suggests installing the sandbox dependencies or disabling the sandbox', () => {
-    const hint = startupFailureHint('sandbox_required_unavailable');
+  it('suggests installing the sandbox dependencies or disabling the sandbox scuttlerun enabled', () => {
+    const hint = startupFailureHint('sandbox_required_unavailable', true);
     expect(hint).toMatch(/^\[scuttlerun\] /);
     expect(hint).toContain('bubblewrap');
     expect(hint).toContain('sandbox.enabled: false');
     expect(hint).toMatch(/\n$/);
   });
 
+  it('points at Claude Code settings when scuttlerun did not enable the sandbox', () => {
+    const hint = startupFailureHint('sandbox_required_unavailable', false);
+    expect(hint).toMatch(/^\[scuttlerun\] /);
+    expect(hint).toContain('bubblewrap');
+    expect(hint).toContain('Claude Code settings');
+    expect(hint).not.toContain('sandbox.enabled: false');
+    expect(hint).toMatch(/\n$/);
+  });
+
   it('offers no hint for other startup failures', () => {
-    expect(startupFailureHint('cwd_unavailable')).toBeUndefined();
+    expect(startupFailureHint('cwd_unavailable', true)).toBeUndefined();
   });
 
   it('offers no hint when the result names no startup failure', () => {
-    expect(startupFailureHint(undefined)).toBeUndefined();
+    expect(startupFailureHint(undefined, true)).toBeUndefined();
   });
 });
