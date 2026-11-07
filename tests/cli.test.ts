@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { buildConfig, buildDryRunSummary, getCliVersion } from '../src/cli.js';
+import { TRANSCRIPT_LEGEND } from '../src/transcript.js';
 
 describe('buildConfig', () => {
   it('parses a YAML file into a SessionConfig', async () => {
@@ -155,6 +156,13 @@ project:
     const config = await buildConfig([yaml], {});
     const summary = buildDryRunSummary(config) as { timeout?: number };
     expect(summary.timeout).toBe(450);
+  });
+
+  it('carries the same legend the transcript header writes', async () => {
+    const config = await buildConfig([`prompt: hi\n`], {});
+    const summary = buildDryRunSummary(config) as { legend?: unknown };
+    expect(summary.legend).toHaveProperty('tool fields');
+    expect(summary.legend).toEqual(TRANSCRIPT_LEGEND);
   });
 
   it('includes the resolved auth mode', async () => {

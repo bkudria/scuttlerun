@@ -711,7 +711,7 @@ describe('runSession', () => {
       ]);
 
       expect(result.exitCode).toBe(0);
-      expect(stdoutOutput).not.toContain('transcript_incomplete');
+      expect(stdoutOutput).not.toContain('transcript_incomplete: true');
       expect(stderrOutput).not.toContain('[scuttlerun] WARNING');
     });
 
@@ -3426,7 +3426,7 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
       expect(stdoutOutput).toContain('cost_usd: 0.011\n');
       expect(stdoutOutput).toContain('oracle_cost_usd: 0.001\n');
       expect(stdoutOutput).toContain('calls: 2\n');
-      expect(stdoutOutput).not.toContain('cost_incomplete');
+      expect(stdoutOutput).not.toContain('cost_incomplete: true');
     });
 
     it('flags cost_incomplete when an oracle query ended without reporting its cost', async () => {
@@ -3486,7 +3486,7 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
 
       expect(result.exitCode).toBe(0);
       expect(stdoutOutput).toContain('turns:');
-      expect(stdoutOutput).not.toContain('cost_incomplete');
+      expect(stdoutOutput).not.toContain('cost_incomplete: true');
     });
 
     it('closes the SDK query even when footer emission throws', async () => {

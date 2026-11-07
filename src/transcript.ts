@@ -91,6 +91,7 @@ export function writeHeader(opts: HeaderOptions): void {
     config: opts.configPaths.length === 1 ? opts.configPaths[0] : opts.configPaths,
     project: opts.projectDir,
     transcript: opts.transcriptPath,
+    legend: TRANSCRIPT_LEGEND,
   };
   const doc = new Document(header);
   /* v8 ignore next 3 -- yaml Document always has directives; defensive guard */
@@ -115,42 +116,89 @@ export function writeAssistant(text: string): void {
   writeEntry({ assistant: text });
 }
 
+interface ToolField {
+  name: string;
+  from: string;
+  kind: 'text' | 'list' | 'optional';
+}
+
+interface ToolFieldRule {
+  tools: string[];
+  fields: ToolField[];
+  dropped?: string[];
+}
+
+function text(name: string, from = name): ToolField {
+  return { name, from, kind: 'text' };
+}
+
+// Drives both the tool entries and the legend's description of them, so the
+// two cannot disagree.
+const TOOL_FIELD_RULES: ToolFieldRule[] = [
+  {
+    tools: ['Read', 'Write', 'Edit'],
+    fields: [text('path', 'file_path')],
+    dropped: ['content', 'old_string', 'new_string'],
+  },
+  { tools: ['Bash'], fields: [text('command')] },
+  { tools: ['Glob', 'Grep'], fields: [text('pattern')] },
+  { tools: ['TodoWrite'], fields: [{ name: 'todos', from: 'todos', kind: 'list' }] },
+  { tools: ['TaskCreate'], fields: [text('subject'), text('description')] },
+  {
+    tools: ['TaskUpdate'],
+    fields: [text('task_id', 'taskId'), { name: 'status', from: 'status', kind: 'optional' }],
+  },
+  { tools: ['TaskGet'], fields: [text('task_id', 'taskId')] },
+  { tools: ['TaskList'], fields: [] },
+];
+
+const listFormat = new Intl.ListFormat('en-GB', { type: 'conjunction' });
+
+function describeToolFields(rule: ToolFieldRule): string {
+  const kept =
+    rule.fields
+      .map((f) => (f.kind === 'optional' ? `plus ${f.name} when given` : f.name))
+      .join(', ') || 'no fields';
+  return rule.dropped ? `${kept}; ${listFormat.format(rule.dropped)} are dropped` : kept;
+}
+
+export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
+  entries: {
+    user: 'a synthetic-user message; the first is the scenario prompt, any leading slash command included',
+    assistant: "the agent's reply text",
+    thinking: "the agent's thinking text",
+    tool: 'a tool call the agent requested, with only the fields under tool fields; whether it ran, failed or was blocked is not shown',
+    oracle:
+      "the synthetic user's decisions: ask_user (answers, reasoning), turn (decision, message, reasoning), error (reason)",
+  },
+  'tool fields': {
+    ...Object.fromEntries(
+      TOOL_FIELD_RULES.map((rule) => [rule.tools.join(', '), describeToolFields(rule)]),
+    ),
+    'any other tool': 'input, the full input',
+  },
+  'not recorded': 'tool results and hook activity; the session log named by transcript has them',
+  footer: {
+    cost_incomplete: 'some spend went unreported',
+    transcript_incomplete: 'the session log is missing lines',
+    timed_out: 'the session hit its timeout',
+  },
+};
+
 export function writeTool(name: string, input: unknown): void {
   const inp = input as Record<string, unknown>;
   const entry: Record<string, unknown> = { tool: name };
+  const rule = TOOL_FIELD_RULES.find((r) => r.tools.includes(name));
 
-  switch (name) {
-    case 'Read':
-    case 'Write':
-    case 'Edit':
-      entry.path = String(inp.file_path ?? '');
-      break;
-    case 'Bash':
-      entry.command = String(inp.command ?? '');
-      break;
-    case 'Glob':
-    case 'Grep':
-      entry.pattern = String(inp.pattern ?? '');
-      break;
-    case 'TodoWrite':
-      entry.todos = inp.todos ?? [];
-      break;
-    case 'TaskCreate':
-      entry.subject = String(inp.subject ?? '');
-      entry.description = String(inp.description ?? '');
-      break;
-    case 'TaskUpdate':
-      entry.task_id = String(inp.taskId ?? '');
-      if (inp.status !== undefined) entry.status = String(inp.status);
-      break;
-    case 'TaskList':
-      break;
-    case 'TaskGet':
-      entry.task_id = String(inp.taskId ?? '');
-      break;
-    default:
-      entry.input = inp;
-      break;
+  if (!rule) {
+    entry.input = inp;
+  } else {
+    for (const field of rule.fields) {
+      const value = inp[field.from];
+      if (field.kind === 'list') entry[field.name] = value ?? [];
+      else if (field.kind === 'text') entry[field.name] = String(value ?? '');
+      else if (value !== undefined) entry[field.name] = String(value);
+    }
   }
 
   writeEntry(entry);

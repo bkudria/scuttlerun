@@ -44,6 +44,63 @@ describe('transcript', () => {
       expect(output).toContain('conversation:\n');
     });
 
+    it('writes a legend after transcript describing every entry kind, tool field and footer flag', () => {
+      writeHeader({
+        session: 'abc-123',
+        configPaths: ['/path/to/session.yaml'],
+        projectDir: '/tmp/proj',
+        transcriptPath: '/tmp/transcript.jsonl',
+      });
+      const parsed = parseYaml(output + '  - user: |\n      placeholder\n');
+      expect(Object.keys(parsed)).toEqual([
+        'session',
+        'config',
+        'project',
+        'transcript',
+        'legend',
+        'conversation',
+      ]);
+      expect(parsed.legend).toEqual({
+        entries: {
+          user: 'a synthetic-user message; the first is the scenario prompt, any leading slash command included',
+          assistant: "the agent's reply text",
+          thinking: "the agent's thinking text",
+          tool: 'a tool call the agent requested, with only the fields under tool fields; whether it ran, failed or was blocked is not shown',
+          oracle:
+            "the synthetic user's decisions: ask_user (answers, reasoning), turn (decision, message, reasoning), error (reason)",
+        },
+        'tool fields': {
+          'Read, Write, Edit': 'path; content, old_string and new_string are dropped',
+          Bash: 'command',
+          'Glob, Grep': 'pattern',
+          TodoWrite: 'todos',
+          TaskCreate: 'subject, description',
+          TaskUpdate: 'task_id, plus status when given',
+          TaskGet: 'task_id',
+          TaskList: 'no fields',
+          'any other tool': 'input, the full input',
+        },
+        'not recorded':
+          'tool results and hook activity; the session log named by transcript has them',
+        footer: {
+          cost_incomplete: 'some spend went unreported',
+          transcript_incomplete: 'the session log is missing lines',
+          timed_out: 'the session hit its timeout',
+        },
+      });
+    });
+
+    it('keeps the header within 80 columns', () => {
+      writeHeader({
+        session: 'abc-123',
+        configPaths: ['/path/to/session.yaml'],
+        projectDir: '/tmp/proj',
+        transcriptPath: '/tmp/transcript.jsonl',
+      });
+      const longest = Math.max(...output.split('\n').map((l) => l.length));
+      expect(longest).toBeLessThanOrEqual(80);
+    });
+
     it('starts with YAML document start marker', () => {
       writeHeader({
         session: 'abc-123',

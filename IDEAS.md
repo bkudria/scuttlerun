@@ -30,9 +30,10 @@ Entries are not ordered by priority.
   settings shell hooks surface stdout, including PostToolUse
   additionalContext, under bypassPermissions — the docs say hook_response may
   appear only for background hooks. `hook_name` arrives as `Event:matcher`.
-  Lands after the self-describing legend below, so the new entry kind is a
-  one-repo change; until then craboodle's example gets its interim fix. No
-  in-process observer hooks: they would duplicate `tool:` entries.
+  The transcript legend makes the new entry kind a one-repo change: a line
+  under `entries`, and hooks leave `not recorded`. Until hook entries land,
+  craboodle's example keeps its interim fix. No in-process observer hooks: they would
+  duplicate `tool:` entries.
 - **Non-Goals section: no tmux or PTY driver.** Decided 2026-11-04. README's
   See Also promises non-goals that GOALS.md does not have. Write them:
   scuttlerun observes the SDK stream, headless and sandboxed; a tmux-driven
@@ -54,20 +55,6 @@ Entries are not ordered by priority.
 
 ## Transcript
 
-- **Self-describing transcript legend.** The field contract lives in
-  scuttlerun.allium's TranscriptToolFieldContract, hand-mirrored in pincenez's
-  prompt builder (shared by grader and lint) plus hard-coded claims there that
-  hooks and slash commands do not appear, and all three CLAUDE.md files order
-  the lockstep. Each new entry kind below would cost three repos. Shape:
-  scuttlerun writes a short `legend:` block into the header after
-  `transcript:`, generated from one table in src that the allium guarantee and
-  tests also pin, naming each entry kind and the fields it keeps, drops or
-  caps; `--dry-run` carries it and craboodle forwards it as lint context by
-  the precedent of `--available-tools`; pincenez drops its mirror and the
-  hook/slash prose, keeping only "honour the output's own contract section"
-  and its plain-text non-goal. Costs a dozen header lines per judge call; lint
-  run standalone keeps a weaker generic fallback; three test suites change at
-  once; the legend text must be stable or lint verdicts drift. Lands first.
 - **Permission decisions, denials and mode transitions recorded; `auto`
   accepted.** canUseTool returns allow for every non-question tool and
   ignores the SDK's third argument (signal, suggestions, blockedPath,
@@ -99,14 +86,6 @@ Entries are not ordered by priority.
   spanning the bump cannot tell from its transcripts which CLI produced which
   side. The init's `capabilities` list follows from the version, so recording
   the version is enough.
-- **Tell the judge what `transcript_incomplete` means.** The footer sets
-  `transcript_incomplete: true` when Claude Code reports
-  (`session_writes_lost`) that a full disk or quota kept it from saving this
-  run's session JSONL. pincenez's prompt builder tells the judge that full
-  tool inputs survive in that JSONL and says nothing about it being partial,
-  so a judge that consults it may grade a truncated log as the whole
-  conversation. One sentence in pincenez's contract section; it falls out of
-  the self-describing legend above if that lands first.
 - **Bounded tool results.** The runner loop has no `user` branch, so
   tool_result blocks and the structured `tool_use_result` are dropped; the
   probe read "The user did not answer the questions." (the outcome of allow
