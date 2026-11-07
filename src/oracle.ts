@@ -1,6 +1,5 @@
 import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { computeCostUsd } from './pricing.js';
 
 // Schema for AskUserQuestion oracle response
 const AskUserQuestionResponseSchema = z.object({
@@ -144,6 +143,12 @@ interface OracleUsage {
   cache_read_input_tokens?: number | null;
 }
 
+interface OracleQueryResult {
+  subtype: string;
+  usage: OracleUsage;
+  total_cost_usd: number;
+}
+
 const ORACLE_MAX_ATTEMPTS = 4;
 const ORACLE_DEFAULT_BASE_DELAY_MS = 250;
 // Headroom for the SDK's internal structured-output round trips; the oracle
@@ -156,19 +161,15 @@ export class Oracle {
   private sleep: (ms: number) => Promise<void>;
   private baseDelayMs: number;
   private sdkEnv: Record<string, string | undefined> | undefined;
-  private totalUsage: {
-    input_tokens: number;
-    output_tokens: number;
-    calls: number;
-    cache_creation_input_tokens: number;
-    cache_read_input_tokens: number;
-  } = {
+  private totalUsage: OracleUsageTotal = {
     input_tokens: 0,
     output_tokens: 0,
     calls: 0,
+    cost_usd: 0,
     cache_creation_input_tokens: 0,
     cache_read_input_tokens: 0,
   };
+  private costUnknown = false;
 
   constructor(model: string, options: OracleOptions = {}) {
     this.model = model;
@@ -196,8 +197,6 @@ export class Oracle {
           : `You returned ${parsed.answers.length} answer(s) for ${params.questions.length} question(s). Return exactly one answer per question.`,
     );
 
-    this.trackUsage(response.usage);
-
     const oracleAnswers = response.parsed_output.answers;
     const answers = Object.fromEntries(
       params.questions.map((q, i) => [q.question, oracleAnswers[i].answer]),
@@ -224,8 +223,6 @@ export class Oracle {
       TURN_POLICY_OUTPUT_SCHEMA,
     );
 
-    this.trackUsage(response.usage);
-
     const parsed = response.parsed_output;
     return {
       decision: parsed.decision,
@@ -239,16 +236,16 @@ export class Oracle {
   }
 
   getTotalUsage(): OracleUsageTotal {
-    return {
-      ...this.totalUsage,
-      cost_usd: computeCostUsd(
-        this.model,
-        this.totalUsage.input_tokens,
-        this.totalUsage.output_tokens,
-        this.totalUsage.cache_creation_input_tokens,
-        this.totalUsage.cache_read_input_tokens,
-      ),
-    };
+    return { ...this.totalUsage };
+  }
+
+  /**
+   * True once any oracle query ended without reporting its cost — no result
+   * message, or an error result with a zeroed cost — so getTotalUsage() may
+   * undercount that query's spend.
+   */
+  hasUnknownCost(): boolean {
+    return this.costUnknown;
   }
 
   private async callWithRetry<T extends z.ZodType>(
@@ -313,6 +310,8 @@ export class Oracle {
    * One oracle exchange via a one-shot Agent SDK query: no tools, structured
    * output enforced by JSON schema. Returns the structured output (or the
    * result string parsed as JSON when the SDK omits it) plus token usage.
+   * Usage and cost are tracked for every query, whether or not its output
+   * survives validation.
    */
   private async callModel(
     systemPrompt: string,
@@ -320,55 +319,84 @@ export class Oracle {
     outputSchema: Record<string, unknown>,
   ): Promise<{ structured: unknown; usage: OracleUsage }> {
     let structured: unknown;
-    let usage: OracleUsage | undefined;
+    let result: OracleQueryResult | undefined;
     let sdkError: { subtype: string; errors: string[] } | undefined;
 
-    for await (const message of query({
-      prompt: userMessage,
-      options: {
-        model: this.model,
-        env: this.sdkEnv ?? { ...process.env, CLAUDECODE: undefined },
-        tools: [],
-        maxTurns: ORACLE_MAX_TURNS,
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
-        persistSession: false,
-        systemPrompt: [systemPrompt, SYSTEM_PROMPT_DYNAMIC_BOUNDARY],
-        outputFormat: {
-          type: 'json_schema',
-          schema: outputSchema,
+    try {
+      for await (const message of query({
+        prompt: userMessage,
+        options: {
+          model: this.model,
+          env: this.sdkEnv ?? { ...process.env, CLAUDECODE: undefined },
+          tools: [],
+          maxTurns: ORACLE_MAX_TURNS,
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
+          persistSession: false,
+          // The SDK defaults load the operator's and launch directory's
+          // settings, hooks, plugins, MCP servers, skills and auto-memory, and
+          // a signed-in Claude account adds its claude.ai connectors, synced
+          // plugins and synced skills; none of it should shape or slow down
+          // the synthetic user.
+          settingSources: [],
+          strictMcpConfig: true,
+          skills: [],
+          settings: {
+            autoMemoryEnabled: false,
+            disableClaudeAiConnectors: true,
+            syncClaudeAiPlugins: false,
+            syncClaudeAiSkills: false,
+          },
+          systemPrompt: [systemPrompt, SYSTEM_PROMPT_DYNAMIC_BOUNDARY],
+          outputFormat: {
+            type: 'json_schema',
+            schema: outputSchema,
+          },
         },
-      },
-    })) {
-      if (message.type === 'result') {
-        usage = message.usage;
-        if (message.subtype === 'success') {
-          structured = message.structured_output ?? tryParseJson(message.result);
-        } else {
-          sdkError = {
-            subtype: message.subtype,
-            errors: (message as { errors?: string[] }).errors ?? [],
-          };
+      })) {
+        if (message.type === 'result') {
+          result = message;
+          if (message.subtype === 'success') {
+            structured = message.structured_output ?? tryParseJson(message.result);
+          } else {
+            sdkError = {
+              subtype: message.subtype,
+              errors: (message as { errors?: string[] }).errors ?? [],
+            };
+          }
         }
       }
+    } finally {
+      this.trackQuery(result);
     }
 
     if (sdkError) {
       const detail = sdkError.errors.length > 0 ? sdkError.errors.join('; ') : 'no error details';
       throw new Error(`Oracle SDK call failed (${sdkError.subtype}): ${detail}`);
     }
-    if (!usage) {
+    if (!result) {
       throw new Error('Oracle SDK call produced no result message');
     }
-    return { structured, usage };
+    return { structured, usage: result.usage };
   }
 
-  private trackUsage(usage: OracleUsage): void {
+  // total_cost_usd is the SDK's own estimate for the whole query() — the
+  // pricing basis the agent session's cost uses too — and is cumulative within
+  // a query, so only the last result message is counted. The SDK may zero the
+  // figures on a crash or startup-error result, so a zero-cost error result is
+  // an unknown spend rather than a confirmed $0.
+  private trackQuery(result: OracleQueryResult | undefined): void {
+    this.totalUsage.calls += 1;
+    if (!result || (result.subtype !== 'success' && result.total_cost_usd === 0)) {
+      this.costUnknown = true;
+    }
+    if (!result) return;
+    const { usage } = result;
     this.totalUsage.input_tokens += usage.input_tokens;
     this.totalUsage.output_tokens += usage.output_tokens;
     this.totalUsage.cache_creation_input_tokens += usage.cache_creation_input_tokens ?? 0;
     this.totalUsage.cache_read_input_tokens += usage.cache_read_input_tokens ?? 0;
-    this.totalUsage.calls += 1;
+    this.totalUsage.cost_usd += result.total_cost_usd;
   }
 }
 

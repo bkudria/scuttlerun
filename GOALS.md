@@ -24,11 +24,13 @@ A YAML file describes **intent, not reproduction**. Given LLM non-determinism, e
 
 ## Headless, Isolated Operation
 
-scuttlerun is fully headless — no human intervention required during a session. This is equally about **enabling automation** (batch runs, CI) and **protecting the host system** (the agent operates in an isolated temp directory, not your real filesystem).
+scuttlerun is fully headless — no human intervention required during a session. This is equally about **enabling automation** (batch runs, CI) and **protecting the host system** (the agent works in a fresh temp directory, and by default its shell commands run in an OS sandbox that keeps their writes off your real filesystem; the file tools sit outside that boundary, as below).
 
 Project directories are preserved after each session so artifacts remain available for inspection. At the start of each session, scuttlerun garbage-collects its own project directories in `$TMPDIR` that are older than 7 days (matching the `scuttlerun-project-` prefix); recent artifacts are never touched.
 
-The sandbox (redirecting `$HOME`, constraining network/filesystem access) exists for **safety** — preventing the agent from affecting the real system. Because it is a safety boundary, an enabled sandbox that cannot run fails the session rather than silently running the agent unsandboxed, and scuttlerun names the fix: install the sandbox's dependencies or turn the sandbox off explicitly.
+The sandbox (redirecting `$HOME`, constraining what the agent's shell commands can reach on the network and filesystem) exists for **safety** — preventing the agent from affecting the real system. Because it is a safety boundary, an enabled sandbox that cannot run fails the session rather than silently running the agent unsandboxed, and scuttlerun names the fix: install the sandbox's dependencies or turn the sandbox off explicitly. Its boundary is the OS sandbox around shell commands; the file tools sit outside it, and confining their writes is left to an opt-in Claude Code setting rather than imposed by default, because that setting also refuses edits to Claude settings files — exactly the behaviour some evaluations exist to observe. The docs say plainly where each boundary stops, so the isolation is never assumed to be wider than it is.
+
+Isolation runs the other way for the oracle: it loads none of the host's Claude Code configuration files or account-synced extras (settings, hooks, plugins, MCP servers, skills, auto-memory), so the operator's own setup cannot steer the synthetic user or add cost to its calls. The environment it inherits for credentials and any administrator-managed settings are the exceptions.
 
 ## Controlled Environment for Testing
 
@@ -54,4 +56,4 @@ The reactive turn policy (where the oracle decides whether to continue or end th
 
 ## Readable, Structured Output
 
-scuttlerun streams YAML to stdout — both human-readable and machine-parseable, no separate formats needed. The transcript links to the full SDK session event log (JSONL) for deeper inspection when needed. When a session ends before its in-flight turn reports a final cost, the footer flags the agent cost as incomplete rather than silently conflating an unknown spend with a confirmed zero. Likewise, when Claude Code reports that a full disk or quota kept it from saving the session log, the footer flags the transcript as incomplete, so a reader never mistakes a truncated log for the whole conversation.
+scuttlerun streams YAML to stdout — both human-readable and machine-parseable, no separate formats needed. The transcript links to the full SDK session event log (JSONL) for deeper inspection when needed. Footer costs are the Agent SDK's own estimates rather than a price list scuttlerun maintains, and the oracle's cost counts every query it made, retries included. When some spend goes unreported — a session ends before its in-flight turn reports a final cost, or an oracle query ends without reporting one — the footer flags the cost as incomplete rather than silently conflating an unknown spend with a confirmed zero. Likewise, when Claude Code reports that a full disk or quota kept it from saving the session log, the footer flags the transcript as incomplete, so a reader never mistakes a truncated log for the whole conversation.

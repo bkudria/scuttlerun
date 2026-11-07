@@ -69,8 +69,13 @@ Session Config (YAML):
       git_commit: false                 # Commit all scaffolded files; needs git_init (default: false)
 
     # --- Sandbox ---
-    # Always enabled by default. The agent runs inside an OS-level sandbox
-    # that restricts filesystem and network access.
+    # Always enabled by default. The agent's Bash commands run inside an OS-level
+    # sandbox that restricts their filesystem and network access.
+    # The file tools (Read, Write, Edit) are not sandboxed: they can reach any
+    # path you can, including skill sources through the project.skills symlinks.
+    # To confine their writes to the project dir, set in project.settings:
+    #   permissions: {blockWritesOutsideWorkingDirectories: true}
+    # (this also blocks the agent's edits to Claude settings files).
     sandbox:
       enabled: true                       # (default: true)
       network:

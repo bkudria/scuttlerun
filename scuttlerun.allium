@@ -17,12 +17,14 @@
 -- Excludes:
 --   - YAML config schema and merge semantics (input presentation, not behaviour)
 --   - Agent SDK protocol internals (message envelopes, async-iterator coordination)
---   - Oracle SDK call mechanics beyond the credential surface and retry
---     policy captured here (one-shot query plumbing, structured-output
+--   - Oracle SDK call mechanics beyond the credential surface, host
+--     configuration isolation and retry policy captured here (one-shot
+--     query plumbing, structured-output
 --     round trips, and the hand-written JSON schema mirroring the Zod
 --     validators)
 --   - Sandbox enforcement (delegated to the Agent SDK; scuttlerun configures the sandbox via SessionInput.sandbox)
---   - Pricing table maintenance (a data file, not behaviour)
+--   - Model pricing (the Agent SDK prices every agent and oracle query;
+--     scuttlerun reads the SDK's estimate rather than pricing tokens itself)
 
 -- Self-reference. scuttlerun's external entities (AgentSdkClient,
 -- OracleSdkClient, Environment, Caller) sit at code-to-code or
@@ -243,7 +245,8 @@ value Sandbox {
         -- domains are reachable. There is no global on/off network
         -- toggle separate from sandbox.enabled.
         --
-        -- Filesystem access is governed by separate read and write
+        -- Filesystem access for the commands the agent runs through the
+        -- Bash tool is governed by separate read and write
         -- denylists plus a write allowlist; there is no general read
         -- allowlist (read defaults to allowed except as denied). The
         -- read denylist defaults to common credential paths
@@ -255,7 +258,8 @@ value Sandbox {
         -- entries they want to retain. The workspace path and /tmp
         -- are unconditionally writable in addition to whatever
         -- allow_write lists; callers do not need to (and cannot)
-        -- revoke these two roots.
+        -- revoke these two roots. The file tools are outside the OS
+        -- sandbox and these lists do not confine them; see Workspace.
         --
         -- Bash auto-allow under the sandbox is not caller-configurable:
         -- when the sandbox is enabled, the runner always passes
@@ -405,10 +409,13 @@ entity Workspace {
 
     @guidance
         -- When the sandbox is enabled, HOME is redirected to
-        -- <workspace>/.home so that the agent process does not read or
-        -- write the operator's home directory. This applies regardless
-        -- of whether the workspace was scaffolded from a project
-        -- template.
+        -- <workspace>/.home so that what the agent process locates through
+        -- HOME — its Claude Code config directory, tool caches, ~ in shell
+        -- commands — resolves inside the workspace rather than the
+        -- operator's home directory. This applies regardless of whether the
+        -- workspace was scaffolded from a project template. The redirection
+        -- changes where HOME points; it does not by itself confine file
+        -- access (see "What confines the agent's file access" below).
         --
         -- A single carve-out exists for subscription authentication: when
         -- the sandbox's auth-shaped view of the environment presents no
@@ -416,9 +423,11 @@ entity Workspace {
         -- exists, that one file (~/.claude/.credentials.json) is exposed
         -- inside the sandbox via a symlink at
         -- <workspace>/.home/.claude/.credentials.json. Nothing else under
-        -- the operator's ~/.claude/ is reachable from the agent subprocess;
-        -- skills, plugins, commands, agents, settings, prior session history
-        -- and other operator state stay invisible. The symlink and the
+        -- the operator's ~/.claude/ is linked in, so Claude Code does not
+        -- discover the operator's skills, plugins, commands, agents,
+        -- settings or prior session history through its config directory.
+        -- That is a statement about discovery, not reachability: see "What
+        -- confines the agent's file access" below. The symlink and the
         -- warning below both evaluate the auth-shaped view (see
         -- Session.sandbox_credential_selection), not the raw parent env, so a
         -- subscription-preferring mode links the credentials file even when
@@ -439,6 +448,55 @@ entity Workspace {
         -- diagnostic is scoped to sandboxed sessions: without the sandbox the
         -- subprocess inherits the real HOME and can read the Keychain
         -- directly, so no such determination is made.
+        --
+        -- What confines the agent's file access. The OS sandbox governs
+        -- the commands the agent runs through the Bash tool: the
+        -- filesystem lists on Sandbox bound their reads and writes. The
+        -- file tools (Read, Write, Edit, NotebookEdit, Glob, Grep) run in
+        -- the agent process itself, outside the OS sandbox: the workspace,
+        -- /tmp and allow_write do not bound their writes, and deny_read
+        -- does not stop their reads. Under the default bypassPermissions,
+        -- and under `default` or `acceptEdits` (where the canUseTool
+        -- callback allows every tool call, answering AskUserQuestion
+        -- through the oracle), a file tool can read or write any path the
+        -- operator's user can, by absolute path, the operator's real home
+        -- and ~/.claude/ included, and a workspace entry that is a symlink
+        -- leads it to the link's target. (`dontAsk` refuses calls that are
+        -- not pre-approved, and `plan` withholds tool execution.)
+        --   - each project.skills entry is a symlink to the operator's
+        --     source skill directory, so a Write or Edit under
+        --     <workspace>/.claude/skills/<name>/ modifies the operator's
+        --     source files;
+        --   - the credentials carve-out above is a symlink to the
+        --     operator's real credentials file;
+        --   - project.plugins and sdk.plugins load from their source
+        --     directories in place, with no workspace copy;
+        --   - project.claude_dir is copied, so writes into the seeded
+        --     config directory stay in the workspace.
+        -- scuttlerun leaves file-tool confinement to the caller. Claude
+        -- Code's permissions.blockWritesOutsideWorkingDirectories setting
+        -- refuses file-tool writes (Write, Edit, NotebookEdit) outside the
+        -- working directories in every permission mode, and judges a path
+        -- that resolves through a symlink by where the link leads, so the
+        -- skill and credentials symlinks are refused too. Files Claude
+        -- Code keeps for the session are exempt: its plan files,
+        -- scratchpad, background-job folder and the project's auto-memory.
+        -- The plan files and auto-memory live in the agent's Claude config
+        -- directory, which is inside the workspace (<workspace>/.home/.claude)
+        -- when the sandbox is enabled or project.claude_dir is set, and is
+        -- the operator's real ~/.claude/ otherwise; the scratchpad lives
+        -- under the system temp directory. A caller opts in
+        -- through project.settings, which lands in
+        -- <workspace>/.claude/settings.json and is read whenever
+        -- setting_sources includes `project` (the default when a project
+        -- template is present). The same setting also refuses file-tool
+        -- writes to Claude Code settings files inside the workspace, which
+        -- is why it is not on by default: a session that evaluates how the
+        -- agent edits its own configuration would have those edits
+        -- refused. It also withdraws EnterWorktree and ExitWorktree from
+        -- the tools on offer. It does not limit shell commands, MCP tools,
+        -- the programs hooks run or the memory tools, and it does not
+        -- confine reads.
         --
         -- When session.input.sandbox.enabled, the agent subprocess
         -- receives only an allowlisted set of environment variables
@@ -1171,7 +1229,9 @@ rule WorkspaceScaffoldsSkill {
         -- SKILL.md file. A failed skill validation rejects the entire
         -- session as a configuration error (exit 1) — no partial
         -- scaffolding remains. Skills are symlinked into
-        -- <workspace>/.claude/skills/<name>/, not copied.
+        -- <workspace>/.claude/skills/<name>/, not copied, so a file-tool
+        -- write through the link reaches the source skill unless the
+        -- caller confines file-tool writes (see Workspace).
 }
 
 
@@ -1233,36 +1293,51 @@ rule AssistantToolCallEmitted {
 -- Rules: Cost accumulation
 -- =============================================================
 
-rule OracleCallTracked {
-    when: OracleCallCompleted(oracle, session, usage)
+rule OracleQueryTracked {
+    when: OracleQueryCompleted(oracle, session, usage, query_cost)
 
-    ensures: session.oracle_cost = session.oracle_cost
-        + (usage.input_tokens * input_rate(session.input.oracle_model)
-         + usage.output_tokens * output_rate(session.input.oracle_model)
-         + usage.cache_creation_input_tokens * cache_creation_rate(session.input.oracle_model)
-         + usage.cache_read_input_tokens * cache_read_rate(session.input.oracle_model))
-            / 1_000_000
+    ensures: session.oracle_cost = session.oracle_cost + query_cost
 
     @guidance
-        -- The cost increment combines input, output, cache-creation and
-        -- cache-read token counts reported on the oracle's SDK result
-        -- message with the model's per-million-token rates: input tokens
-        -- times the input
-        -- rate, output tokens times the output rate, plus cache-creation
-        -- and cache-read tokens against their own rate columns. The
-        -- cache columns are derived from the input rate by fixed
-        -- multipliers: cache-creation tokens are billed at 1.25 times
-        -- the input rate, and cache-read tokens at 0.10 times the input
-        -- rate. Unknown models fall back to a family rate or to the
-        -- default oracle model's rate; the rate-table lookup is
-        -- implementation detail.
-        --
-        -- The per-call accumulation expressed by this rule is the
-        -- logical model. The implementation accumulates raw token
-        -- totals across calls and computes the cost once at session
-        -- finalisation; intermediate session.oracle_cost values are
-        -- not observable to callers and need not match per-call
-        -- arithmetic until the footer is emitted.
+        -- Fires once per oracle SDK query() that produced a result
+        -- message — every attempt, not only the one whose output the
+        -- oracle call finally uses. Attempts whose structured output
+        -- fails schema or semantic validation and is retried, SDK
+        -- error-subtype results, and every attempt of an oracle call
+        -- that exhausts its retries all add their usage and cost, so
+        -- oracle_cost is the total oracle spend. usage is the result
+        -- message's token counts (input, output, cache-creation,
+        -- cache-read), accumulated into the footer's oracle_usage;
+        -- query_cost is the result message's total_cost_usd: the Agent
+        -- SDK's own notional API-rate estimate for that query, the same
+        -- pricing basis as agent_cost. total_cost_usd is cumulative
+        -- within a query, so the query's last result message is the one
+        -- counted. scuttlerun keeps no pricing table of its own, so the
+        -- SDK's per-model rates and cache-write lifetimes apply to every
+        -- oracle model the SDK knows.
+}
+
+rule OracleQueryCostUnknown {
+    when: OracleQueryCostUnreported(oracle, session)
+
+    ensures: session.cost_incomplete = true
+
+    @guidance
+        -- Fires for an oracle query() whose spend the SDK did not report:
+        -- one that ends — by throwing or by finishing its stream — before
+        -- any result message, or one whose result is an error subtype
+        -- with total_cost_usd of zero. The SDK reports a query's cost only
+        -- on its result message, and scuttlerun reads the query's token
+        -- totals from that same message, so a query with no result adds
+        -- nothing to oracle_cost or the token totals. The SDK may zero the
+        -- figures on a crash or startup-error result, so a zero-cost error
+        -- result is likewise indistinguishable from unreported spend; its
+        -- (zero) usage and cost still accumulate via OracleQueryTracked. A
+        -- successful result reporting zero cost is taken at its word.
+        -- Either way the query may have spent tokens, so the session's
+        -- cost is flagged incomplete rather than presenting the unknown
+        -- spend as a confirmed zero. The query still counts toward
+        -- oracle_usage.calls.
 }
 
 
@@ -1419,7 +1494,8 @@ surface CommandLineInvocation {
         -- error (exit 1) naming CLAUDE_SDK_OAUTH_TOKEN (see SessionStarts).
         -- The resolved auth value is echoed in the --dry-run summary. The
         -- auth mode does not affect cost: transcript footer costs remain
-        -- notional API-rate figures computed from token usage, and
+        -- the Agent SDK's notional API-rate estimates (each query's
+        -- total_cost_usd) whichever credential is used, and
         -- max_budget_usd is unchanged.
 }
 
@@ -1452,14 +1528,19 @@ surface StreamingTranscript {
         -- `cost_usd` (Decimal: agent + oracle total) appears when the
         -- total is greater than zero; `oracle_cost_usd` (Decimal)
         -- appears when the oracle cost is greater than zero;
-        -- `oracle_usage` appears when the oracle has been called at
-        -- least once and is a flat mapping with `input_tokens`,
+        -- `oracle_usage` appears when the oracle has issued at least
+        -- one SDK query and is a flat mapping with `input_tokens`,
         -- `output_tokens`, `cache_creation_input_tokens`,
-        -- `cache_read_input_tokens`, `calls` and `cost_usd`;
+        -- `cache_read_input_tokens`, `calls` (SDK queries issued,
+        -- retried attempts included) and `cost_usd` (equal to
+        -- oracle_cost); the token counts and costs cover every attempt
+        -- (see OracleQueryTracked);
         -- `cost_incomplete` (Boolean) appears only when truthy and means
-        -- the session terminated before the in-flight turn reported a
-        -- final result, so the agent cost shown or omitted is
-        -- incomplete/unknown rather than a confirmed $0;
+        -- some spend went unreported — the session terminated before the
+        -- in-flight agent turn reported a final result, or an oracle
+        -- query ended without a result message or with a zero-cost error
+        -- result (OracleQueryCostUnknown) — so the cost shown or omitted
+        -- is incomplete/unknown rather than a confirmed $0;
         -- `transcript_incomplete` (Boolean) appears only when truthy and
         -- means the SDK session JSONL for this run (announced in the
         -- preamble when one was written) is missing lines (see
@@ -1577,10 +1658,13 @@ surface AgentSdkBoundary {
         -- session.input.disallowed_tools is the deny list scuttlerun
         -- passes to the Agent SDK alongside the allow list. Under
         -- permission_mode = `bypassPermissions` the SDK skips its
-        -- normal prompt-and-allow flow, so disallowed_tools is the
-        -- only mechanism that blocks tool calls in that mode. Under
-        -- the other permission modes the deny list still applies but
-        -- is layered on top of the mode's own enforcement.
+        -- normal prompt-and-allow flow; disallowed_tools is the direct
+        -- deny list, and Claude Code settings delivered through
+        -- project.settings (permission deny rules,
+        -- permissions.blockWritesOutsideWorkingDirectories; see
+        -- Workspace) can also refuse calls in every mode. Under the
+        -- other permission modes the deny list still applies but is
+        -- layered on top of the mode's own enforcement.
 }
 
 surface OracleSdkBoundary {
@@ -1589,7 +1673,8 @@ surface OracleSdkBoundary {
     context session: Session
 
     provides:
-        OracleCallCompleted(oracle, session, usage)
+        OracleQueryCompleted(oracle, session, usage, query_cost)
+        OracleQueryCostUnreported(oracle, session)
         TurnPolicyDecided(session, decision, message, reasoning)
 
     contracts:
@@ -1614,8 +1699,30 @@ surface OracleSdkBoundary {
         -- authenticates through the same Claude Code credential surface as
         -- the agent session. A subscription-only environment now works end
         -- to end: oracle features no longer require a separate API key.
-        -- Usage and cost accounting are unchanged — token usage is read from
-        -- the SDK result message and costed from the pricing table.
+        -- Token usage and cost are both read from each query's SDK result
+        -- message (see OracleQueryTracked).
+
+    @guarantee OracleIsolatedFromHostConfiguration
+        -- The oracle query loads no Claude Code configuration from the
+        -- host's filesystem or the operator's Claude account: settingSources
+        -- is empty (no user, project or local settings, so none of their
+        -- hooks, enabled plugins, env, permissions or CLAUDE.md files),
+        -- strictMcpConfig is set with no MCP servers supplied (no
+        -- ~/.claude.json, .mcp.json, settings or plugin MCP servers start),
+        -- and the skills filter is empty. Flag settings disable auto-memory
+        -- and, for a signed-in Claude account, claude.ai MCP connectors
+        -- (disableClaudeAiConnectors) and the plugins and skills synced from
+        -- claude.ai (syncClaudeAiPlugins and syncClaudeAiSkills false), which
+        -- settingSources does not govern because they come from the account
+        -- rather than a settings file. So the operator's settings files, MCP
+        -- configuration, skills, plugins and auto-memory, and the launch
+        -- directory's, cannot steer the synthetic user.
+        -- Two inputs are outside this guarantee. The oracle inherits the
+        -- auth-shaped parent env (OracleSharesCredentialSurface), so
+        -- environment variables that configure Claude Code (ANTHROPIC_*,
+        -- CLAUDE_CODE_*, MAX_THINKING_TOKENS and the like) still reach it.
+        -- And policy-tier (managed) settings an administrator installs still
+        -- apply: the SDK reads them whatever settingSources says.
 }
 
 
@@ -1704,7 +1811,12 @@ contract StructuredOutputParse {
         -- with corrective feedback stating the expected shape.
 
     @invariant UsageReported
-        -- The SDK result message carries token-usage counts (input, output,
-        -- cache-creation, cache-read) used by scuttlerun for cost
-        -- accounting, unchanged by the move to the Agent SDK.
+        -- Each attempt's SDK result message carries token-usage counts
+        -- (input, output, cache-creation, cache-read) and total_cost_usd,
+        -- the SDK's cost estimate for that query. Every attempt reports its
+        -- usage and cost to the caller's accounting, whether or not its
+        -- output passes validation; an attempt that ends without a result
+        -- message, or whose result is an error subtype carrying a zero
+        -- total_cost_usd (the SDK may zero a crash or startup-error
+        -- result's figures), reports that its cost is unknown.
 }

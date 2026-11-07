@@ -6,3 +6,14 @@ describe('HELP_TEXT exit codes', () => {
     expect(HELP_TEXT).toMatch(/budget.*code 2|code 2.*budget/i);
   });
 });
+
+describe('HELP_TEXT sandbox scope', () => {
+  it('says the OS sandbox covers Bash commands but not the file tools', () => {
+    expect(HELP_TEXT).toMatch(/Bash commands run inside an OS-level/);
+    expect(HELP_TEXT).toMatch(/file tools[^\n]*not sandboxed/i);
+  });
+
+  it('points to the setting that confines file-tool writes', () => {
+    expect(HELP_TEXT).toContain('blockWritesOutsideWorkingDirectories');
+  });
+});

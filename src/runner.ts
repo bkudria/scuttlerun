@@ -399,7 +399,7 @@ export async function runSession(
         toolCalls: toolCallCount,
         durationMs: duration,
         totalCostUsd: resultTotalCostUsd + oracleUsage.cost_usd,
-        costIncomplete: !resultArrived,
+        costIncomplete: !resultArrived || oracle.hasUnknownCost(),
         transcriptIncomplete,
         oracleCostUsd: oracleUsage.cost_usd,
         timedOut,
