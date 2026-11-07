@@ -333,6 +333,20 @@ export class Oracle {
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         persistSession: false,
+        // The SDK defaults load the operator's and launch directory's
+        // settings, hooks, plugins, MCP servers, skills and auto-memory, and
+        // a signed-in Claude account adds its claude.ai connectors, synced
+        // plugins and synced skills; none of it should shape or slow down
+        // the synthetic user.
+        settingSources: [],
+        strictMcpConfig: true,
+        skills: [],
+        settings: {
+          autoMemoryEnabled: false,
+          disableClaudeAiConnectors: true,
+          syncClaudeAiPlugins: false,
+          syncClaudeAiSkills: false,
+        },
         systemPrompt: [systemPrompt, SYSTEM_PROMPT_DYNAMIC_BOUNDARY],
         outputFormat: {
           type: 'json_schema',

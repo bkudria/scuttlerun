@@ -17,8 +17,9 @@
 -- Excludes:
 --   - YAML config schema and merge semantics (input presentation, not behaviour)
 --   - Agent SDK protocol internals (message envelopes, async-iterator coordination)
---   - Oracle SDK call mechanics beyond the credential surface and retry
---     policy captured here (one-shot query plumbing, structured-output
+--   - Oracle SDK call mechanics beyond the credential surface, host
+--     configuration isolation and retry policy captured here (one-shot
+--     query plumbing, structured-output
 --     round trips, and the hand-written JSON schema mirroring the Zod
 --     validators)
 --   - Sandbox enforcement (delegated to the Agent SDK; scuttlerun configures the sandbox via SessionInput.sandbox)
@@ -1518,6 +1519,28 @@ surface OracleSdkBoundary {
         -- to end: oracle features no longer require a separate API key.
         -- Usage and cost accounting are unchanged — token usage is read from
         -- the SDK result message and costed from the pricing table.
+
+    @guarantee OracleIsolatedFromHostConfiguration
+        -- The oracle query loads no Claude Code configuration from the
+        -- host's filesystem or the operator's Claude account: settingSources
+        -- is empty (no user, project or local settings, so none of their
+        -- hooks, enabled plugins, env, permissions or CLAUDE.md files),
+        -- strictMcpConfig is set with no MCP servers supplied (no
+        -- ~/.claude.json, .mcp.json, settings or plugin MCP servers start),
+        -- and the skills filter is empty. Flag settings disable auto-memory
+        -- and, for a signed-in Claude account, claude.ai MCP connectors
+        -- (disableClaudeAiConnectors) and the plugins and skills synced from
+        -- claude.ai (syncClaudeAiPlugins and syncClaudeAiSkills false), which
+        -- settingSources does not govern because they come from the account
+        -- rather than a settings file. So the operator's settings files, MCP
+        -- configuration, skills, plugins and auto-memory, and the launch
+        -- directory's, cannot steer the synthetic user.
+        -- Two inputs are outside this guarantee. The oracle inherits the
+        -- auth-shaped parent env (OracleSharesCredentialSurface), so
+        -- environment variables that configure Claude Code (ANTHROPIC_*,
+        -- CLAUDE_CODE_*, MAX_THINKING_TOKENS and the like) still reach it.
+        -- And policy-tier (managed) settings an administrator installs still
+        -- apply: the SDK reads them whatever settingSources says.
 }
 
 

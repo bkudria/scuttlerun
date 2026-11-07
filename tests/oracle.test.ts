@@ -133,6 +133,27 @@ describe('Oracle', () => {
       expect(outputFormat.schema).toBeDefined();
     });
 
+    it('isolates the query from the operator and launch-directory Claude Code configuration', async () => {
+      mockQuery.mockReturnValueOnce(oracleResult(answersOutput(), USAGE));
+
+      await oracle.answerQuestions(singleQuestion());
+
+      const { options } = mockQuery.mock.calls[0][0] as {
+        options: Record<string, unknown>;
+      };
+      expect(options.settingSources).toEqual([]);
+      expect(options.strictMcpConfig).toBe(true);
+      expect(options.mcpServers).toBeUndefined();
+      expect(options.plugins).toBeUndefined();
+      expect(options.skills).toEqual([]);
+      expect(options.settings).toEqual({
+        autoMemoryEnabled: false,
+        disableClaudeAiConnectors: true,
+        syncClaudeAiPlugins: false,
+        syncClaudeAiSkills: false,
+      });
+    });
+
     it('passes the system prompt with the dynamic boundary appended', async () => {
       mockQuery.mockReturnValueOnce(oracleResult(answersOutput(), USAGE));
 
