@@ -333,6 +333,13 @@ export class Oracle {
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         persistSession: false,
+        // The SDK defaults load the operator's and launch directory's
+        // settings, hooks, plugins, MCP servers, skills and auto-memory;
+        // none of it should shape or slow down the synthetic user.
+        settingSources: [],
+        strictMcpConfig: true,
+        skills: [],
+        settings: { autoMemoryEnabled: false },
         systemPrompt: [systemPrompt, SYSTEM_PROMPT_DYNAMIC_BOUNDARY],
         outputFormat: {
           type: 'json_schema',
