@@ -451,12 +451,14 @@ entity Workspace {
         -- file tools (Read, Write, Edit, NotebookEdit, Glob, Grep) run in
         -- the agent process itself, outside the OS sandbox: the workspace,
         -- /tmp and allow_write do not bound their writes, and deny_read
-        -- does not stop their reads. Under the default bypassPermissions
-        -- (and, in the other permission modes, the canUseTool callback,
-        -- which allows every tool but AskUserQuestion) a file tool can
-        -- read or write any path the operator's user can, by absolute
-        -- path, the operator's real home and ~/.claude/ included, and a
-        -- workspace entry that is a symlink leads it to the link's target:
+        -- does not stop their reads. Under the default bypassPermissions,
+        -- and under `default` or `acceptEdits` (where the canUseTool
+        -- callback allows every tool call, answering AskUserQuestion
+        -- through the oracle), a file tool can read or write any path the
+        -- operator's user can, by absolute path, the operator's real home
+        -- and ~/.claude/ included, and a workspace entry that is a symlink
+        -- leads it to the link's target. (`dontAsk` refuses calls that are
+        -- not pre-approved, and `plan` withholds tool execution.)
         --   - each project.skills entry is a symlink to the operator's
         --     source skill directory, so a Write or Edit under
         --     <workspace>/.claude/skills/<name>/ modifies the operator's
@@ -472,7 +474,14 @@ entity Workspace {
         -- refuses file-tool writes (Write, Edit, NotebookEdit) outside the
         -- working directories in every permission mode, and judges a path
         -- that resolves through a symlink by where the link leads, so the
-        -- skill and credentials symlinks are refused too. A caller opts in
+        -- skill and credentials symlinks are refused too. Files Claude
+        -- Code keeps for the session are exempt: its plan files,
+        -- scratchpad, background-job folder and the project's auto-memory.
+        -- The plan files and auto-memory live in the agent's Claude config
+        -- directory, which is inside the workspace (<workspace>/.home/.claude)
+        -- when the sandbox is enabled or project.claude_dir is set, and is
+        -- the operator's real ~/.claude/ otherwise; the scratchpad lives
+        -- under the system temp directory. A caller opts in
         -- through project.settings, which lands in
         -- <workspace>/.claude/settings.json and is read whenever
         -- setting_sources includes `project` (the default when a project
@@ -480,8 +489,10 @@ entity Workspace {
         -- writes to Claude Code settings files inside the workspace, which
         -- is why it is not on by default: a session that evaluates how the
         -- agent edits its own configuration would have those edits
-        -- refused. It does not limit shell commands, MCP tools or the
-        -- programs hooks run, and it does not confine reads.
+        -- refused. It also withdraws EnterWorktree and ExitWorktree from
+        -- the tools on offer. It does not limit shell commands, MCP tools,
+        -- the programs hooks run or the memory tools, and it does not
+        -- confine reads.
         --
         -- When session.input.sandbox.enabled, the agent subprocess
         -- receives only an allowlisted set of environment variables
@@ -1526,14 +1537,13 @@ surface AgentSdkBoundary {
         -- session.input.disallowed_tools is the deny list scuttlerun
         -- passes to the Agent SDK alongside the allow list. Under
         -- permission_mode = `bypassPermissions` the SDK skips its
-        -- normal prompt-and-allow flow, so disallowed_tools is the
-        -- only SessionInput mechanism that blocks tool calls in that
-        -- mode, though a Claude Code setting delivered through
-        -- project.settings can also refuse calls in every mode (such as
+        -- normal prompt-and-allow flow; disallowed_tools is the direct
+        -- deny list, and Claude Code settings delivered through
+        -- project.settings (permission deny rules,
         -- permissions.blockWritesOutsideWorkingDirectories; see
-        -- Workspace). Under
-        -- the other permission modes the deny list still applies but
-        -- is layered on top of the mode's own enforcement.
+        -- Workspace) can also refuse calls in every mode. Under the
+        -- other permission modes the deny list still applies but is
+        -- layered on top of the mode's own enforcement.
 }
 
 surface OracleSdkBoundary {
