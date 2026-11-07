@@ -146,7 +146,12 @@ describe('Oracle', () => {
       expect(options.mcpServers).toBeUndefined();
       expect(options.plugins).toBeUndefined();
       expect(options.skills).toEqual([]);
-      expect(options.settings).toEqual({ autoMemoryEnabled: false });
+      expect(options.settings).toEqual({
+        autoMemoryEnabled: false,
+        disableClaudeAiConnectors: true,
+        syncClaudeAiPlugins: false,
+        syncClaudeAiSkills: false,
+      });
     });
 
     it('passes the system prompt with the dynamic boundary appended', async () => {

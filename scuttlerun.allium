@@ -1526,8 +1526,13 @@ surface OracleSdkBoundary {
         -- local settings, so none of their hooks, enabled plugins, env,
         -- permissions or CLAUDE.md files), strictMcpConfig is set with no
         -- MCP servers supplied (no ~/.claude.json, .mcp.json, settings or
-        -- plugin MCP servers start), the skills filter is empty, and
-        -- auto-memory is disabled through flag settings. The persona and the
+        -- plugin MCP servers start), and the skills filter is empty. Flag
+        -- settings disable auto-memory and, for a signed-in Claude account,
+        -- claude.ai MCP connectors (disableClaudeAiConnectors) and the
+        -- plugins and skills synced from claude.ai (syncClaudeAiPlugins and
+        -- syncClaudeAiSkills false), which settingSources does not govern
+        -- because they come from the account rather than a settings file.
+        -- The persona and the
         -- scuttlerun-built prompts are the only steering the oracle
         -- receives, so a run's synthetic user behaves the same whichever
         -- operator or launch directory invokes it. Policy-tier (managed)
