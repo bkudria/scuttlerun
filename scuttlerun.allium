@@ -244,7 +244,8 @@ value Sandbox {
         -- domains are reachable. There is no global on/off network
         -- toggle separate from sandbox.enabled.
         --
-        -- Filesystem access is governed by separate read and write
+        -- Filesystem access for the commands the agent runs through the
+        -- Bash tool is governed by separate read and write
         -- denylists plus a write allowlist; there is no general read
         -- allowlist (read defaults to allowed except as denied). The
         -- read denylist defaults to common credential paths
@@ -256,7 +257,8 @@ value Sandbox {
         -- entries they want to retain. The workspace path and /tmp
         -- are unconditionally writable in addition to whatever
         -- allow_write lists; callers do not need to (and cannot)
-        -- revoke these two roots.
+        -- revoke these two roots. The file tools are outside the OS
+        -- sandbox and these lists do not confine them; see Workspace.
         --
         -- Bash auto-allow under the sandbox is not caller-configurable:
         -- when the sandbox is enabled, the runner always passes
@@ -404,10 +406,13 @@ entity Workspace {
 
     @guidance
         -- When the sandbox is enabled, HOME is redirected to
-        -- <workspace>/.home so that the agent process does not read or
-        -- write the operator's home directory. This applies regardless
-        -- of whether the workspace was scaffolded from a project
-        -- template.
+        -- <workspace>/.home so that what the agent process locates through
+        -- HOME — its Claude Code config directory, tool caches, ~ in shell
+        -- commands — resolves inside the workspace rather than the
+        -- operator's home directory. This applies regardless of whether the
+        -- workspace was scaffolded from a project template. The redirection
+        -- changes where HOME points; it does not by itself confine file
+        -- access (see "What confines the agent's file access" below).
         --
         -- A single carve-out exists for subscription authentication: when
         -- the sandbox's auth-shaped view of the environment presents no
@@ -415,9 +420,11 @@ entity Workspace {
         -- exists, that one file (~/.claude/.credentials.json) is exposed
         -- inside the sandbox via a symlink at
         -- <workspace>/.home/.claude/.credentials.json. Nothing else under
-        -- the operator's ~/.claude/ is reachable from the agent subprocess;
-        -- skills, plugins, commands, agents, settings, prior session history
-        -- and other operator state stay invisible. The symlink and the
+        -- the operator's ~/.claude/ is linked in, so Claude Code does not
+        -- discover the operator's skills, plugins, commands, agents,
+        -- settings or prior session history through its config directory.
+        -- That is a statement about discovery, not reachability: see "What
+        -- confines the agent's file access" below. The symlink and the
         -- warning below both evaluate the auth-shaped view (see
         -- Session.sandbox_credential_selection), not the raw parent env, so a
         -- subscription-preferring mode links the credentials file even when
@@ -438,6 +445,55 @@ entity Workspace {
         -- diagnostic is scoped to sandboxed sessions: without the sandbox the
         -- subprocess inherits the real HOME and can read the Keychain
         -- directly, so no such determination is made.
+        --
+        -- What confines the agent's file access. The OS sandbox governs
+        -- the commands the agent runs through the Bash tool: the
+        -- filesystem lists on Sandbox bound their reads and writes. The
+        -- file tools (Read, Write, Edit, NotebookEdit, Glob, Grep) run in
+        -- the agent process itself, outside the OS sandbox: the workspace,
+        -- /tmp and allow_write do not bound their writes, and deny_read
+        -- does not stop their reads. Under the default bypassPermissions,
+        -- and under `default` or `acceptEdits` (where the canUseTool
+        -- callback allows every tool call, answering AskUserQuestion
+        -- through the oracle), a file tool can read or write any path the
+        -- operator's user can, by absolute path, the operator's real home
+        -- and ~/.claude/ included, and a workspace entry that is a symlink
+        -- leads it to the link's target. (`dontAsk` refuses calls that are
+        -- not pre-approved, and `plan` withholds tool execution.)
+        --   - each project.skills entry is a symlink to the operator's
+        --     source skill directory, so a Write or Edit under
+        --     <workspace>/.claude/skills/<name>/ modifies the operator's
+        --     source files;
+        --   - the credentials carve-out above is a symlink to the
+        --     operator's real credentials file;
+        --   - project.plugins and sdk.plugins load from their source
+        --     directories in place, with no workspace copy;
+        --   - project.claude_dir is copied, so writes into the seeded
+        --     config directory stay in the workspace.
+        -- scuttlerun leaves file-tool confinement to the caller. Claude
+        -- Code's permissions.blockWritesOutsideWorkingDirectories setting
+        -- refuses file-tool writes (Write, Edit, NotebookEdit) outside the
+        -- working directories in every permission mode, and judges a path
+        -- that resolves through a symlink by where the link leads, so the
+        -- skill and credentials symlinks are refused too. Files Claude
+        -- Code keeps for the session are exempt: its plan files,
+        -- scratchpad, background-job folder and the project's auto-memory.
+        -- The plan files and auto-memory live in the agent's Claude config
+        -- directory, which is inside the workspace (<workspace>/.home/.claude)
+        -- when the sandbox is enabled or project.claude_dir is set, and is
+        -- the operator's real ~/.claude/ otherwise; the scratchpad lives
+        -- under the system temp directory. A caller opts in
+        -- through project.settings, which lands in
+        -- <workspace>/.claude/settings.json and is read whenever
+        -- setting_sources includes `project` (the default when a project
+        -- template is present). The same setting also refuses file-tool
+        -- writes to Claude Code settings files inside the workspace, which
+        -- is why it is not on by default: a session that evaluates how the
+        -- agent edits its own configuration would have those edits
+        -- refused. It also withdraws EnterWorktree and ExitWorktree from
+        -- the tools on offer. It does not limit shell commands, MCP tools,
+        -- the programs hooks run or the memory tools, and it does not
+        -- confine reads.
         --
         -- When session.input.sandbox.enabled, the agent subprocess
         -- receives only an allowlisted set of environment variables
@@ -1090,7 +1146,9 @@ rule WorkspaceScaffoldsSkill {
         -- SKILL.md file. A failed skill validation rejects the entire
         -- session as a configuration error (exit 1) — no partial
         -- scaffolding remains. Skills are symlinked into
-        -- <workspace>/.claude/skills/<name>/, not copied.
+        -- <workspace>/.claude/skills/<name>/, not copied, so a file-tool
+        -- write through the link reaches the source skill unless the
+        -- caller confines file-tool writes (see Workspace).
 }
 
 
@@ -1480,10 +1538,13 @@ surface AgentSdkBoundary {
         -- session.input.disallowed_tools is the deny list scuttlerun
         -- passes to the Agent SDK alongside the allow list. Under
         -- permission_mode = `bypassPermissions` the SDK skips its
-        -- normal prompt-and-allow flow, so disallowed_tools is the
-        -- only mechanism that blocks tool calls in that mode. Under
-        -- the other permission modes the deny list still applies but
-        -- is layered on top of the mode's own enforcement.
+        -- normal prompt-and-allow flow; disallowed_tools is the direct
+        -- deny list, and Claude Code settings delivered through
+        -- project.settings (permission deny rules,
+        -- permissions.blockWritesOutsideWorkingDirectories; see
+        -- Workspace) can also refuse calls in every mode. Under the
+        -- other permission modes the deny list still applies but is
+        -- layered on top of the mode's own enforcement.
 }
 
 surface OracleSdkBoundary {

@@ -144,6 +144,8 @@ When present, scuttlerun populates the project temp directory.
 | `project.git_init`   | boolean                  | `false` |
 | `project.git_commit` | boolean                  | `false` |
 
+`project.skills` entries are symlinked into `<tempdir>/.claude/skills/`, not copied, so an agent edit to a file under `.claude/skills/<name>/` changes your source skill. See [Confining file-tool writes](#confining-file-tool-writes) to prevent that.
+
 `project.files` keys are relative paths written inside the temp project dir; values are the file contents. Useful for materializing fixtures, test data, or example source files alongside scaffolded CLAUDE.md/skills/settings.
 
 `project.claude_dir` seeds the agent's Claude Code config directory. The directory it names (`~` and config-relative paths supported) is copied into the project temp dir at `<tempdir>/.home/.claude`, and the agent runs with `CLAUDE_CONFIG_DIR` pointing at the copy, whether or not the sandbox is enabled. Use it to give a session pre-existing state that lives under `~/.claude` rather than in the project: a transcript corpus under `projects/`, a settings file, session history. Claude Code treats its config directory as live state and writes session files, backups and caches into it, so the copy keeps every run isolated and the source tree untouched; two concurrent runs never see each other's sessions. The copy is where the sandbox already places the config directory, so the OAuth credentials carve-out described under [`sandbox`](#sandbox-os-level-isolation) still applies. `project.claude_dir` sets `CLAUDE_CONFIG_DIR` even when `sdk.env` names it.
@@ -168,9 +170,9 @@ When present, scuttlerun populates the project temp directory.
 
 #### `sandbox` (OS-level isolation)
 
-Enabled by default. Restricts the agent's filesystem and network access. When the sandbox is enabled, `$HOME` is redirected to `<projectDir>/.home` so tools (npm, pip, cargo) write caches inside the sandbox rather than your real home directory.
+Enabled by default. Runs the commands the agent issues through the Bash tool inside an OS-level sandbox that restricts their filesystem and network access; the `sandbox.filesystem` lists below apply to those commands. The file tools (Read, Write, Edit, NotebookEdit, Glob, Grep) run outside it — see [Confining file-tool writes](#confining-file-tool-writes). When the sandbox is enabled, `$HOME` is redirected to `<projectDir>/.home` so tools (npm, pip, cargo) write caches inside the sandbox rather than your real home directory.
 
-For OAuth-based auth (Claude Code subscription login), there's a single carve-out: when no `ANTHROPIC_API_KEY` is set and `~/.claude/.credentials.json` exists (the Linux/Windows login location), scuttlerun symlinks that one file into the sandbox so the Agent SDK can find it. Nothing else under `~/.claude/` (skills, plugins, commands, agents, settings, session history) is exposed. On macOS the login credential lives in the Keychain rather than that file, so the carve-out finds nothing — set `CLAUDE_SDK_OAUTH_TOKEN` (see [Requirements](#requirements)) or disable the sandbox. scuttlerun prints a warning at session start when a sandboxed run has no credential it can reach.
+For OAuth-based auth (Claude Code subscription login), there's a single carve-out: when no `ANTHROPIC_API_KEY` is set and `~/.claude/.credentials.json` exists (the Linux login location), scuttlerun symlinks that one file into the sandbox so the Agent SDK can find it. Nothing else under `~/.claude/` is linked in, so Claude Code does not pick up your skills, plugins, commands, agents, settings or session history from it. That keeps them out of the session's configuration; it does not put them out of reach of the file tools. On macOS the login credential lives in the Keychain rather than that file, so the carve-out finds nothing — set `CLAUDE_SDK_OAUTH_TOKEN` (see [Requirements](#requirements)) or disable the sandbox. scuttlerun prints a warning at session start when a sandboxed run has no credential it can reach.
 
 | Field                                 | Type     | Default                                   |
 | ------------------------------------- | -------- | ----------------------------------------- |
@@ -180,6 +182,28 @@ For OAuth-based auth (Claude Code subscription login), there's a single carve-ou
 | `sandbox.filesystem.deny_read`        | string[] | `[~/.ssh, ~/.aws, ~/.config/gcloud]`      |
 | `sandbox.filesystem.allow_write`      | string[] | `[]` (cwd and `/tmp` are always writable) |
 | `sandbox.filesystem.deny_write`       | string[] | `[.env]`                                  |
+
+##### Confining file-tool writes
+
+The file tools run in the agent process, not inside the OS sandbox, so `allow_write` does not bound their writes and `deny_read` does not stop their reads. Under the default `permission_mode: bypassPermissions` they can read and write any path your user can, by absolute path. Symlinks in the project dir lead them to the real files:
+
+- `project.skills` entries are symlinks to your source skill directories, so an Edit under `.claude/skills/<name>/` writes to your source.
+- The OAuth credentials carve-out is a symlink to your real `~/.claude/.credentials.json`.
+- `project.plugins` and `sdk.plugins` load from their source directories in place.
+- `project.claude_dir` is copied, so writes into the seeded config directory stay in the project dir.
+
+scuttlerun does not confine the file tools by default. To confine their writes to the project dir (Claude Code's own session files aside, as below), set Claude Code's `blockWritesOutsideWorkingDirectories` permission through `project.settings`:
+
+```yaml
+project:
+  settings:
+    permissions:
+      blockWritesOutsideWorkingDirectories: true
+```
+
+`project.settings` is written to `<projectDir>/.claude/settings.json`, which Claude Code reads because `sdk.setting_sources` defaults to `["project"]` when `project:` is present; if you set `sdk.setting_sources` yourself, keep `project` in it. With the setting on, Write, Edit and NotebookEdit are refused outside the project dir in every permission mode, and a path that resolves through a symlink is judged by where the link leads, so writes through the skill and credentials symlinks are refused too. Files Claude Code keeps for the session are exempt: its plan files, scratchpad, background-job folder and the project's auto-memory. The plan files and auto-memory live in the agent's Claude config directory, which is inside the project dir when the sandbox is on or `project.claude_dir` is set, but is your real `~/.claude/` otherwise; the scratchpad lives under the system temp directory. So with `sandbox.enabled: false` and no `project.claude_dir`, those writes still reach your real home.
+
+The trade-off: the setting also refuses file-tool writes to Claude Code settings files inside the project dir (such as `.claude/settings.json`). A session that evaluates how the agent edits its own Claude configuration will see those edits refused, which is why scuttlerun leaves the setting off. It also withdraws the EnterWorktree and ExitWorktree tools from the agent. It does not limit shell commands, MCP tools, the programs hooks run or the memory tools, and it does not confine reads. It needs `@anthropic-ai/claude-agent-sdk` 0.3.314 or later, which scuttlerun's dependency range guarantees.
 
 ### Config Merging
 
@@ -281,7 +305,7 @@ scuttlerun is a thin client around Anthropic APIs. Be aware:
 - **What is sent to Anthropic.** Prompts, tool inputs and outputs, conversation history, your configured persona, and oracle decisions are sent to Anthropic via the [Claude Agent SDK](https://platform.claude.com/docs/en/agent-sdk) (agent turns) and the [Messages API](https://docs.claude.com/en/api/messages) (synthetic-user oracle). This includes any file contents the agent reads or writes during a session. Anthropic's handling of that data is governed by their [Usage Policy](https://www.anthropic.com/legal/usage-policy) and [Privacy Policy](https://www.anthropic.com/legal/privacy).
 - **What scuttlerun itself collects.** Nothing. scuttlerun has no telemetry, analytics, crash reporting, or "phone home". The only network calls it makes are to Anthropic.
 - **What stays local.** The YAML transcript on stdout, the project temp directory under `$TMPDIR/scuttlerun-project-*`, and the SDK session JSONL under `~/.claude/projects/...` are all written to your machine only. Nothing in those locations is uploaded.
-- **Secrets.** Your Anthropic credentials are read by the Agent SDK and never appear in transcripts. The default sandbox denies the agent read access to `~/.ssh`, `~/.aws`, and `~/.config/gcloud`, and denies write access to `.env`.
+- **Secrets.** Your Anthropic credentials are read by the Agent SDK and never appear in transcripts. The default sandbox denies the agent's shell commands read access to `~/.ssh`, `~/.aws`, and `~/.config/gcloud`, and denies them write access to `.env`. Those rules do not cover the file tools, which can read any file your user can; see [Confining file-tool writes](#confining-file-tool-writes).
 
 ## Examples
 
