@@ -1522,11 +1522,12 @@ surface StreamingTranscript {
         -- `conversation:` sequence are written when the init message
         -- announces the SDK session id; a run that ends before any init
         -- message (e.g. Claude Code refusing to start) writes the footer
-        -- mapping alone. The preamble carries four
+        -- mapping alone. The preamble carries five
         -- keys: `session` (the SDK session id), `config` (the path or
         -- list of paths to the YAML config files supplied at
-        -- invocation), `project` (the workspace path) and
-        -- `transcript` (the SDK session JSONL path). The footer
+        -- invocation), `project` (the workspace path),
+        -- `transcript` (the SDK session JSONL path) and `legend` (how
+        -- to read the rest; see SelfDescribingTranscript). The footer
         -- always carries `turns` (count), `tool_calls` (count) and
         -- `duration_s` (seconds). Additional keys appear conditionally:
         -- `cost_usd` (Decimal: agent + oracle total) appears when the
@@ -1582,10 +1583,13 @@ surface StreamingTranscript {
         -- The transcript captures tool invocations as observations, not
         -- as faithful reproductions of tool inputs. For each named tool
         -- below, the entry carries exactly the listed fields (in addition
-        -- to `tool:` and `sequence:`); all other input fields the agent
-        -- supplied are intentionally dropped from the YAML transcript.
-        -- The SDK JSONL (see `FullConversationInJsonl`) is the source of
-        -- truth for full tool inputs.
+        -- to `tool:`); all other input fields the agent supplied are
+        -- intentionally dropped from the YAML transcript. The SDK JSONL
+        -- (see `FullConversationInJsonl`) is the source of truth for full
+        -- tool inputs. A tool entry records that the agent requested the
+        -- call: tool results are not written to the transcript, so whether
+        -- the call ran, failed or was blocked (by a hook, for instance)
+        -- is not shown.
         --
         --   * Read, Write, Edit  → `path` (from `file_path`).
         --     Content-bearing fields (`content`, `old_string`,
@@ -1603,11 +1607,28 @@ surface StreamingTranscript {
         --   * Any other tool name → the full `input` mapping is emitted
         --     verbatim under an `input:` key.
         --
-        -- Downstream, pincenez embeds a copy of this contract in its
-        -- judge prompts (buildTranscriptFieldContractSection in
-        -- pincenez's src/prompt.ts, shared by its grader and lint
-        -- system prompts). Changing the captured fields obliges
-        -- updating that section in lockstep.
+        -- Each transcript states this contract in its own legend
+        -- (SelfDescribingTranscript), so changing the captured fields
+        -- changes the legend with them; downstream graders read the
+        -- legend rather than embedding a copy of this list.
+
+    @guarantee SelfDescribingTranscript
+        -- The preamble's `legend` mapping states how to read the
+        -- transcript, so a reader or grader needs no copy of this spec.
+        -- It has four keys: `entries` (one line per entry kind: user,
+        -- assistant, thinking, tool, oracle); `tool fields` (the
+        -- TranscriptToolFieldContract, one line per tool group plus
+        -- `any other tool`); `not recorded` (tool results and hook
+        -- activity, pointing to the SDK session JSONL named by
+        -- `transcript`); and `footer` (what `cost_incomplete`,
+        -- `transcript_incomplete` and `timed_out` mean). The legend is
+        -- the same in every transcript, and the --dry-run summary carries
+        -- it under the same key, so a consumer can read it before any
+        -- session runs. The `tool fields` lines are generated from the
+        -- table that selects each tool entry's fields, so the legend
+        -- cannot disagree with the entries it describes. Graders
+        -- interpret the legend's wording, so changing it changes this
+        -- guarantee.
 }
 
 surface AgentSdkBoundary {

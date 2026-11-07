@@ -12,6 +12,7 @@ import { runSession } from './runner.js';
 import { formatCliError } from './errors.js';
 import { EXIT_SUCCESS, EXIT_CONFIG_ERROR, EXIT_SIGINT } from './exit-codes.js';
 import { HELP_TEXT } from './help-text.js';
+import { TRANSCRIPT_LEGEND } from './transcript.js';
 
 /**
  * Read the CLI version from package.json so --version stays in sync with
@@ -122,6 +123,7 @@ export function buildDryRunSummary(config: SessionConfig): Record<string, unknow
       : {}),
     ...(config.sdk.plugins ? { sdk: { plugins: config.sdk.plugins } } : {}),
     prompt: config.prompt,
+    legend: TRANSCRIPT_LEGEND,
   };
 }
 
