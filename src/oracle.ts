@@ -168,6 +168,7 @@ export class Oracle {
     cache_creation_input_tokens: 0,
     cache_read_input_tokens: 0,
   };
+  private costUnknown = false;
 
   constructor(model: string, options: OracleOptions = {}) {
     this.model = model;
@@ -235,6 +236,15 @@ export class Oracle {
 
   getTotalUsage(): OracleUsageTotal {
     return { ...this.totalUsage };
+  }
+
+  /**
+   * True once any oracle query ended without a result message: the SDK
+   * reports cost only on the result, so that query's spend is unknown and
+   * getTotalUsage() undercounts it.
+   */
+  hasUnknownCost(): boolean {
+    return this.costUnknown;
   }
 
   private async callWithRetry<T extends z.ZodType>(
@@ -360,7 +370,10 @@ export class Oracle {
   // a query, so only the last result message is counted.
   private trackQuery(result: OracleQueryResult | undefined): void {
     this.totalUsage.calls += 1;
-    if (!result) return;
+    if (!result) {
+      this.costUnknown = true;
+      return;
+    }
     const { usage } = result;
     this.totalUsage.input_tokens += usage.input_tokens;
     this.totalUsage.output_tokens += usage.output_tokens;

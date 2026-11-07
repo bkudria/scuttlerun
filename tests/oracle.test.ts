@@ -925,6 +925,31 @@ describe('Oracle', () => {
       expect(o.getTotalUsage().calls).toBe(4);
     });
 
+    it('reports cost as known when every query produced a result', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      mockQuery
+        .mockReturnValueOnce(oracleErrorResult('error_during_execution', ['boom']))
+        .mockReturnValueOnce(oracleResult(answersOutput(), USAGE, 0.01));
+
+      await o.answerQuestions(singleQuestion());
+
+      expect(o.hasUnknownCost()).toBe(false);
+    });
+
+    it('marks cost unknown when a query ends without a result message', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      mockQuery
+        .mockReturnValueOnce(oracleTransportFailure(new Error('subprocess crashed')))
+        .mockReturnValueOnce(oracleResult(answersOutput(), USAGE, 0.01));
+
+      await o.answerQuestions(singleQuestion());
+
+      const total = o.getTotalUsage();
+      expect(o.hasUnknownCost()).toBe(true);
+      expect(total.input_tokens).toBe(USAGE.input_tokens);
+      expect(total.cost_usd).toBeCloseTo(0.01, 10);
+    });
+
     it('keeps a result message counted when the query throws after it', async () => {
       const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
       const resultThenThrow = {
@@ -947,6 +972,7 @@ describe('Oracle', () => {
       await o.answerQuestions(singleQuestion());
 
       const total = o.getTotalUsage();
+      expect(o.hasUnknownCost()).toBe(false);
       expect(total.input_tokens).toBe(170);
       expect(total.cost_usd).toBeCloseTo(0.017, 10);
     });

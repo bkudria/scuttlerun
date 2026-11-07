@@ -3246,6 +3246,40 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
       expect(stdoutOutput).not.toContain('cost_incomplete');
     });
 
+    it('flags cost_incomplete when an oracle query ended without reporting its cost', async () => {
+      oracleReplies.push(
+        { error: new Error('oracle subprocess crashed') },
+        { structured: { decision: 'end', reasoning: 'done' } },
+      );
+      const agentQuery = createMockQuery([
+        {
+          type: 'system',
+          subtype: 'init',
+          session_id: 's-oracle-cost-unknown',
+          tools: [],
+          model: 'claude-haiku-4-5',
+        },
+        {
+          type: 'result',
+          subtype: 'success',
+          session_id: 's-oracle-cost-unknown',
+          num_turns: 1,
+          total_cost_usd: 0.01,
+        },
+      ]);
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt: unknown }) =>
+        typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : agentQuery,
+      );
+
+      const result = await runSession(
+        minConfig({ user: { oracle_model: 'claude-haiku-4-5', max_turns: 1 } }),
+      );
+
+      expect(result.exitCode).toBe(0);
+      expect(oracleQueryCalls()).toHaveLength(2);
+      expect(stdoutOutput).toContain('cost_incomplete: true');
+    });
+
     it('omits cost_incomplete when the in-flight turn produced a result', async () => {
       const mockQuery = createMockQuery([
         {

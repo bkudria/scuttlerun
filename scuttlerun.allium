@@ -1176,6 +1176,21 @@ rule OracleQueryTracked {
         -- oracle model the SDK knows.
 }
 
+rule OracleQueryCostUnknown {
+    when: OracleQueryEndedWithoutResult(oracle, session)
+
+    ensures: session.cost_incomplete = true
+
+    @guidance
+        -- An oracle query() that ends — by throwing or by finishing its
+        -- stream — before any result message adds nothing to oracle_cost
+        -- or the token totals, because the SDK reports usage and cost
+        -- only on the result message. The query may still have spent
+        -- tokens, so the session's cost is flagged incomplete rather
+        -- than presenting the unknown spend as a confirmed zero. The
+        -- query still counts toward oracle_usage.calls.
+}
+
 
 -- =============================================================
 -- Invariants
@@ -1367,9 +1382,11 @@ surface StreamingTranscript {
         -- oracle_cost); the token counts and costs cover every attempt
         -- (see OracleQueryTracked);
         -- `cost_incomplete` (Boolean) appears only when truthy and means
-        -- the session terminated before the in-flight turn reported a
-        -- final result, so the agent cost shown or omitted is
-        -- incomplete/unknown rather than a confirmed $0;
+        -- some spend went unreported — the session terminated before the
+        -- in-flight agent turn reported a final result, or an oracle
+        -- query ended without a result message (OracleQueryCostUnknown)
+        -- — so the cost shown or omitted is incomplete/unknown rather
+        -- than a confirmed $0;
         -- `timed_out`
         -- (Boolean) appears only when truthy; and `files_written`,
         -- `files_edited`, `files_read` each appear only when their
@@ -1489,6 +1506,7 @@ surface OracleSdkBoundary {
 
     provides:
         OracleQueryCompleted(oracle, session, usage, query_cost)
+        OracleQueryEndedWithoutResult(oracle, session)
         TurnPolicyDecided(session, decision, message, reasoning)
 
     contracts:
@@ -1602,5 +1620,6 @@ contract StructuredOutputParse {
         -- (input, output, cache-creation, cache-read) and total_cost_usd,
         -- the SDK's cost estimate for that query. Every attempt reports its
         -- usage and cost to the caller's accounting, whether or not its
-        -- output passes validation.
+        -- output passes validation; an attempt that ends without a result
+        -- message reports that its cost is unknown.
 }
