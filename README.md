@@ -192,7 +192,7 @@ The file tools run in the agent process, not inside the OS sandbox, so `allow_wr
 - `project.plugins` and `sdk.plugins` load from their source directories in place.
 - `project.claude_dir` is copied, so writes into the seeded config directory stay in the project dir.
 
-scuttlerun does not confine the file tools by default. To confine their writes to the project dir, set Claude Code's `blockWritesOutsideWorkingDirectories` permission through `project.settings`:
+scuttlerun does not confine the file tools by default. To confine their writes to the project dir (Claude Code's own session files aside, as below), set Claude Code's `blockWritesOutsideWorkingDirectories` permission through `project.settings`:
 
 ```yaml
 project:
@@ -201,9 +201,9 @@ project:
       blockWritesOutsideWorkingDirectories: true
 ```
 
-`project.settings` is written to `<projectDir>/.claude/settings.json`, which Claude Code reads because `sdk.setting_sources` defaults to `["project"]` when `project:` is present; if you set `sdk.setting_sources` yourself, keep `project` in it. With the setting on, Write, Edit and NotebookEdit are refused outside the project dir in every permission mode, and a path that resolves through a symlink is judged by where the link leads, so writes through the skill and credentials symlinks are refused too.
+`project.settings` is written to `<projectDir>/.claude/settings.json`, which Claude Code reads because `sdk.setting_sources` defaults to `["project"]` when `project:` is present; if you set `sdk.setting_sources` yourself, keep `project` in it. With the setting on, Write, Edit and NotebookEdit are refused outside the project dir in every permission mode, and a path that resolves through a symlink is judged by where the link leads, so writes through the skill and credentials symlinks are refused too. Files Claude Code keeps for the session are exempt: its plan files, scratchpad, background-job folder and the project's auto-memory. The plan files and auto-memory live in the agent's Claude config directory, which is inside the project dir when the sandbox is on or `project.claude_dir` is set, but is your real `~/.claude/` otherwise; the scratchpad lives under the system temp directory. So with `sandbox.enabled: false` and no `project.claude_dir`, those writes still reach your real home.
 
-The trade-off: the setting also refuses file-tool writes to Claude Code settings files inside the project dir (such as `.claude/settings.json`). A session that evaluates how the agent edits its own Claude configuration will see those edits refused, which is why scuttlerun leaves the setting off. It also does not limit shell commands, MCP tools or the programs hooks run, and it does not confine reads. It needs `@anthropic-ai/claude-agent-sdk` 0.3.314 or later, which scuttlerun's dependency range guarantees.
+The trade-off: the setting also refuses file-tool writes to Claude Code settings files inside the project dir (such as `.claude/settings.json`). A session that evaluates how the agent edits its own Claude configuration will see those edits refused, which is why scuttlerun leaves the setting off. It also withdraws the EnterWorktree and ExitWorktree tools from the agent. It does not limit shell commands, MCP tools, the programs hooks run or the memory tools, and it does not confine reads. It needs `@anthropic-ai/claude-agent-sdk` 0.3.314 or later, which scuttlerun's dependency range guarantees.
 
 ### Config Merging
 
