@@ -283,7 +283,7 @@ value SandboxFilesystem {
 external entity AgentSdkClient {}
 
 -- The Agent SDK process scuttlerun drives for a one-shot synthetic-user
--- oracle query (no tools, structured output). The oracle now runs through
+-- oracle query (no tools, structured output). The oracle runs through
 -- the same Claude Agent SDK as the agent session — not the raw Anthropic
 -- Messages API — so both authenticate through the same Claude Code
 -- credential surface. Code-to-code boundary.
@@ -431,11 +431,10 @@ entity Workspace {
         -- warning below both evaluate the auth-shaped view (see
         -- Session.sandbox_credential_selection), not the raw parent env, so a
         -- subscription-preferring mode links the credentials file even when
-        -- ANTHROPIC_API_KEY is set in the parent process — previously a set
-        -- key always suppressed the symlink. The carve-out is silently
-        -- skipped when the auth-shaped view still carries an API key (api-key
-        -- mode, or auto with no subscription detected in the sandbox scope)
-        -- or when no credentials file exists.
+        -- ANTHROPIC_API_KEY is set in the parent process. The carve-out is
+        -- silently skipped when the auth-shaped view still carries an API key
+        -- (api-key mode, or auto with no subscription detected in the sandbox
+        -- scope) or when no credentials file exists.
         --
         -- When the sandbox is enabled and that carve-out links nothing
         -- — the auth-shaped view carries no ANTHROPIC_API_KEY, no
@@ -1689,16 +1688,15 @@ surface OracleSdkBoundary {
         -- (the SDK's structured-output path returns nothing and exits for
         -- top-level anyOf/oneOf, so the turn-policy union is flattened to
         -- one object with an optional message; the Zod schemas remain the
-        -- validation source of truth). The oracle no longer calls the
-        -- Anthropic Messages API; the raw @anthropic-ai/sdk dependency is
-        -- gone.
+        -- validation source of truth). The oracle never calls the
+        -- Anthropic Messages API directly.
 
     @guarantee OracleSharesCredentialSurface
         -- The oracle runs in this process (never sandboxed) under the
         -- auth-shaped parent env (Keychain-inclusive detection), so it
         -- authenticates through the same Claude Code credential surface as
-        -- the agent session. A subscription-only environment now works end
-        -- to end: oracle features no longer require a separate API key.
+        -- the agent session. A subscription-only environment works end to
+        -- end: oracle features require no separate API key.
         -- Token usage and cost are both read from each query's SDK result
         -- message (see OracleQueryTracked).
 
