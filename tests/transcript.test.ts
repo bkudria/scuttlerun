@@ -549,6 +549,29 @@ describe('transcript', () => {
       expect(parsed.oracle_usage.cache_read_input_tokens).toBe(0);
     });
 
+    it('rounds oracle_usage.cost_usd to 4 decimal places like oracle_cost_usd', () => {
+      const oracleUsage = {
+        input_tokens: 1500,
+        output_tokens: 200,
+        calls: 4,
+        cost_usd: 0.015600000000000001,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: 0,
+      };
+      writeFooter({
+        turns: 3,
+        toolCalls: 5,
+        durationMs: 12000,
+        totalCostUsd: 0.05,
+        oracleCostUsd: 0.015600000000000001,
+        oracleUsage,
+      });
+      const parsed = parseYaml(output);
+      expect(parsed.oracle_usage.cost_usd).toBe(0.0156);
+      expect(parsed.oracle_usage.cost_usd).toBe(parsed.oracle_cost_usd);
+      expect(oracleUsage.cost_usd).toBe(0.015600000000000001);
+    });
+
     it('omits oracle_usage when calls is 0', () => {
       writeFooter({
         turns: 1,
