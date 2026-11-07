@@ -81,7 +81,7 @@ describe('transcript', () => {
           'any other tool': 'input, the full input',
         },
         'not recorded':
-          'tool results and hook activity; the session log named by transcript has them',
+          "tool results and hook activity; the session log at the header's transcript path has them",
         footer: {
           cost_incomplete: 'some spend went unreported',
           transcript_incomplete: 'the session log is missing lines',

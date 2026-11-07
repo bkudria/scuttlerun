@@ -156,7 +156,8 @@ Output:
   scuttlerun streams a transcript to stdout including user messages, assistant
   responses, tool calls, thinking blocks, and oracle decisions.
 
-  Before the transcript: config file paths, project dir, and SDK transcript path.
+  Before the transcript: config file paths, project dir, SDK transcript path,
+  and a legend explaining what each entry records (--dry-run prints it too).
   After the transcript: a summary with paths and stats (turns, tool calls, etc.).
 
   The SDK session file (full conversation JSONL) is preserved at
