@@ -91,6 +91,8 @@ vi.mock('node:fs', async () => {
 });
 
 import { existsSync, lstatSync, symlinkSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { query as mockQueryFn } from '@anthropic-ai/claude-agent-sdk';
 import {
   createProjectDir as mockCreateProjectDir,
@@ -1072,6 +1074,32 @@ describe('runSession', () => {
     network: { allowed_domains: [], allow_local_binding: false },
     filesystem: { deny_read: [], allow_write: [], deny_write: [] },
   };
+
+  it("expands ~ in sandbox filesystem paths against the operator's home, not the sandbox HOME", async () => {
+    const options = captureOptions('s-sandbox-tilde');
+    await runSession(
+      minConfig({
+        sandbox: {
+          enabled: true,
+          network: { allowed_domains: [], allow_local_binding: false },
+          filesystem: {
+            deny_read: ['~/.ssh', '~', '/etc/secret'],
+            allow_write: ['~/out'],
+            deny_write: ['~/.gitconfig', '.env', '~other/x'],
+          },
+        },
+      }),
+    );
+
+    const { filesystem } = options()?.sandbox as { filesystem: Record<string, string[]> };
+    expect(filesystem.denyRead).toEqual([join(homedir(), '.ssh'), homedir(), '/etc/secret']);
+    expect(filesystem.allowWrite).toEqual([
+      '/tmp/scuttlerun-project-test123',
+      '/tmp',
+      join(homedir(), 'out'),
+    ]);
+    expect(filesystem.denyWrite).toEqual([join(homedir(), '.gitconfig'), '.env', '~other/x']);
+  });
 
   it('exports CLAUDE_CONFIG_DIR for a seeded claude_dir in the sandbox env', async () => {
     const { projectPath, claudeDir } = seededScaffold();

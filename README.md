@@ -185,6 +185,8 @@ For OAuth-based auth (Claude Code subscription login), there's a single carve-ou
 | `sandbox.filesystem.allow_write`      | string[] | `[]` (cwd and `/tmp` are always writable) |
 | `sandbox.filesystem.deny_write`       | string[] | `[.env]`                                  |
 
+In these paths `~` means your home directory, not the redirected `HOME` the agent's shell commands see, so the `deny_read` defaults cover your real `~/.ssh`, `~/.aws` and `~/.config/gcloud`.
+
 ##### Confining file-tool writes
 
 The file tools run in the agent process, not inside the OS sandbox, so `allow_write` does not bound their writes and `deny_read` does not stop their reads. Under the default `permission_mode: bypassPermissions` they can read and write any path your user can, by absolute path. Symlinks in the project dir lead them to the real files:
