@@ -236,7 +236,7 @@ scuttlerun wraps the Claude Agent SDK's `query()` with an async generator for mu
 
 2. **Turn policy** — After each agent turn, the oracle decides whether the synthetic user should send a follow-up (`reactive` mode) or end the session (`single` mode).
 
-Oracle calls run isolated from the host's Claude Code configuration: they load no user, project or local settings (and so none of their hooks, plugins, env or `CLAUDE.md` files), start no MCP servers, see no skills, and skip auto-memory. Only the persona and scuttlerun's own prompts steer the synthetic user, whoever runs the session and from wherever.
+Oracle calls run isolated from the host's Claude Code configuration files: they load no user, project or local settings (and so none of their hooks, plugins, env or `CLAUDE.md` files), start no MCP servers (claude.ai connectors included), see no skills, load no plugins or skills synced from claude.ai, and skip auto-memory. Your `~/.claude` setup and the launch directory's `.claude/` cannot steer the synthetic user. Two things still reach the oracle: the environment scuttlerun runs in (it needs it for credentials, so variables such as `ANTHROPIC_*` and `CLAUDE_CODE_*` apply), and any managed settings an administrator has installed.
 
 ## Output
 

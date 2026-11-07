@@ -1522,22 +1522,25 @@ surface OracleSdkBoundary {
 
     @guarantee OracleIsolatedFromHostConfiguration
         -- The oracle query loads no Claude Code configuration from the
-        -- machine it runs on: settingSources is empty (no user, project or
-        -- local settings, so none of their hooks, enabled plugins, env,
-        -- permissions or CLAUDE.md files), strictMcpConfig is set with no
-        -- MCP servers supplied (no ~/.claude.json, .mcp.json, settings or
-        -- plugin MCP servers start), and the skills filter is empty. Flag
-        -- settings disable auto-memory and, for a signed-in Claude account,
-        -- claude.ai MCP connectors (disableClaudeAiConnectors) and the
-        -- plugins and skills synced from claude.ai (syncClaudeAiPlugins and
-        -- syncClaudeAiSkills false), which settingSources does not govern
-        -- because they come from the account rather than a settings file.
-        -- The persona and the
-        -- scuttlerun-built prompts are the only steering the oracle
-        -- receives, so a run's synthetic user behaves the same whichever
-        -- operator or launch directory invokes it. Policy-tier (managed)
-        -- settings an administrator installs are outside this guarantee:
-        -- the SDK applies them regardless.
+        -- host's filesystem or the operator's Claude account: settingSources
+        -- is empty (no user, project or local settings, so none of their
+        -- hooks, enabled plugins, env, permissions or CLAUDE.md files),
+        -- strictMcpConfig is set with no MCP servers supplied (no
+        -- ~/.claude.json, .mcp.json, settings or plugin MCP servers start),
+        -- and the skills filter is empty. Flag settings disable auto-memory
+        -- and, for a signed-in Claude account, claude.ai MCP connectors
+        -- (disableClaudeAiConnectors) and the plugins and skills synced from
+        -- claude.ai (syncClaudeAiPlugins and syncClaudeAiSkills false), which
+        -- settingSources does not govern because they come from the account
+        -- rather than a settings file. So the operator's settings files, MCP
+        -- configuration, skills, plugins and auto-memory, and the launch
+        -- directory's, cannot steer the synthetic user.
+        -- Two inputs are outside this guarantee. The oracle inherits the
+        -- auth-shaped parent env (OracleSharesCredentialSurface), so
+        -- environment variables that configure Claude Code (ANTHROPIC_*,
+        -- CLAUDE_CODE_*, MAX_THINKING_TOKENS and the like) still reach it.
+        -- And policy-tier (managed) settings an administrator installs still
+        -- apply: the SDK reads them whatever settingSources says.
 }
 
 
