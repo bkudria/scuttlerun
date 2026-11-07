@@ -8,8 +8,10 @@ re-investigated. Most entries come from a hand-driven probe of Claude Code
 Code TUI from a detached tmux session while the probe project's hooks logged
 47 events across question dialogs, hook denials and rewrites, bang prompts,
 skill-frontmatter hooks and plan mode; craboodle evals of the fabrica plugin
-ran the same day against what the transcript does and does not show. Entries
-are not ordered by priority.
+ran the same day against what the transcript does and does not show. The
+Synthetic user, Isolation and sandbox, Cost and diagnostics, and Spec sections
+come from reviewing the Agent SDK 0.3.310 → 0.3.317 bump (#89) on 2026-11-07.
+Entries are not ordered by priority.
 
 ## Decided, not yet built
 
@@ -90,7 +92,21 @@ are not ordered by priority.
   CLAUDE_SDK_CAN_USE_TOOL_SHADOWED).
 - **Header provenance.** The SDK init message carries `claude_code_version`
   and `model`; the runner reads neither. Write both into the header so a
-  transcript states which CLI version its facts held for.
+  transcript states which CLI version its facts held for. The 0.3.317 bump
+  shows the cost of not knowing: its bundled CLI (2.1.310 → 2.1.317) stopped
+  answering a repeated Read with an "unchanged" stub and returns the whole
+  file, so sessions that re-read files spend more, and a craboodle comparison
+  spanning the bump cannot tell from its transcripts which CLI produced which
+  side. The init's `capabilities` list follows from the version, so recording
+  the version is enough.
+- **Tell the judge what `transcript_incomplete` means.** The footer sets
+  `transcript_incomplete: true` when Claude Code reports
+  (`session_writes_lost`) that a full disk or quota kept it from saving this
+  run's session JSONL. pincenez's prompt builder tells the judge that full
+  tool inputs survive in that JSONL and says nothing about it being partial,
+  so a judge that consults it may grade a truncated log as the whole
+  conversation. One sentence in pincenez's contract section; it falls out of
+  the self-describing legend above if that lands first.
 - **Bounded tool results.** The runner loop has no `user` branch, so
   tool_result blocks and the structured `tool_use_result` are dropped; the
   probe read "The user did not answer the questions." (the outcome of allow
@@ -140,6 +156,106 @@ are not ordered by priority.
   statement to that SDK. The matching "may not fire in all Agent SDK modes"
   text in craboodle's example and the claude-code-evals reference is tracked
   in craboodle's IDEAS.md.
+
+## Synthetic user
+
+- **Personas that skip or dismiss questions.** The oracle must return one
+  answer per AskUserQuestion question, so no persona can play a user who
+  skips setup questions or closes the card. The agent sees only the
+  `answers` text: under CLI 2.1.317, an allow with empty answers makes the
+  CLI itself tell the model "The user did not answer the questions.", while a
+  canUseTool deny reads "User declined to answer questions". A per-question
+  skip has no CLI wording to borrow and needs a spike. SDK 0.3.312 added
+  `annotations[question].unanswered` (`skipped`, `replied_in_chat`,
+  `dismissed`), to be sent only when `system/init.capabilities` lists
+  `ask_user_question_unanswered_v1`; the model never sees it, and it lands
+  only in the JSONL's `tool_use_result`, which the runner drops. Shape: an
+  optional per-question decline in the oracle schema, steered by the persona
+  with no YAML knob; empty answers for a whole-card dismiss; the annotation
+  when the capability is present; an `unanswered` map in the `oracle: ask`
+  entry for graders. `replied_in_chat` is out, since scuttlerun can only send
+  user input after a result. Demand unproven; an oracle that skips when the
+  persona would not adds noise to existing evals.
+
+## Isolation and sandbox
+
+- **Probe `deny_read` under the redirected HOME.** `sandbox.filesystem.deny_read`
+  defaults to `~/.ssh`, `~/.aws` and `~/.config/gcloud` and passes through as
+  the sandbox's `denyRead`. With the sandbox on, the agent's HOME is
+  `<workspace>/.home`; if Claude Code expands `~` against that HOME, the
+  defaults deny paths inside the workspace and leave the operator's real
+  credentials readable to sandboxed commands. Unverified: one sandboxed
+  `cat ~/.ssh/<file>` settles it. If it holds, expand `~` against the
+  operator's real home before passing the list, and say so in the spec.
+- **Network isolation stops at sandboxed commands.** README's
+  `allowed_domains` row says `[]` means "no network access", and the spec's
+  SandboxNetwork guidance says no domains are reachable. The SDK enforces the
+  allowlist for sandboxed commands only ("in-process tools such as WebFetch
+  are not gated"), and WebSearch runs server-side. Correct the docs the way
+  #97 corrected file-tool reach, and name the levers that do gate those
+  tools: `sdk.disallowed_tools`, or deny rules in `project.settings`.
+- **Document read-side file-tool confinement.** #97 documents
+  `blockWritesOutsideWorkingDirectories`; the matching
+  `permissions.blockReadsOutsideWorkingDirectories` refuses Read, Grep, Glob
+  and LSP outside the working directories in every mode, and 0.3.316 added
+  `blockReadsExemptPaths`, honoured only from `--settings` or host-sent
+  settings (so scuttlerun would pass it through `Options.settings`). Open:
+  skills are symlinked from the operator's source and a link is judged by
+  where it leads, so blocking reads may break skill loading unless each
+  source is exempted; and sandboxed Bash still reads anything outside
+  `deny_read`, so read confinement for the file tools alone is no boundary.
+  Document after checking skill loading, or defer.
+- **Oracle env and cwd.** #95 isolated the oracle from settings files, MCP
+  configuration, skills, plugins and auto-memory. Two inputs remain: it
+  inherits the auth-shaped parent env, so the operator's `ANTHROPIC_*`,
+  `CLAUDE_CODE_*` and `MAX_THINKING_TOKENS`-style variables still configure
+  it, and it runs in the launch directory. Options: an allowlisted env for
+  the oracle (auth variables plus the basics) at the cost of one more env
+  shape to maintain, or keep the inheritance the spec now documents. Move to
+  a neutral cwd only if something cwd-dependent is shown to reach a
+  `tools: []`, `skills: []` query.
+- **Spike: Bash edit diffs under bypassPermissions.** Since CLI 2.1.317 the
+  Bash tool's diff of the files a command changed defaults on in auto and
+  bypassPermissions "when the Bash tool handles file edits or the model's
+  configuration turns it on" (`bashEditDiffEnabled`); the binary gates this
+  on what looks like server-side config, and the changelog does not mention
+  it. scuttlerun defaults to bypassPermissions, so agent-visible Bash results
+  may change per account with no version change. Also unverified: the binary
+  reads `bashEditDiffEnabled === false` straight from user settings, possibly
+  past `setting_sources` excluding `user`. Spike: run a Bash file edit
+  headless and read its tool_result in the JSONL; if diffs appear, consider
+  pinning the setting through `Options.settings` for reproducibility.
+
+## Cost and diagnostics
+
+- **Zero-cost agent error results.** The SDK warns that crash and
+  startup-error results "may carry zeroed values". #96 treats such an oracle
+  result as unknown spend and sets `cost_incomplete`; the agent path sets it
+  only when no result arrived, so a crashed agent turn reports a
+  confirmed-looking figure. Shape: the oracle's rule, a non-success result
+  with `total_cost_usd` 0 sets `cost_incomplete`.
+- **Duplicate error line on stderr.** After an error result, when the CLI
+  exits non-zero the SDK throws "Claude Code returned an error result: …"
+  carrying the same errors, and the runner's catch writes it as a second
+  `[scuttlerun]` line after the one the result branch already wrote.
+  Startup failures, the sandbox-unavailable case included, show their error
+  twice. Shape: skip the catch's line when the result branch already
+  reported that result's errors.
+- **Oracle token counts from `modelUsage`.** Oracle cost comes from
+  `total_cost_usd`, which covers every call in the query, but oracle tokens
+  come from the result's `usage`, which the SDK marks "MAIN AGENT LOOP ONLY …
+  Prefer modelUsage". For a `tools: []` one-shot the two should agree;
+  summing `modelUsage` would make that hold by construction. Low value until
+  an oracle query makes auxiliary calls.
+
+## Spec
+
+- **Failures before init.** #98 added `pending -> failed` for an error result
+  that arrives before init, but SessionFailsFromUncaughtException still
+  requires `status = running`, though the runner also fails the session on an
+  exception before init. Relax the guard as AgentTurnFailsAtRuntime was. The
+  header comment of tests/session-state-machine.test.ts also omits the
+  spec's `running -> interrupted` edge.
 
 ## Decided against
 
