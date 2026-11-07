@@ -1,4 +1,8 @@
-import { query, SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from '@anthropic-ai/claude-agent-sdk';
+import {
+  query,
+  SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+  type SDKResultMessage,
+} from '@anthropic-ai/claude-agent-sdk';
 import { mkdirSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -342,29 +346,8 @@ export async function runSession(
             exitCode = EXIT_SUCCESS;
           }
         } else {
-          // Error subtypes
           resolveNextAction?.({ type: 'end' });
-          if (subtype === 'error_max_turns') exitCode = EXIT_MAX_TURNS;
-          else if (subtype === 'error_max_budget_usd') exitCode = EXIT_BUDGET_EXCEEDED;
-          else if ((message as { terminal_reason?: string }).terminal_reason === 'max_turns') {
-            // The turn cap was reached mid-execution: a tool/skill call was
-            // accepted as the Nth tool use, then the next model turn could not
-            // start. The SDK reports error_during_execution but attributes the
-            // cause via terminal_reason = max_turns, so the same logical
-            // condition as error_max_turns yields the same exit code regardless
-            // of where in the tool-call lifecycle the cap fired (spec rule
-            // AgentTurnHitsTurnCapDuringExecution).
-            exitCode = EXIT_MAX_TURNS;
-          } else {
-            exitCode = EXIT_RUNTIME_ERROR;
-            // Surface the SDK's error detail as a diagnostic annotation paired
-            // with the runtime-error exit code (spec rule AgentTurnFailsAtRuntime).
-            // Informational only; downstream tools should not parse it.
-            const sdkErrors = (message as { errors?: string[] }).errors;
-            if (sdkErrors && sdkErrors.length > 0) {
-              process.stderr.write(`[scuttlerun] ${sdkErrors.join('\n')}\n`);
-            }
-          }
+          exitCode = exitCodeForUnfinishedResult(message);
         }
       }
     }
@@ -422,6 +405,31 @@ export async function runSession(
   }
 
   return { exitCode, sessionId };
+}
+
+// Covers error subtypes, and a success result that arrives before init (no
+// synthetic user to consult), which can only end the session as a failure.
+function exitCodeForUnfinishedResult(message: SDKResultMessage): number {
+  if (message.subtype === 'error_max_turns') return EXIT_MAX_TURNS;
+  if (message.subtype === 'error_max_budget_usd') return EXIT_BUDGET_EXCEEDED;
+  if ((message as { terminal_reason?: string }).terminal_reason === 'max_turns') {
+    // The turn cap was reached mid-execution: a tool/skill call was accepted
+    // as the Nth tool use, then the next model turn could not start. The SDK
+    // reports error_during_execution but attributes the cause via
+    // terminal_reason = max_turns, so the same logical condition as
+    // error_max_turns yields the same exit code regardless of where in the
+    // tool-call lifecycle the cap fired (spec rule
+    // AgentTurnHitsTurnCapDuringExecution).
+    return EXIT_MAX_TURNS;
+  }
+  // Surface the SDK's error detail as a diagnostic annotation paired with the
+  // runtime-error exit code (spec rule AgentTurnFailsAtRuntime). Informational
+  // only; downstream tools should not parse it.
+  const sdkErrors = (message as { errors?: string[] }).errors;
+  if (sdkErrors && sdkErrors.length > 0) {
+    process.stderr.write(`[scuttlerun] ${sdkErrors.join('\n')}\n`);
+  }
+  return EXIT_RUNTIME_ERROR;
 }
 
 // BetaToolUseBlock.input is typed `unknown` by the SDK because tool input shapes
