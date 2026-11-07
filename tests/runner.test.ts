@@ -536,6 +536,81 @@ describe('runSession', () => {
     }
   });
 
+  it('adds a sandbox hint when startup fails for want of a sandbox, before any init', async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        session_id: 's-no-sandbox',
+        is_error: true,
+        num_turns: 0,
+        total_cost_usd: 0,
+        errors: ['Sandbox is required but unavailable'],
+        startup_failure_reason: 'sandbox_required_unavailable',
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(minConfig());
+      expect(result.exitCode).toBe(2);
+      expect(result.sessionId).toBeUndefined();
+      expect(stderrOutput).toContain('[scuttlerun] Sandbox is required but unavailable');
+      expect(stderrOutput).toContain('sandbox.enabled: false');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
+
+  it('attributes a sandbox requirement to Claude Code settings when the sandbox is disabled', async () => {
+    const mockQuery = createMockQuery([
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        session_id: 's-required-elsewhere',
+        is_error: true,
+        num_turns: 0,
+        total_cost_usd: 0,
+        errors: ['Sandbox is required but unavailable'],
+        startup_failure_reason: 'sandbox_required_unavailable',
+      },
+    ]);
+
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(mockQuery);
+
+    let stderrOutput = '';
+    const origStderrWrite = process.stderr.write;
+    process.stderr.write = ((chunk: string) => {
+      stderrOutput += chunk;
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const result = await runSession(
+        minConfig({
+          sandbox: {
+            enabled: false,
+            network: { allowed_domains: [], allow_local_binding: false },
+            filesystem: { deny_read: [], allow_write: [], deny_write: [] },
+          },
+        }),
+      );
+      expect(result.exitCode).toBe(2);
+      expect(stderrOutput).toContain('Claude Code settings');
+      expect(stderrOutput).not.toContain('sandbox.enabled: false');
+    } finally {
+      process.stderr.write = origStderrWrite;
+    }
+  });
+
   it('emits no diagnostic line for error_during_execution with empty errors', async () => {
     const mockQuery = createMockQuery([
       {
@@ -570,6 +645,86 @@ describe('runSession', () => {
     } finally {
       process.stderr.write = origStderrWrite;
     }
+  });
+
+  describe('session writes lost as the CLI exits', () => {
+    const initMessage = (sessionId: string) => ({
+      type: 'system',
+      subtype: 'init',
+      session_id: sessionId,
+      tools: [],
+      model: 'claude-haiku-4-5',
+    });
+    const successResult = (sessionId: string) => ({
+      type: 'result',
+      subtype: 'success',
+      session_id: sessionId,
+      is_error: false,
+      num_turns: 1,
+      total_cost_usd: 0.01,
+    });
+    const writesLost = (sessionId: string, fields: Record<string, unknown>) => ({
+      type: 'system',
+      subtype: 'session_writes_lost',
+      error_code: 'ENOSPC',
+      uuid: 'u-writes-lost',
+      session_id: sessionId,
+      ...fields,
+    });
+
+    async function runCapturingStderr(messages: Array<Record<string, unknown>>) {
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(createMockQuery(messages));
+      let stderrOutput = '';
+      const origStderrWrite = process.stderr.write;
+      process.stderr.write = ((chunk: string) => {
+        stderrOutput += chunk;
+        return true;
+      }) as typeof process.stderr.write;
+      try {
+        const result = await runSession(minConfig());
+        return { result, stderrOutput };
+      } finally {
+        process.stderr.write = origStderrWrite;
+      }
+    }
+
+    it('flags the transcript incomplete and warns with the JSONL path when this session lost transcript lines', async () => {
+      const { result, stderrOutput } = await runCapturingStderr([
+        initMessage('s-lost'),
+        successResult('s-lost'),
+        writesLost('s-lost', { lost: ['transcript'], transcript_session_ids: ['s-lost'] }),
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(stdoutOutput).toContain('transcript_incomplete: true');
+      expect(stderrOutput).toMatch(/\[scuttlerun\] WARNING: .*ENOSPC.*\/s-lost\.jsonl/);
+      expect(stderrOutput.match(/\[scuttlerun\] WARNING/g)).toHaveLength(1);
+    });
+
+    it('ignores a loss confined to the global config', async () => {
+      const { result, stderrOutput } = await runCapturingStderr([
+        initMessage('s-global'),
+        successResult('s-global'),
+        writesLost('s-global', { lost: ['global_config'] }),
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(stdoutOutput).not.toContain('transcript_incomplete');
+      expect(stderrOutput).not.toContain('[scuttlerun] WARNING');
+    });
+
+    it('flags the transcript incomplete when the loss arrives before any session init', async () => {
+      const { stderrOutput } = await runCapturingStderr([
+        writesLost('s-early', {
+          error_code: 'EDQUOT',
+          lost: ['transcript', 'global_config'],
+          transcript_session_ids: ['s-early'],
+        }),
+      ]);
+
+      expect(stdoutOutput).toContain('transcript_incomplete: true');
+      expect(stderrOutput).toMatch(/\[scuttlerun\] WARNING: .*EDQUOT.*SDK session JSONL/);
+    });
   });
 
   it('passes canUseTool callback that handles AskUserQuestion', async () => {

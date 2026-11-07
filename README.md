@@ -172,6 +172,8 @@ When present, scuttlerun populates the project temp directory.
 
 Enabled by default. Runs the commands the agent issues through the Bash tool inside an OS-level sandbox that restricts their filesystem and network access; the `sandbox.filesystem` lists below apply to those commands. The file tools (Read, Write, Edit, NotebookEdit, Glob, Grep) run outside it — see [Confining file-tool writes](#confining-file-tool-writes). When the sandbox is enabled, `$HOME` is redirected to `<projectDir>/.home` so tools (npm, pip, cargo) write caches inside the sandbox rather than your real home directory.
 
+The sandbox needs OS support; on Linux that means `bubblewrap` and `socat` installed. If it can't run, the session fails at startup (exit `2`) rather than running unsandboxed, and scuttlerun prints a hint to stderr: install the dependencies (see the Claude Code sandboxing docs), or set `sandbox.enabled: false`. With `sandbox.enabled: false` the same failure means Claude Code settings (managed, user or project) require the sandbox, and the hint points there instead.
+
 For OAuth-based auth (Claude Code subscription login), there's a single carve-out: when no `ANTHROPIC_API_KEY` is set and `~/.claude/.credentials.json` exists (the Linux login location), scuttlerun symlinks that one file into the sandbox so the Agent SDK can find it. Nothing else under `~/.claude/` is linked in, so Claude Code does not pick up your skills, plugins, commands, agents, settings or session history from it. That keeps them out of the session's configuration; it does not put them out of reach of the file tools. On macOS the login credential lives in the Keychain rather than that file, so the carve-out finds nothing — set `CLAUDE_SDK_OAUTH_TOKEN` (see [Requirements](#requirements)) or disable the sandbox. scuttlerun prints a warning at session start when a sandboxed run has no credential it can reach.
 
 | Field                                 | Type     | Default                                   |
@@ -296,7 +298,7 @@ The output is valid YAML and machine-parseable (e.g. with `yq`).
 
 **Project directory** — Always created in `$TMPDIR` as `scuttlerun-project-<id>/`, preserved after the session ends so you can inspect agent-created files. On the next run, scuttlerun garbage-collects its own `scuttlerun-project-*` directories that are older than 7 days; nothing else in `$TMPDIR` is touched.
 
-**SDK session file** — Full conversation record in Claude Code's native JSONL format at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Queryable with `jq`. This is the authoritative record of full tool inputs and outputs; the YAML transcript is a lossy summary.
+**SDK session file** — Full conversation record in Claude Code's native JSONL format at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Queryable with `jq`. This is the authoritative record of full tool inputs and outputs; the YAML transcript is a lossy summary. If a full disk or exhausted quota keeps Claude Code from saving part of it, the transcript footer carries `transcript_incomplete: true` and scuttlerun prints a warning naming the file to stderr; the exit code is unaffected.
 
 ## Privacy
 

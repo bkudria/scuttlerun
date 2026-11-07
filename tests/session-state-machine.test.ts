@@ -2,6 +2,7 @@
 //
 //   transitions status {
 //       pending -> running
+//       pending -> failed
 //       running -> completed_success
 //       running -> exhausted_turns
 //       running -> exhausted_budget
@@ -245,6 +246,29 @@ describe('Session.status transition graph (scuttlerun.allium)', () => {
     (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
     const result = await runSession(minStubConfig());
     expect(result.exitCode).toBe(2); // failed → 2
+  });
+
+  // -------------------------------------------------------------------------
+  // [transition-edge.Session.pending.failed]
+  // Witnessed by: rule AgentTurnFailsAtRuntime (startup-failure result before init).
+  // -------------------------------------------------------------------------
+  it('[transition-edge] pending -> failed on a startup-failure result before init', async () => {
+    const q = fixedMockQuery([
+      {
+        type: 'result',
+        subtype: 'error_during_execution',
+        session_id: 'fsm-pf',
+        is_error: true,
+        num_turns: 0,
+        total_cost_usd: 0,
+        errors: ['refused to start'],
+        startup_failure_reason: 'cwd_unavailable',
+      },
+    ]);
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(q);
+    const result = await runSession(minStubConfig());
+    expect(result.exitCode).toBe(2); // failed → 2
+    expect(result.sessionId).toBeUndefined();
   });
 
   // -------------------------------------------------------------------------

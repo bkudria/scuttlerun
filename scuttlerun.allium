@@ -359,10 +359,12 @@ entity Session {
     agent_cost: Decimal
     oracle_cost: Decimal
     cost_incomplete: Boolean
+    transcript_incomplete: Boolean
     timed_out_observed: Boolean
 
     transitions status {
         pending -> running
+        pending -> failed
         running -> completed_success
         running -> exhausted_turns
         running -> exhausted_budget
@@ -629,6 +631,7 @@ rule SessionStarts {
         agent_cost: 0,
         oracle_cost: 0,
         cost_incomplete: false,
+        transcript_incomplete: false,
         timed_out_observed: false
     )
 
@@ -761,7 +764,7 @@ rule SyntheticUserAnswersClarifyingQuestion {
 -- =============================================================
 
 rule AgentTurnSucceeds {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: subtype = success
@@ -872,7 +875,7 @@ rule TurnPolicyEndsByCap {
 }
 
 rule AgentTurnExhaustsTurns {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
@@ -884,7 +887,7 @@ rule AgentTurnExhaustsTurns {
 }
 
 rule AgentTurnHitsTurnCapDuringExecution {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
@@ -910,7 +913,7 @@ rule AgentTurnHitsTurnCapDuringExecution {
 }
 
 rule AgentTurnExhaustsBudget {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
@@ -922,9 +925,9 @@ rule AgentTurnExhaustsBudget {
 }
 
 rule AgentTurnFailsAtRuntime {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
 
-    requires: session.status = running
+    requires: session.status in {pending, running}
     requires: session.timed_out_observed = false
     requires: subtype = error_during_execution
     requires: terminal_reason != max_turns
@@ -950,6 +953,46 @@ rule AgentTurnFailsAtRuntime {
         -- it; an empty or absent `errors` array emits nothing. This is
         -- what makes a runtime failure observable instead of surfacing
         -- only as a bare exit code 2.
+        --
+        -- The session may still be pending: when Claude Code refuses to
+        -- start, the SDK writes a zeroed error_during_execution result
+        -- carrying `startup_failure_reason`, possibly before any init
+        -- message. That result fails the session directly (pending ->
+        -- failed) with the same exit code and diagnostic line; no
+        -- preamble is written because no session id was announced.
+}
+
+rule StartupFailureSuggestsSandboxFix {
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+
+    requires: subtype = error_during_execution
+    requires: startup_failure_reason = sandbox_required_unavailable
+
+    ensures: SandboxFixSuggested(session)
+
+    @guidance
+        -- The sandbox is enabled by default (Sandbox) and scuttlerun does
+        -- not relax the Agent SDK's requirement that an enabled sandbox
+        -- actually run, so a host without the sandbox's OS dependencies
+        -- fails at startup. Claude Code settings (managed, user or
+        -- project, e.g. loaded via `sdk.setting_sources` or a seeded
+        -- `project.claude_dir`) can impose the same requirement while
+        -- scuttlerun's own sandbox is off. Alongside the SDK error line
+        -- written under AgentTurnFailsAtRuntime, the runner writes one
+        -- actionable `[scuttlerun] ...` line to stderr that first says to
+        -- install the sandbox's OS dependencies (on Linux, bubblewrap
+        -- and socat). When `sandbox.enabled` is true it then offers
+        -- setting `sandbox.enabled: false` in the session config; when
+        -- it is false, that switch is already off and cannot help, so
+        -- the line instead attributes the requirement to Claude Code
+        -- settings and says to lift it there. Like the other stderr
+        -- diagnostics it is informational and not for parsing.
+        --
+        -- This rule does not touch `status`; AgentTurnFailsAtRuntime
+        -- commits the failure and the exit code stays the runtime-error
+        -- code. It requires no particular status because the result may
+        -- arrive before init. Any other startup_failure_reason, or none,
+        -- adds no hint.
 }
 
 rule SessionFailsFromUncaughtException {
@@ -1079,6 +1122,45 @@ rule SessionInterruptedByOperator {
         -- from `SessionTimesOut` and from the failure paths: if the
         -- timeout observer has already fired, the session resolves to
         -- timed_out regardless of any later signal.
+}
+
+
+rule SessionTranscriptWritesLost {
+    when: AgentSessionWritesLost(client, session, error_code, lost, transcript_session_ids)
+
+    requires: "transcript" in lost
+    requires: session.sdk_session_id = null
+        or session.sdk_session_id in transcript_session_ids
+
+    ensures: session.transcript_incomplete = true
+
+    @guidance
+        -- The Agent SDK reports, at most once and as the CLI exits (after
+        -- the last result, if any), that a full disk ("ENOSPC") or an
+        -- exhausted quota ("EDQUOT") kept it from saving lines of a session
+        -- transcript, changes to the global Claude config, or both. `lost`
+        -- names what was not saved; `transcript_session_ids` names the
+        -- sessions whose transcripts lost lines. Only a loss that reaches
+        -- this run's SDK session JSONL matters to scuttlerun: a loss
+        -- confined to the global config, or attributed only to other
+        -- sessions, is ignored. Before the init message there is no
+        -- session id to match, so any transcript loss is presumed to be
+        -- this run's.
+        --
+        -- The runner writes a single `[scuttlerun] WARNING: ...` line to
+        -- stderr naming the error code and the JSONL path announced in
+        -- the preamble (or the SDK session JSONL generically when no
+        -- preamble was written). The line is informational and downstream
+        -- tools should not parse it; the footer's `transcript_incomplete`
+        -- key is the machine-readable signal.
+        --
+        -- This rule does not touch `status`: the results already received
+        -- stand, the SDK does not change the CLI's exit status for this
+        -- loss, and the exit code is unchanged (ExitCodeReflectsOutcome).
+        -- The report arrives after the final result while the runner
+        -- drains the message stream, so it is observed on every path that
+        -- lets the stream drain; a timeout or signal stops the drain and
+        -- may leave it unobserved.
 }
 
 
@@ -1368,6 +1450,7 @@ surface CommandLineInvocation {
         session.tool_call_count
         session.total_cost
         session.cost_incomplete
+        session.transcript_incomplete
         session.workspace.path
         session.transcript
 
@@ -1431,7 +1514,11 @@ surface StreamingTranscript {
     @guarantee StreamingYaml
         -- Output is a single YAML document streamed as the session runs:
         -- a preamble mapping, a `conversation:` sequence with one entry
-        -- per event, and a footer mapping. The preamble carries four
+        -- per event, and a footer mapping. The preamble and the
+        -- `conversation:` sequence are written when the init message
+        -- announces the SDK session id; a run that ends before any init
+        -- message (e.g. Claude Code refusing to start) writes the footer
+        -- mapping alone. The preamble carries four
         -- keys: `session` (the SDK session id), `config` (the path or
         -- list of paths to the YAML config files supplied at
         -- invocation), `project` (the workspace path) and
@@ -1454,6 +1541,10 @@ surface StreamingTranscript {
         -- query ended without a result message or with a zero-cost error
         -- result (OracleQueryCostUnknown) — so the cost shown or omitted
         -- is incomplete/unknown rather than a confirmed $0;
+        -- `transcript_incomplete` (Boolean) appears only when truthy and
+        -- means the SDK session JSONL for this run (announced in the
+        -- preamble when one was written) is missing lines (see
+        -- SessionTranscriptWritesLost);
         -- `timed_out`
         -- (Boolean) appears only when truthy; and `files_written`,
         -- `files_edited`, `files_read` each appear only when their
@@ -1475,6 +1566,12 @@ surface StreamingTranscript {
         -- and thinking) is preserved by the Agent SDK in a JSONL file
         -- whose path is announced in the preamble. scuttlerun does not
         -- own this file.
+        --
+        -- Failure case: when the SDK reports that a full disk or exhausted
+        -- quota kept it from writing this session's transcript, the JSONL
+        -- is missing lines. scuttlerun then sets `transcript_incomplete`
+        -- in the footer and warns on stderr (SessionTranscriptWritesLost),
+        -- so readers know the JSONL is not the full conversation.
 
     @guarantee TranscriptToolFieldContract
         -- The transcript captures tool invocations as observations, not
@@ -1519,11 +1616,12 @@ surface AgentSdkBoundary {
 
     provides:
         AgentInitialized(client, session)
-        AgentTurnCompleted(client, session, subtype, terminal_reason, agent_cost_to_date, num_turns_to_date)
+        AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
         AgentAsksClarifyingQuestion(client, session)
         AgentEmitsAssistantMessage(client, session, text_blocks)
         AgentEmitsThinking(client, session, text)
         AgentEmitsToolCall(client, session, tool_name)
+        AgentSessionWritesLost(client, session, error_code, lost, transcript_session_ids)
         RunnerCaughtException(session)
 
     contracts:
@@ -1678,6 +1776,11 @@ contract SessionPersistence {
         -- tool uses, tool results, thinking, system) is written to the
         -- SDK's native JSONL file. scuttlerun surfaces the file's path
         -- in the preamble but never modifies its contents.
+        --
+        -- The SDK breaks this invariant when the disk is full or the
+        -- quota is exhausted, and reports the breach once as the CLI
+        -- exits (AgentSessionWritesLost). scuttlerun does not repair the
+        -- file; it records the breach as `transcript_incomplete`.
 }
 
 contract AbortableExecution {
