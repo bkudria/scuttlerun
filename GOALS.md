@@ -30,6 +30,8 @@ Project directories are preserved after each session so artifacts remain availab
 
 The sandbox (redirecting `$HOME`, constraining network/filesystem access) exists for **safety** — preventing the agent from affecting the real system.
 
+Isolation runs the other way for the oracle: it loads none of the host's Claude Code configuration (settings, hooks, plugins, MCP servers, skills, auto-memory), so the operator's own setup cannot steer the synthetic user or add cost to its calls, and the same YAML yields the same synthetic user on any machine.
+
 ## Controlled Environment for Testing
 
 Project scaffolding (CLAUDE.md, skill symlinks, settings.json, a seeded Claude config directory) creates a **controlled environment** for testing and evaluating Claude Code configurations — skills, prompts, sub-agents, plugins, and any other project-level setup. Each session gets a fresh, isolated project directory with exactly the context the agent should see.
