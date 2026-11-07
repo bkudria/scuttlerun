@@ -83,7 +83,7 @@ export CLAUDE_SDK_OAUTH_TOKEN=<token>
 
 scuttlerun forwards `CLAUDE_SDK_OAUTH_TOKEN` to the agent in both sandboxed and non-sandboxed runs (mapped onto `CLAUDE_CODE_OAUTH_TOKEN`, the name the runtime reads, where it wins over `/login` credentials), so this is the recommended path for headless and CI use. Don't export the token as `CLAUDE_CODE_OAUTH_TOKEN`: that name would also override the `/login` credentials of every other `claude` invocation in your shell, and scuttlerun ignores it.
 
-**macOS note:** a regular `claude /login` stores your subscription credential in the macOS Keychain, which the default [sandbox](#sandbox-os-level-isolation) cannot read — so a logged-in Mac with no `CLAUDE_SDK_OAUTH_TOKEN` set fails with `Not logged in`. Use the token above, or set `sandbox.enabled: false`. (`auto` mode accounts for this: a Keychain-only login never causes the API key to be withheld from the sandboxed agent.) On Linux/Windows, `/login` writes `~/.claude/.credentials.json`, which the sandbox links in automatically — including when an API key is set but the subscription is preferred.
+**macOS note:** a regular `claude /login` stores your subscription credential in the macOS Keychain, which the default [sandbox](#sandbox-os-level-isolation) cannot read — so a logged-in Mac with no `CLAUDE_SDK_OAUTH_TOKEN` set fails with `Not logged in`. Use the token above, or set `sandbox.enabled: false`. (`auto` mode accounts for this: a Keychain-only login never causes the API key to be withheld from the sandboxed agent.) On Linux, `/login` writes `~/.claude/.credentials.json`, which the sandbox links in automatically — including when an API key is set but the subscription is preferred.
 
 ## Quick Start
 
