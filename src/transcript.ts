@@ -202,7 +202,11 @@ export function writeFooter(stats: FooterStats): void {
     footer.files_read = stats.filesRead;
   }
   if (stats.oracleUsage && stats.oracleUsage.calls > 0) {
-    footer.oracle_usage = stats.oracleUsage;
+    const { cost_usd } = stats.oracleUsage;
+    footer.oracle_usage =
+      cost_usd === undefined
+        ? stats.oracleUsage
+        : { ...stats.oracleUsage, cost_usd: +cost_usd.toFixed(4) };
   }
   const doc = new Document(footer);
   applyWrapStyles(doc);
