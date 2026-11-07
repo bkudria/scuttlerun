@@ -179,14 +179,6 @@ Entries are not ordered by priority.
 
 ## Isolation and sandbox
 
-- **Probe `deny_read` under the redirected HOME.** `sandbox.filesystem.deny_read`
-  defaults to `~/.ssh`, `~/.aws` and `~/.config/gcloud` and passes through as
-  the sandbox's `denyRead`. With the sandbox on, the agent's HOME is
-  `<workspace>/.home`; if Claude Code expands `~` against that HOME, the
-  defaults deny paths inside the workspace and leave the operator's real
-  credentials readable to sandboxed commands. Unverified: one sandboxed
-  `cat ~/.ssh/<file>` settles it. If it holds, expand `~` against the
-  operator's real home before passing the list, and say so in the spec.
 - **Network isolation stops at sandboxed commands.** README's
   `allowed_domains` row says `[]` means "no network access", and the spec's
   SandboxNetwork guidance says no domains are reachable. The SDK enforces the

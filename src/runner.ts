@@ -579,9 +579,9 @@ function buildSdkOptions(
         allowLocalBinding: config.sandbox.network.allow_local_binding,
       },
       filesystem: {
-        allowWrite: [cwd, '/tmp', ...config.sandbox.filesystem.allow_write],
-        denyRead: config.sandbox.filesystem.deny_read,
-        denyWrite: config.sandbox.filesystem.deny_write,
+        allowWrite: [cwd, '/tmp', ...config.sandbox.filesystem.allow_write.map(expandHome)],
+        denyRead: config.sandbox.filesystem.deny_read.map(expandHome),
+        denyWrite: config.sandbox.filesystem.deny_write.map(expandHome),
       },
     };
   }
@@ -593,6 +593,13 @@ function buildSdkOptions(
   }
 
   return sdkOptions;
+}
+
+// Claude Code would expand `~` against the sandbox's redirected HOME, where
+// the operator's credentials and files are not.
+function expandHome(path: string): string {
+  if (path === '~') return homedir();
+  return path.startsWith('~/') ? join(homedir(), path.slice(2)) : path;
 }
 
 function buildSdkSessionPath(

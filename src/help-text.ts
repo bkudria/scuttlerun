@@ -82,7 +82,7 @@ Session Config (YAML):
         allowed_domains: []               # Domains the agent can reach (default: [])
                                           #   No network access by default
         allow_local_binding: false        # Bind to local ports (default: false)
-      filesystem:
+      filesystem:                         # ~ here is your home, not <projectDir>/.home
         deny_read:                        # Paths denied for reading (default: below)
           - ~/.ssh
           - ~/.aws
