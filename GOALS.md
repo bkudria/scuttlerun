@@ -24,11 +24,13 @@ A YAML file describes **intent, not reproduction**. Given LLM non-determinism, e
 
 ## Headless, Isolated Operation
 
-scuttlerun is fully headless — no human intervention required during a session. This is equally about **enabling automation** (batch runs, CI) and **protecting the host system** (the agent operates in an isolated temp directory, not your real filesystem).
+scuttlerun is fully headless — no human intervention required during a session. This is equally about **enabling automation** (batch runs, CI) and **protecting the host system** (the agent works in a fresh temp directory, and by default its shell commands run in an OS sandbox that keeps their writes off your real filesystem; the file tools sit outside that boundary, as below).
 
 Project directories are preserved after each session so artifacts remain available for inspection. At the start of each session, scuttlerun garbage-collects its own project directories in `$TMPDIR` that are older than 7 days (matching the `scuttlerun-project-` prefix); recent artifacts are never touched.
 
-The sandbox (redirecting `$HOME`, constraining network/filesystem access) exists for **safety** — preventing the agent from affecting the real system.
+The sandbox (redirecting `$HOME`, constraining what the agent's shell commands can reach on the network and filesystem) exists for **safety** — preventing the agent from affecting the real system. Its boundary is the OS sandbox around shell commands; the file tools sit outside it, and confining their writes is left to an opt-in Claude Code setting rather than imposed by default, because that setting also refuses edits to Claude settings files — exactly the behaviour some evaluations exist to observe. The docs say plainly where each boundary stops, so the isolation is never assumed to be wider than it is.
+
+Isolation runs the other way for the oracle: it loads none of the host's Claude Code configuration files or account-synced extras (settings, hooks, plugins, MCP servers, skills, auto-memory), so the operator's own setup cannot steer the synthetic user or add cost to its calls. The environment it inherits for credentials and any administrator-managed settings are the exceptions.
 
 ## Controlled Environment for Testing
 
