@@ -1438,7 +1438,11 @@ surface StreamingTranscript {
     @guarantee StreamingYaml
         -- Output is a single YAML document streamed as the session runs:
         -- a preamble mapping, a `conversation:` sequence with one entry
-        -- per event, and a footer mapping. The preamble carries four
+        -- per event, and a footer mapping. The preamble and the
+        -- `conversation:` sequence are written when the init message
+        -- announces the SDK session id; a run that ends before any init
+        -- message (e.g. Claude Code refusing to start) writes the footer
+        -- mapping alone. The preamble carries four
         -- keys: `session` (the SDK session id), `config` (the path or
         -- list of paths to the YAML config files supplied at
         -- invocation), `project` (the workspace path) and
@@ -1457,8 +1461,9 @@ surface StreamingTranscript {
         -- final result, so the agent cost shown or omitted is
         -- incomplete/unknown rather than a confirmed $0;
         -- `transcript_incomplete` (Boolean) appears only when truthy and
-        -- means the SDK session JSONL announced in the preamble is
-        -- missing lines (see SessionTranscriptWritesLost);
+        -- means the SDK session JSONL for this run (announced in the
+        -- preamble when one was written) is missing lines (see
+        -- SessionTranscriptWritesLost);
         -- `timed_out`
         -- (Boolean) appears only when truthy; and `files_written`,
         -- `files_edited`, `files_read` each appear only when their
