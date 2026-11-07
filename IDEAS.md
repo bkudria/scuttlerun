@@ -22,8 +22,9 @@ are not ordered by priority.
   craboodle's hook-and-settings example cannot pass today. Shape: set
   `includeHookEvents: true` unconditionally (no `observe:` knob), handle the
   `system/hook_response` branch in the message loop (hook_started adds nothing
-  a grader needs), and write `- hook: {event, name, outcome, exit_code,
-  stdout, stderr}` under one cap shared with tool results. Spike first that
+  a grader needs), and write
+  `- hook: {event, name, outcome, exit_code, stdout, stderr}` under one cap
+  shared with tool results. Spike first that
   settings shell hooks surface stdout, including PostToolUse
   additionalContext, under bypassPermissions — the docs say hook_response may
   appear only for background hooks. `hook_name` arrives as `Event:matcher`.
@@ -107,9 +108,10 @@ are not ordered by priority.
   craboodle's 10 MB stdout buffer; judge cost rises with size; the judge now
   sees error text the agent recovered from, so some negative checks need a
   note.
-- **Plan approval through the synthetic user.** Under `permission_mode:
-  plan`, ExitPlanMode reaches canUseTool and is silently allowed with no
-  oracle involvement and no entry. The TUI offers approve-with-auto,
+- **Plan approval through the synthetic user.** Under
+  `permission_mode: plan`, ExitPlanMode reaches canUseTool and is silently
+  allowed with no oracle involvement and no entry. The TUI offers
+  approve-with-auto,
   approve-manually and reject-with-feedback; the probe saw rejection arrive
   as PreToolUse only, with the feedback as a user turn and an unprompted
   re-plan, and approval fire PostToolUse ({plan, isAgent, filePath,
@@ -238,7 +240,7 @@ it, then exercised headlessly.
   needs ttyd, ffmpeg and a headless browser; scrut and capture-pane cover
   probing. Where a design decision cites how a dialog renders (the
   hook-rewritten long-body question was captured as a 45-line text screen and
-  cited as the cost of a rejected design), one tape with `Wait /Enter to
-  select/` then `Screenshot` is the cheapest durable artifact for a PR, like
-  the existing demo tapes; non-deterministic and costs API calls, so at most
-  one per cited fact.
+  cited as the cost of a rejected design), one tape with
+  `Wait /Enter to select/` then `Screenshot` is the cheapest durable
+  artifact for a PR, like the existing demo tapes; non-deterministic and
+  costs API calls, so at most one per cited fact.
