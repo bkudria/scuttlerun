@@ -1532,8 +1532,9 @@ surface StreamingTranscript {
         -- `output_tokens`, `cache_creation_input_tokens`,
         -- `cache_read_input_tokens`, `calls` (SDK queries issued,
         -- retried attempts included) and `cost_usd` (oracle_cost, rounded
-        -- like `oracle_cost_usd` so the two always match); the token counts and costs cover every attempt
-        -- (see OracleQueryTracked);
+        -- to 4 decimal places like `oracle_cost_usd`, so the two match
+        -- whenever both appear); the token counts and costs cover every
+        -- attempt (see OracleQueryTracked);
         -- `cost_incomplete` (Boolean) appears only when truthy and means
         -- some spend went unreported — the session terminated before the
         -- in-flight agent turn reported a final result, or an oracle
