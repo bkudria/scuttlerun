@@ -68,7 +68,7 @@ When both a Claude subscription and an `ANTHROPIC_API_KEY` are available, scuttl
 | `subscription`   | Always withhold API-key variables; requires a Claude Code login or `CLAUDE_SDK_OAUTH_TOKEN` |
 | `api-key`        | Require `ANTHROPIC_API_KEY` (exit 1 if unset) and ignore any OAuth token variable           |
 
-Subscription detection checks `CLAUDE_SDK_OAUTH_TOKEN`, the Claude Code credentials file (`~/.claude/.credentials.json`, honoring `CLAUDE_CONFIG_DIR`), and — for the non-sandboxed agent and the oracle — the macOS Keychain. Cost figures in the transcript footer are unchanged: they remain the SDK's notional API-rate numbers, so `max_budget_usd` still works as a usage limiter on subscription runs.
+Subscription detection checks `CLAUDE_SDK_OAUTH_TOKEN`, the Claude Code credentials file (`~/.claude/.credentials.json`, honoring `CLAUDE_CONFIG_DIR`), and — for the non-sandboxed agent and the oracle — the macOS Keychain. The auth mode doesn't change the cost figures in the transcript footer: agent and oracle costs alike are the SDK's own notional API-rate estimates (each query's `total_cost_usd`), so `max_budget_usd` still works as a usage limiter on subscription runs.
 
 scuttlerun never uses `CLAUDE_CODE_OAUTH_TOKEN`. The Claude Code runtime lets that variable override a `/login` credential, so scuttlerun strips it from every SDK subprocess — a stray export can't silently hijack a run. If it is the only credential in the environment, scuttlerun exits 1 with guidance rather than failing opaquely.
 
