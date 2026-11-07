@@ -144,6 +144,7 @@ interface OracleUsage {
 }
 
 interface OracleQueryResult {
+  subtype: string;
   usage: OracleUsage;
   total_cost_usd: number;
 }
@@ -239,9 +240,9 @@ export class Oracle {
   }
 
   /**
-   * True once any oracle query ended without a result message: the SDK
-   * reports cost only on the result, so that query's spend is unknown and
-   * getTotalUsage() undercounts it.
+   * True once any oracle query ended without reporting its cost — no result
+   * message, or an error result with a zeroed cost — so getTotalUsage() may
+   * undercount that query's spend.
    */
   hasUnknownCost(): boolean {
     return this.costUnknown;
@@ -367,13 +368,15 @@ export class Oracle {
 
   // total_cost_usd is the SDK's own estimate for the whole query() — the
   // pricing basis the agent session's cost uses too — and is cumulative within
-  // a query, so only the last result message is counted.
+  // a query, so only the last result message is counted. The SDK may zero the
+  // figures on a crash or startup-error result, so a zero-cost error result is
+  // an unknown spend rather than a confirmed $0.
   private trackQuery(result: OracleQueryResult | undefined): void {
     this.totalUsage.calls += 1;
-    if (!result) {
+    if (!result || (result.subtype !== 'success' && result.total_cost_usd === 0)) {
       this.costUnknown = true;
-      return;
     }
+    if (!result) return;
     const { usage } = result;
     this.totalUsage.input_tokens += usage.input_tokens;
     this.totalUsage.output_tokens += usage.output_tokens;

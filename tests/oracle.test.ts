@@ -925,7 +925,18 @@ describe('Oracle', () => {
       expect(o.getTotalUsage().calls).toBe(4);
     });
 
-    it('reports cost as known when every query produced a result', async () => {
+    it('reports cost as known when every query reported a cost', async () => {
+      const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
+      mockQuery
+        .mockReturnValueOnce(oracleErrorResult('error_max_turns', ['boom'], USAGE, 0.004))
+        .mockReturnValueOnce(oracleResult(answersOutput(), USAGE, 0.01));
+
+      await o.answerQuestions(singleQuestion());
+
+      expect(o.hasUnknownCost()).toBe(false);
+    });
+
+    it('marks cost unknown when an error result carries a zeroed cost', async () => {
       const o = new Oracle('claude-haiku-4-5', { sleep: () => Promise.resolve() });
       mockQuery
         .mockReturnValueOnce(oracleErrorResult('error_during_execution', ['boom']))
@@ -933,7 +944,8 @@ describe('Oracle', () => {
 
       await o.answerQuestions(singleQuestion());
 
-      expect(o.hasUnknownCost()).toBe(false);
+      expect(o.hasUnknownCost()).toBe(true);
+      expect(o.getTotalUsage().cost_usd).toBeCloseTo(0.01, 10);
     });
 
     it('marks cost unknown when a query ends without a result message', async () => {

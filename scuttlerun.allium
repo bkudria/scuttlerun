@@ -1177,18 +1177,26 @@ rule OracleQueryTracked {
 }
 
 rule OracleQueryCostUnknown {
-    when: OracleQueryEndedWithoutResult(oracle, session)
+    when: OracleQueryCostUnreported(oracle, session)
 
     ensures: session.cost_incomplete = true
 
     @guidance
-        -- An oracle query() that ends — by throwing or by finishing its
-        -- stream — before any result message adds nothing to oracle_cost
-        -- or the token totals, because the SDK reports usage and cost
-        -- only on the result message. The query may still have spent
-        -- tokens, so the session's cost is flagged incomplete rather
-        -- than presenting the unknown spend as a confirmed zero. The
-        -- query still counts toward oracle_usage.calls.
+        -- Fires for an oracle query() whose spend the SDK did not report:
+        -- one that ends — by throwing or by finishing its stream — before
+        -- any result message, or one whose result is an error subtype
+        -- with total_cost_usd of zero. The SDK reports a query's cost only
+        -- on its result message, and scuttlerun reads the query's token
+        -- totals from that same message, so a query with no result adds
+        -- nothing to oracle_cost or the token totals. The SDK may zero the
+        -- figures on a crash or startup-error result, so a zero-cost error
+        -- result is likewise indistinguishable from unreported spend; its
+        -- (zero) usage and cost still accumulate via OracleQueryTracked. A
+        -- successful result reporting zero cost is taken at its word.
+        -- Either way the query may have spent tokens, so the session's
+        -- cost is flagged incomplete rather than presenting the unknown
+        -- spend as a confirmed zero. The query still counts toward
+        -- oracle_usage.calls.
 }
 
 
@@ -1384,9 +1392,9 @@ surface StreamingTranscript {
         -- `cost_incomplete` (Boolean) appears only when truthy and means
         -- some spend went unreported — the session terminated before the
         -- in-flight agent turn reported a final result, or an oracle
-        -- query ended without a result message (OracleQueryCostUnknown)
-        -- — so the cost shown or omitted is incomplete/unknown rather
-        -- than a confirmed $0;
+        -- query ended without a result message or with a zero-cost error
+        -- result (OracleQueryCostUnknown) — so the cost shown or omitted
+        -- is incomplete/unknown rather than a confirmed $0;
         -- `timed_out`
         -- (Boolean) appears only when truthy; and `files_written`,
         -- `files_edited`, `files_read` each appear only when their
@@ -1506,7 +1514,7 @@ surface OracleSdkBoundary {
 
     provides:
         OracleQueryCompleted(oracle, session, usage, query_cost)
-        OracleQueryEndedWithoutResult(oracle, session)
+        OracleQueryCostUnreported(oracle, session)
         TurnPolicyDecided(session, decision, message, reasoning)
 
     contracts:
@@ -1621,5 +1629,7 @@ contract StructuredOutputParse {
         -- the SDK's cost estimate for that query. Every attempt reports its
         -- usage and cost to the caller's accounting, whether or not its
         -- output passes validation; an attempt that ends without a result
-        -- message reports that its cost is unknown.
+        -- message, or whose result is an error subtype carrying a zero
+        -- total_cost_usd (the SDK may zero a crash or startup-error
+        -- result's figures), reports that its cost is unknown.
 }
