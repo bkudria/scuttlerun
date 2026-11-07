@@ -24,7 +24,7 @@ A YAML file describes **intent, not reproduction**. Given LLM non-determinism, e
 
 ## Headless, Isolated Operation
 
-scuttlerun is fully headless — no human intervention required during a session. This is equally about **enabling automation** (batch runs, CI) and **protecting the host system** (the agent operates in an isolated temp directory, not your real filesystem).
+scuttlerun is fully headless — no human intervention required during a session. This is equally about **enabling automation** (batch runs, CI) and **protecting the host system** (the agent works in a fresh temp directory, and by default its shell commands run in an OS sandbox that keeps their writes off your real filesystem; the file tools sit outside that boundary, as below).
 
 Project directories are preserved after each session so artifacts remain available for inspection. At the start of each session, scuttlerun garbage-collects its own project directories in `$TMPDIR` that are older than 7 days (matching the `scuttlerun-project-` prefix); recent artifacts are never touched.
 
