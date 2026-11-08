@@ -15,25 +15,6 @@ Entries are not ordered by priority.
 
 ## Decided, not yet built
 
-- **Hook events become transcript entries, on by default.** Decided
-  2026-11-04. The SDK's `includeHookEvents` option emits `hook_started` and
-  `hook_response` system messages; the runner passes neither it nor `hooks`,
-  so settings-defined hooks are invisible to the judge, and pincenez's grader
-  prompt tells it hooks never appear. A fabrica check for a line a hook adds
-  as context graded 0 of 3 while the raw JSONL held it three times;
-  craboodle's hook-and-settings example cannot pass today. Shape: set
-  `includeHookEvents: true` unconditionally (no `observe:` knob), handle the
-  `system/hook_response` branch in the message loop (hook_started adds nothing
-  a grader needs), and write
-  `- hook: {event, name, outcome, exit_code, stdout, stderr}` under one cap
-  shared with tool results. Spike first that
-  settings shell hooks surface stdout, including PostToolUse
-  additionalContext, under bypassPermissions — the docs say hook_response may
-  appear only for background hooks. `hook_name` arrives as `Event:matcher`.
-  The transcript legend makes the new entry kind a one-repo change: a line
-  under `entries`, and hooks leave `not recorded`. Until hook entries land,
-  craboodle's example keeps its interim fix. No in-process observer hooks: they would
-  duplicate `tool:` entries.
 - **Non-Goals section: no tmux or PTY driver.** Decided 2026-11-04. README's
   See Also promises non-goals that GOALS.md does not have. Write them:
   scuttlerun observes the SDK stream, headless and sandboxed; a tmux-driven
@@ -92,7 +73,7 @@ Entries are not ordered by priority.
   plus updatedInput skipping the dialog) only from the child's JSONL, and the
   hook-deny reason as the model sees it ("PreToolUse:AskUserQuestion hook
   error: …") only from the screen. Shape: `- result: {tool, is_error, text}`
-  keyed by tool_use_id, under the single cap the hook entries use. Width,
+  keyed by tool_use_id, under the 4000-character cap hook entries use. Width,
   open and leaning to the middle: error results only; error results plus the
   decision-bearing tools, AskUserQuestion's `tool_use_result` (the post-hook
   question text, so a check about "the question the human saw" grades against
@@ -127,14 +108,6 @@ Entries are not ordered by priority.
   current release emits and record the answer in CLAUDE.md; no routing, since
   the kind union is open and fails closed, and a fourth oracle schema family
   strains fewer concepts.
-- **Retire the stale hook caveat.** CLAUDE.md's note that PreToolUse hooks do
-  not work came from a spike about answering AskUserQuestion from a hook, not
-  about hooks firing; reword it to that finding. Settings-defined hooks fire
-  under the TypeScript SDK (fabrica's suite registers three through
-  `project.settings` and every scenario passed with them active); scope the
-  statement to that SDK. The matching "may not fire in all Agent SDK modes"
-  text in craboodle's example and the claude-code-evals reference is tracked
-  in craboodle's IDEAS.md.
 
 ## Synthetic user
 

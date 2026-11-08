@@ -22,3 +22,20 @@ export function unregisteredSlashCommand(prompt: string, registered: string[]): 
   const command = match[1];
   return registered.includes(command) ? null : command;
 }
+
+/**
+ * The stderr warning for a prompt whose leading slash command is not
+ * registered, or null when there is nothing to warn about.
+ */
+export function unresolvedSlashCommandWarning(prompt: string, registered: string[]): string | null {
+  const command = unregisteredSlashCommand(prompt, registered);
+  if (!command) return null;
+  const sorted = registered.slice().sort();
+  return (
+    `[scuttlerun] WARNING: prompt begins with slash command "/${command}" ` +
+    `which is not registered in this session, so the agent will receive it as literal ` +
+    `text and likely do nothing. Load the defining skill/plugin via project.skills, ` +
+    `project.plugins, or sdk.plugins. Registered slash commands: ` +
+    `${sorted.join(', ') || '(none)'}\n`
+  );
+}
