@@ -163,6 +163,13 @@ function describeToolFields(rule: ToolFieldRule): string {
 }
 
 const OUTPUT_CAP_CHARS = 4000;
+const RESULT_EDGE_CHARS = OUTPUT_CAP_CHARS / 2;
+
+const RESULT_RECORDED_TOOLS = ['Bash', 'AskUserQuestion', 'ExitPlanMode'];
+
+export function recordsResult(tool: string, isError: boolean): boolean {
+  return isError || RESULT_RECORDED_TOOLS.includes(tool);
+}
 
 export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
   entries: {
@@ -213,6 +220,14 @@ function capOutput(text: string): string {
   return `${text.slice(0, OUTPUT_CAP_CHARS)}\n… [${rest} more characters; the session log has the full output]`;
 }
 
+function capHeadAndTail(text: string): string {
+  if (text.length <= OUTPUT_CAP_CHARS) return text;
+  const omitted = text.length - OUTPUT_CAP_CHARS;
+  const head = text.slice(0, RESULT_EDGE_CHARS);
+  const tail = text.slice(-RESULT_EDGE_CHARS);
+  return `${head}\n… [${omitted} characters omitted; see the session log or its subagents/] …\n${tail}`;
+}
+
 // The fields of the SDK's hook_response message that an entry keeps.
 export interface HookResponse {
   hook_name: string;
@@ -227,6 +242,30 @@ export function writeHook(hook: HookResponse): void {
   if (hook.exit_code !== undefined) entry.exit_code = hook.exit_code;
   if (hook.stdout) entry.stdout = capOutput(hook.stdout);
   if (hook.stderr) entry.stderr = capOutput(hook.stderr);
+  writeEntry(entry);
+}
+
+export interface AskedQuestion {
+  question: string;
+  options: string[];
+}
+
+export interface ToolResult {
+  tool: string;
+  id: number;
+  isError: boolean;
+  text: string;
+  questions?: AskedQuestion[];
+}
+
+export function writeResult(result: ToolResult): void {
+  const entry: Record<string, unknown> = {
+    result: result.tool,
+    id: result.id,
+    is_error: result.isError,
+  };
+  if (result.questions) entry.questions = result.questions;
+  if (result.text) entry.text = capHeadAndTail(result.text);
   writeEntry(entry);
 }
 

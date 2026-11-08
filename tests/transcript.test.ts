@@ -7,6 +7,8 @@ import {
   writeAssistant,
   writeTool,
   writeHook,
+  writeResult,
+  recordsResult,
   writeOracleAsk,
   writeOracleTurn,
   writeOracleError,
@@ -322,6 +324,65 @@ describe('transcript', () => {
     it('handles missing pattern in Glob', () => {
       writeTool('Glob', {}, 1);
       expect(output).toContain('pattern:');
+    });
+  });
+
+  describe('writeResult', () => {
+    function entry(): Record<string, unknown> {
+      return parseYaml('conversation:\n' + output).conversation[0];
+    }
+
+    it('writes the tool name, id, is_error and text', () => {
+      writeResult({ tool: 'Bash', id: 2, isError: true, text: 'Exit code 3\nspike-err' });
+      expect(Object.keys(entry())).toEqual(['result', 'id', 'is_error', 'text']);
+      expect(entry()).toEqual({
+        result: 'Bash',
+        id: 2,
+        is_error: true,
+        text: 'Exit code 3\nspike-err',
+      });
+    });
+
+    it('omits text when the result has none', () => {
+      writeResult({ tool: 'Bash', id: 1, isError: false, text: '' });
+      expect(entry()).toEqual({ result: 'Bash', id: 1, is_error: false });
+    });
+
+    it('keeps the first and last 2000 characters of a long text and says how many characters it cut between them', () => {
+      const head = 'a'.repeat(2000);
+      const tail = 'z'.repeat(2000);
+      writeResult({ tool: 'Bash', id: 1, isError: false, text: head + 'm'.repeat(1234) + tail });
+      expect(entry().text).toBe(
+        `${head}\n… [1234 characters omitted; see the session log or its subagents/] …\n${tail}`,
+      );
+
+      output = '';
+      const whole = 'b'.repeat(4000);
+      writeResult({ tool: 'Bash', id: 1, isError: false, text: whole });
+      expect(entry().text).toBe(whole);
+    });
+
+    it('lists AskUserQuestion questions with their option labels, between is_error and text', () => {
+      writeResult({
+        tool: 'AskUserQuestion',
+        id: 4,
+        isError: false,
+        questions: [{ question: 'Which color?', options: ['Red', 'Blue'] }],
+        text: 'Your questions have been answered.',
+      });
+      expect(Object.keys(entry())).toEqual(['result', 'id', 'is_error', 'questions', 'text']);
+      expect(entry().questions).toEqual([{ question: 'Which color?', options: ['Red', 'Blue'] }]);
+    });
+  });
+
+  describe('recordsResult', () => {
+    it('records error results of every tool and every result of Bash, AskUserQuestion and ExitPlanMode', () => {
+      expect(recordsResult('Read', true)).toBe(true);
+      expect(recordsResult('Read', false)).toBe(false);
+      expect(recordsResult('mcp__x__y', true)).toBe(true);
+      expect(recordsResult('Bash', false)).toBe(true);
+      expect(recordsResult('AskUserQuestion', false)).toBe(true);
+      expect(recordsResult('ExitPlanMode', false)).toBe(true);
     });
   });
 
