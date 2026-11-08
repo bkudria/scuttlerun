@@ -348,13 +348,13 @@ describe('transcript', () => {
     }
 
     it('writes the tool name, id, is_error and text', () => {
-      writeResult({ tool: 'Bash', id: 2, isError: true, text: 'Exit code 3\nspike-err' });
+      writeResult({ tool: 'Bash', id: 2, isError: true, text: 'Exit code 3\nboom' });
       expect(Object.keys(entry())).toEqual(['result', 'id', 'is_error', 'text']);
       expect(entry()).toEqual({
         result: 'Bash',
         id: 2,
         is_error: true,
-        text: 'Exit code 3\nspike-err',
+        text: 'Exit code 3\nboom',
       });
     });
 

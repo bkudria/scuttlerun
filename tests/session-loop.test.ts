@@ -140,10 +140,10 @@ describe('handleMessage', () => {
       await handleMessage(assistantToolUse('toolu_s', 'Bash', { command: 'echo ok' }), state);
       await handleMessage(
         toolResultMessage(
-          [{ type: 'tool_result', tool_use_id: 'toolu_s', is_error: false, content: 'spike-ok' }],
+          [{ type: 'tool_result', tool_use_id: 'toolu_s', is_error: false, content: 'ok' }],
           {
             tool_use_result: {
-              stdout: 'spike-ok',
+              stdout: 'ok',
               stderr: '',
               interrupted: false,
               isImage: false,
@@ -158,7 +158,7 @@ describe('handleMessage', () => {
         result: 'Bash',
         id: 1,
         is_error: false,
-        text: 'spike-ok',
+        text: 'ok',
       });
     });
 
