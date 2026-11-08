@@ -154,7 +154,9 @@ Examples:
 
 Output:
   scuttlerun streams a transcript to stdout including user messages, assistant
-  responses, tool calls, thinking blocks, and oracle decisions.
+  responses, tool calls with their ids, tool results (errors, and every Bash,
+  AskUserQuestion and ExitPlanMode result), hook runs, thinking blocks, and
+  oracle decisions.
 
   Before the transcript: config file paths, project dir, SDK transcript path,
   and a legend explaining what each entry records (--dry-run prints it too).

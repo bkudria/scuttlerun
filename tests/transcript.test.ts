@@ -47,7 +47,7 @@ describe('transcript', () => {
       expect(output).toContain('conversation:\n');
     });
 
-    it('writes a legend after transcript describing every entry kind, tool field and footer flag', () => {
+    it('writes a legend after transcript describing the header keys, every entry kind, tool field and footer flag', () => {
       writeHeader({
         session: 'abc-123',
         configPaths: ['/path/to/session.yaml'],
@@ -63,12 +63,26 @@ describe('transcript', () => {
         'legend',
         'conversation',
       ]);
+      expect(Object.keys(parsed.legend)).toEqual([
+        'header',
+        'entries',
+        'tool fields',
+        'not recorded',
+        'footer',
+      ]);
       expect(parsed.legend).toEqual({
+        header: {
+          project: 'the directory the agent worked in; files it wrote are there',
+          transcript:
+            "the session log, Claude Code's own record of the session with every tool input and result; a subagent's calls are under subagents/ in the session-named directory beside it",
+        },
         entries: {
           user: 'a synthetic-user message; the first is the scenario prompt, any leading slash command included',
           assistant: "the agent's reply text",
           thinking: "the agent's thinking text",
-          tool: 'a tool call the agent requested, with only the fields under tool fields; whether it ran or failed is not shown, but hook entries after it show how any hooks responded',
+          tool: "a tool call the agent requested, a subagent's included: id, its number among this transcript's tool entries, then only the fields under tool fields; hook entries after it show how any hooks responded",
+          result:
+            'how a tool call ended, linked to its tool entry by id: is_error (true when the call failed or was blocked) and text, what the agent was shown, with long lines wrapped and cut to its first and last 2000 characters when longer than 4000; AskUserQuestion results also list the questions as answered, after any hook rewrote them, with option labels only. Written for every Bash, AskUserQuestion and ExitPlanMode call and for any call that returned an error, including errors the agent later recovered from, so an error result alone does not mean the task failed; a call cut short by a timeout or interrupt may have no result',
           hook: "a hook that ran: its event and matcher, outcome, exit_code, and stdout and stderr when non-empty, each cut to 4000 characters; outcome and exit_code are the hook's own, not the tool call's",
           oracle:
             "the synthetic user's decisions: ask_user (answers, reasoning), turn (decision, message, reasoning), error (reason)",
@@ -84,7 +98,8 @@ describe('transcript', () => {
           TaskList: 'no fields',
           'any other tool': 'input, the full input',
         },
-        'not recorded': "tool results; the session log at the header's transcript path has them",
+        'not recorded':
+          "results of other tools' calls that succeeded; the session log at the header's transcript path, or for a subagent's calls the subagents/ directory the header describes, has every result",
         footer: {
           cost_incomplete: 'some spend went unreported',
           transcript_incomplete: 'the session log is missing lines',

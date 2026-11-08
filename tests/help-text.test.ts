@@ -17,3 +17,10 @@ describe('HELP_TEXT sandbox scope', () => {
     expect(HELP_TEXT).toContain('blockWritesOutsideWorkingDirectories');
   });
 });
+
+describe('HELP_TEXT output', () => {
+  it('lists hook runs and tool results among what the transcript records', () => {
+    expect(HELP_TEXT).toMatch(/hook\s+runs/);
+    expect(HELP_TEXT).toMatch(/tool\s+results/);
+  });
+});
