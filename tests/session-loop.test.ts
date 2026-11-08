@@ -106,6 +106,26 @@ describe('handleMessage', () => {
       ]);
     });
 
+    it('still writes a later block of a message after skipping earlier ones', async () => {
+      await handleMessage(assistantToolUse('toolu_r', 'Read', { file_path: '/tmp/x' }), state);
+      await handleMessage(assistantToolUse('toolu_b', 'Bash', { command: 'b' }), state);
+      await handleMessage(
+        toolResultMessage([
+          { type: 'text', text: 'note' },
+          { type: 'tool_result', tool_use_id: 'toolu_unknown', is_error: true, content: 'x' },
+          { type: 'tool_result', tool_use_id: 'toolu_r', content: '1\talpha' },
+          { type: 'tool_result', tool_use_id: 'toolu_b', is_error: true, content: 'Exit code 1' },
+        ]),
+        state,
+      );
+
+      expect(conversation()).toEqual([
+        { tool: 'Read', id: 1, path: '/tmp/x' },
+        { tool: 'Bash', id: 2, command: 'b' },
+        { result: 'Bash', id: 2, is_error: true, text: 'Exit code 1' },
+      ]);
+    });
+
     it('skips a successful Read result, whose block has no is_error key', async () => {
       await handleMessage(assistantToolUse('toolu_r', 'Read', { file_path: '/tmp/x' }), state);
       await handleMessage(
@@ -219,6 +239,24 @@ describe('handleMessage', () => {
         is_error: false,
         questions: [{ question: 'Rewritten?', options: ['Red', 'Blue'] }],
         text: answered,
+      });
+    });
+
+    it('lists questions only on AskUserQuestion results', async () => {
+      await handleMessage(assistantToolUse('toolu_b', 'Bash', { command: 'b' }), state);
+      await handleMessage(
+        toolResultMessage(
+          [{ type: 'tool_result', tool_use_id: 'toolu_b', is_error: true, content: 'Exit code 1' }],
+          { tool_use_result: { questions: [{ question: 'Q?', options: [{ label: 'A' }] }] } },
+        ),
+        state,
+      );
+
+      expect(conversation()[1]).toEqual({
+        result: 'Bash',
+        id: 1,
+        is_error: true,
+        text: 'Exit code 1',
       });
     });
 
