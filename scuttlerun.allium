@@ -1671,7 +1671,10 @@ surface StreamingTranscript {
         -- `hook:` carries the hook's event, followed by `:` and its
         -- matcher when it has one (`PreToolUse:Bash`,
         -- `SessionStart:startup`, `Stop`). `outcome` is success, error or
-        -- cancelled. `exit_code` appears when Claude Code reported one; a
+        -- cancelled. Both describe the hook, never the tool call it
+        -- answered: a PreToolUse hook runs before the call, so its
+        -- success says nothing about whether the call then succeeded.
+        -- `exit_code` appears when Claude Code reported one; a
         -- hook that blocks with exit code 2 shows `outcome: error`,
         -- `exit_code: 2` and its reason in `stderr`. `stdout` and
         -- `stderr` appear only when non-empty, each holding at most the

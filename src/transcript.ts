@@ -170,7 +170,7 @@ export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
     assistant: "the agent's reply text",
     thinking: "the agent's thinking text",
     tool: 'a tool call the agent requested, with only the fields under tool fields; whether it ran or failed is not shown, but hook entries after it show how any hooks responded',
-    hook: `a hook that ran: its event and matcher, outcome, exit_code, and stdout and stderr when non-empty, each cut to ${OUTPUT_CAP_CHARS} characters`,
+    hook: `a hook that ran: its event and matcher, outcome, exit_code, and stdout and stderr when non-empty, each cut to ${OUTPUT_CAP_CHARS} characters; outcome and exit_code are the hook's own, not the tool call's`,
     oracle:
       "the synthetic user's decisions: ask_user (answers, reasoning), turn (decision, message, reasoning), error (reason)",
   },
