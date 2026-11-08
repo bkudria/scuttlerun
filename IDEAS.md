@@ -236,6 +236,15 @@ entries (#103) on 2026-11-07. Entries are not ordered by priority.
   only through `runSession` in `tests/runner.test.ts`. Moving the
   option-shape assertions into `tests/sdk-options.test.ts` would make them
   pure (no mocked query stream) and shorten the runner suite.
+- **Build before `npm publish`.** The release workflow's publish job runs
+  `npm publish` right after `npm ci`, so `dist/` exists only once
+  `prepublishOnly` builds it. npm checks `bin` before that script runs: the
+  0.5.0 publish logged "No bin file found at dist/cli.js" and that
+  `bin[scuttlerun]` "was invalid and removed". The published tarball kept `bin`
+  and an executable `dist/cli.js` (checked by downloading it), so the warning
+  is noise today, but it would hide a real loss of the command if npm began
+  enforcing it. Shape: an `npm run build` step before `npm publish` in
+  `release-please.yml`.
 
 ## Decided against
 
