@@ -225,8 +225,8 @@ function handleAssistant(message: SDKAssistantMessage, state: SessionState): voi
         writeAssistant(block.text);
         textParts.push(block.text);
       } else if (block.type === 'tool_use' && block.name) {
-        writeTool(block.name, block.input);
-        state.toolCallCount++;
+        const id = ++state.toolCallCount;
+        writeTool(block.name, block.input, id);
         recordToolFile(block.name, block.input, state);
       }
     }

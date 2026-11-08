@@ -843,7 +843,7 @@ describe('runSession', () => {
       ]);
 
       expect(conversation.slice(1)).toEqual([
-        { tool: 'Bash', command: 'ls' },
+        { tool: 'Bash', id: 1, command: 'ls' },
         { hook: 'PreToolUse:Bash', outcome: 'success', exit_code: 0, stdout: 'checked\n' },
       ]);
     });

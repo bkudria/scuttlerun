@@ -162,55 +162,66 @@ describe('transcript', () => {
   });
 
   describe('writeTool', () => {
+    it('writes the call id right after the tool name', () => {
+      writeTool('Bash', { command: 'ls' }, 3);
+      const entry = parseYaml('conversation:\n' + output).conversation[0];
+      expect(Object.keys(entry)).toEqual(['tool', 'id', 'command']);
+      expect(entry.id).toBe(3);
+    });
+
     it('writes Read with path', () => {
-      writeTool('Read', { file_path: '/tmp/foo.txt' });
+      writeTool('Read', { file_path: '/tmp/foo.txt' }, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('Read');
       expect(parsed.conversation[0].path).toBe('/tmp/foo.txt');
     });
 
     it('writes Write with path', () => {
-      writeTool('Write', { file_path: '/tmp/foo.txt' });
+      writeTool('Write', { file_path: '/tmp/foo.txt' }, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('Write');
       expect(parsed.conversation[0].path).toBe('/tmp/foo.txt');
     });
 
     it('writes Edit with path', () => {
-      writeTool('Edit', { file_path: '/tmp/bar.ts' });
+      writeTool('Edit', { file_path: '/tmp/bar.ts' }, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('Edit');
       expect(parsed.conversation[0].path).toBe('/tmp/bar.ts');
     });
 
     it('writes Bash with command as block scalar', () => {
-      writeTool('Bash', { command: 'echo hello && pwd' });
+      writeTool('Bash', { command: 'echo hello && pwd' }, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('Bash');
       expect(parsed.conversation[0].command).toBe('echo hello && pwd');
     });
 
     it('writes Glob with single-quoted pattern', () => {
-      writeTool('Glob', { pattern: '**/*.ts' });
+      writeTool('Glob', { pattern: '**/*.ts' }, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('Glob');
       expect(parsed.conversation[0].pattern).toBe('**/*.ts');
     });
 
     it('writes Grep with single-quoted pattern', () => {
-      writeTool('Grep', { pattern: 'function\\s+\\w+' });
+      writeTool('Grep', { pattern: 'function\\s+\\w+' }, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('Grep');
       expect(parsed.conversation[0].pattern).toBe('function\\s+\\w+');
     });
 
     it('writes TodoWrite with todos array as top-level field', () => {
-      writeTool('TodoWrite', {
-        todos: [
-          { content: 'Fix math.py', status: 'in_progress', activeForm: 'Fixing math.py' },
-          { content: 'Fix util.py', status: 'pending', activeForm: 'Fixing util.py' },
-        ],
-      });
+      writeTool(
+        'TodoWrite',
+        {
+          todos: [
+            { content: 'Fix math.py', status: 'in_progress', activeForm: 'Fixing math.py' },
+            { content: 'Fix util.py', status: 'pending', activeForm: 'Fixing util.py' },
+          ],
+        },
+        1,
+      );
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('TodoWrite');
       expect(parsed.conversation[0].todos).toHaveLength(2);
@@ -220,15 +231,19 @@ describe('transcript', () => {
     });
 
     it('handles missing todos in TodoWrite gracefully', () => {
-      writeTool('TodoWrite', {});
+      writeTool('TodoWrite', {}, 1);
       expect(output).toContain('todos:');
     });
 
     it('writes TaskCreate with subject and description', () => {
-      writeTool('TaskCreate', {
-        subject: 'Fix math.py',
-        description: 'Replace the broken add() with the correct implementation',
-      });
+      writeTool(
+        'TaskCreate',
+        {
+          subject: 'Fix math.py',
+          description: 'Replace the broken add() with the correct implementation',
+        },
+        1,
+      );
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('TaskCreate');
       expect(parsed.conversation[0].subject).toBe('Fix math.py');
@@ -239,13 +254,13 @@ describe('transcript', () => {
     });
 
     it('handles missing TaskCreate fields gracefully', () => {
-      writeTool('TaskCreate', {});
+      writeTool('TaskCreate', {}, 1);
       expect(output).toContain('subject:');
       expect(output).toContain('description:');
     });
 
     it('writes TaskUpdate with task_id and status', () => {
-      writeTool('TaskUpdate', { taskId: 'task-42', status: 'in_progress' });
+      writeTool('TaskUpdate', { taskId: 'task-42', status: 'in_progress' }, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('TaskUpdate');
       expect(parsed.conversation[0].task_id).toBe('task-42');
@@ -254,7 +269,7 @@ describe('transcript', () => {
     });
 
     it('writes TaskUpdate without status when omitted', () => {
-      writeTool('TaskUpdate', { taskId: 'task-42' });
+      writeTool('TaskUpdate', { taskId: 'task-42' }, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('TaskUpdate');
       expect(parsed.conversation[0].task_id).toBe('task-42');
@@ -262,7 +277,7 @@ describe('transcript', () => {
     });
 
     it('writes TaskList with no extra fields', () => {
-      writeTool('TaskList', {});
+      writeTool('TaskList', {}, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('TaskList');
       expect(parsed.conversation[0].input).toBeUndefined();
@@ -270,7 +285,7 @@ describe('transcript', () => {
     });
 
     it('writes TaskGet with task_id', () => {
-      writeTool('TaskGet', { taskId: 'task-42' });
+      writeTool('TaskGet', { taskId: 'task-42' }, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('TaskGet');
       expect(parsed.conversation[0].task_id).toBe('task-42');
@@ -278,34 +293,34 @@ describe('transcript', () => {
     });
 
     it('writes unknown tools with input as YAML mapping', () => {
-      writeTool('Agent', { prompt: 'do something' });
+      writeTool('Agent', { prompt: 'do something' }, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].tool).toBe('Agent');
       expect(parsed.conversation[0].input.prompt).toBe('do something');
     });
 
     it('handles missing file_path in Read/Write/Edit', () => {
-      writeTool('Read', {});
+      writeTool('Read', {}, 1);
       expect(output).toContain('path:');
     });
 
     it('handles missing taskId in TaskUpdate', () => {
-      writeTool('TaskUpdate', {});
+      writeTool('TaskUpdate', {}, 1);
       expect(output).toContain('task_id:');
     });
 
     it('handles missing taskId in TaskGet', () => {
-      writeTool('TaskGet', {});
+      writeTool('TaskGet', {}, 1);
       expect(output).toContain('task_id:');
     });
 
     it('handles missing command in Bash', () => {
-      writeTool('Bash', {});
+      writeTool('Bash', {}, 1);
       expect(output).toContain('command:');
     });
 
     it('handles missing pattern in Glob', () => {
-      writeTool('Glob', {});
+      writeTool('Glob', {}, 1);
       expect(output).toContain('pattern:');
     });
   });
@@ -751,7 +766,7 @@ describe('transcript', () => {
 
     it('leaves unbreakable strings (no whitespace) unwrapped', () => {
       const blob = 'a'.repeat(200);
-      writeTool('Bash', { command: blob });
+      writeTool('Bash', { command: blob }, 1);
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].command).toBe(blob);
     });

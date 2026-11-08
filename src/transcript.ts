@@ -188,9 +188,9 @@ export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
   },
 };
 
-export function writeTool(name: string, input: unknown): void {
+export function writeTool(name: string, input: unknown, id: number): void {
   const inp = input as Record<string, unknown>;
-  const entry: Record<string, unknown> = { tool: name };
+  const entry: Record<string, unknown> = { tool: name, id };
   const rule = TOOL_FIELD_RULES.find((r) => r.tools.includes(name));
 
   if (!rule) {
