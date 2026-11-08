@@ -1,46 +1,17 @@
-import {
-  query,
-  type SDKResultMessage,
-  type SDKStartupFailureReason,
-} from '@anthropic-ai/claude-agent-sdk';
-import { mkdirSync, realpathSync } from 'node:fs';
+import { query } from '@anthropic-ai/claude-agent-sdk';
+import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { linkOauthCredentialIntoSandbox, sandboxCredentialWarning } from './sandbox.js';
 import { buildAuthEnv, detectSubscriptionCredentials } from './auth.js';
-import { unresolvedSlashCommandWarning } from './slash-command.js';
-import {
-  lostThisSessionsTranscript,
-  startupFailureHint,
-  transcriptLostWarning,
-} from './sdk-diagnostics.js';
 import { type SessionConfig, DEFAULT_SESSION_TIMEOUT_SECONDS } from './config.js';
-import { Oracle, AskUserQuestionInputSchema } from './oracle.js';
-import { SyntheticUser } from './synthetic-user.js';
+import { Oracle } from './oracle.js';
 import { scaffoldProject, createProjectDir } from './project.js';
 import { buildSdkOptions } from './sdk-options.js';
 import { cleanOldProjects, WORKSPACE_CLEANUP_AGE_DAYS } from './cleanup.js';
-import {
-  EXIT_SUCCESS,
-  EXIT_RUNTIME_ERROR,
-  EXIT_BUDGET_EXCEEDED,
-  EXIT_TIMEOUT,
-  EXIT_MAX_TURNS,
-  EXIT_SIGINT,
-} from './exit-codes.js';
-import {
-  writeHeader,
-  writeUser,
-  writeThinking,
-  writeAssistant,
-  writeTool,
-  writeHook,
-  type HookResponse,
-  writeOracleAsk,
-  writeOracleTurn,
-  writeOracleError,
-  writeFooter,
-} from './transcript.js';
+import { EXIT_RUNTIME_ERROR, EXIT_TIMEOUT, EXIT_SIGINT } from './exit-codes.js';
+import { writeFooter } from './transcript.js';
+import { canUseTool, handleMessage, inputMessages, newSessionState } from './session-loop.js';
 
 export interface RunResult {
   exitCode: number;
@@ -79,7 +50,6 @@ export async function runSession(
   // Clean old project directories in the background; best-effort, not on the critical path.
   cleanOldProjects(WORKSPACE_CLEANUP_AGE_DAYS, { verbose }).catch(() => {});
 
-  let sessionId: string | undefined;
   let queryHandle: ReturnType<typeof query> | undefined;
 
   // Always create a project directory
@@ -151,60 +121,17 @@ export async function runSession(
   }
 
   // Track stats
-  let toolCallCount = 0;
-  let exitCode: number = EXIT_SUCCESS;
-  let oracleFailed = false;
+  const state = newSessionState({
+    config,
+    configPaths: options.configPaths || [],
+    projectDir,
+    sandboxHome,
+    claudeDir,
+    oracle,
+  });
   const startTime = Date.now();
-  let resultNumTurns = 0;
-  let resultTotalCostUsd = 0;
-  // Tracks whether the in-flight turn produced an SDK result. Reset when a
-  // continuation turn is dispatched, so a crash after an earlier turn's result
-  // still marks the agent cost incomplete. The SDK only reports a dollar total
-  // on the result message, so without one the turn's spend is unknown.
-  let resultArrived = false;
-  let transcriptIncomplete = false;
-  let sdkSessionPath: string | undefined;
-  const filesWritten = new Set<string>();
-  const filesEdited = new Set<string>();
-  const filesRead = new Set<string>();
 
   try {
-    // Build the async generator for multi-turn input
-    type SyntheticAction = { type: 'continue'; message: string } | { type: 'end' };
-    let resolveNextAction: ((action: SyntheticAction) => void) | undefined;
-
-    async function* inputGenerator() {
-      // Yield initial prompt
-      yield {
-        type: 'user' as const,
-        session_id: '',
-        message: {
-          role: 'user' as const,
-          content: [{ type: 'text' as const, text: config.prompt }],
-        },
-        parent_tool_use_id: null,
-      };
-
-      // Multi-turn loop
-      while (true) {
-        const action = await new Promise<SyntheticAction>((resolve) => {
-          resolveNextAction = resolve;
-        });
-        if (action.type === 'end') {
-          return;
-        }
-        yield {
-          type: 'user' as const,
-          session_id: '',
-          message: {
-            role: 'user' as const,
-            content: [{ type: 'text' as const, text: action.message }],
-          },
-          parent_tool_use_id: null,
-        };
-      }
-    }
-
     const sdkOptions = buildSdkOptions(config, options, {
       cwd,
       sandboxHome,
@@ -215,34 +142,7 @@ export async function runSession(
       agentPrefersSubscription,
     });
 
-    // Create a lazy SyntheticUser — initialized once we have a session ID
-    let syntheticUser: SyntheticUser | undefined;
-
-    // canUseTool callback. The Agent SDK's PermissionResult schema requires
-    // `updatedInput` on the allow branch and `message` on the deny branch;
-    // returning a bare `{ behavior }` triggers a ZodError for every tool call.
-    sdkOptions.canUseTool = async (toolName: string, input: Record<string, unknown>) => {
-      if (toolName === 'AskUserQuestion' && syntheticUser) {
-        const parsed = AskUserQuestionInputSchema.safeParse(input);
-        if (!parsed.success) {
-          return { behavior: 'deny', message: 'AskUserQuestion input failed schema validation' };
-        }
-        try {
-          const result = await syntheticUser.handleAskUserQuestion(parsed.data);
-          writeOracleAsk(result.oracleResponse.answers, result.oracleResponse.reasoning);
-          return {
-            behavior: result.behavior,
-            updatedInput: result.updatedInput,
-          };
-        } catch (err) {
-          oracleFailed = true;
-          writeOracleError(err instanceof Error ? err.message : String(err));
-          abortController.abort();
-          return { behavior: 'deny', message: 'Synthetic-user oracle aborted with an error' };
-        }
-      }
-      return { behavior: 'allow', updatedInput: input };
-    };
+    sdkOptions.canUseTool = canUseTool(state, abortController);
 
     // Start timeout
     timeoutHandle = setTimeout(() => {
@@ -251,129 +151,34 @@ export async function runSession(
       queryHandle?.interrupt().catch(() => {});
     }, timeoutSeconds * 1000);
 
-    // SessionStart and first-prompt hooks fire before init, so their entries
-    // wait for the header and the prompt's own entry.
-    const hooksBeforeInit: HookResponse[] = [];
-
     // Launch the query
     queryHandle = query({
-      prompt: inputGenerator(),
+      prompt: inputMessages(state),
       options: sdkOptions,
     });
 
     for await (const message of queryHandle) {
       if (timedOut) break;
       if (signaled) break;
-
-      if (message.type === 'system' && message.subtype === 'init' && !sessionId) {
-        sessionId = message.session_id;
-
-        const slashWarning = unresolvedSlashCommandWarning(
-          config.prompt,
-          message.slash_commands ?? [],
-        );
-        if (slashWarning) process.stderr.write(slashWarning);
-
-        syntheticUser = new SyntheticUser(oracle, config.user, config.prompt);
-
-        // Write YAML header and first user message
-        sdkSessionPath = buildSdkSessionPath(cwd, sessionId, sandboxHome, claudeDir);
-        writeHeader({
-          session: sessionId,
-          configPaths: options.configPaths || [],
-          projectDir,
-          transcriptPath: sdkSessionPath,
-        });
-        writeUser(config.prompt);
-        hooksBeforeInit.forEach(writeHook);
-
-        // Add initial prompt to conversation buffer
-        syntheticUser.addUserMessage(config.prompt);
-      } else if (message.type === 'system' && message.subtype === 'hook_response') {
-        if (sessionId) writeHook(message);
-        else hooksBeforeInit.push(message);
-      } else if (message.type === 'system' && message.subtype === 'session_writes_lost') {
-        if (lostThisSessionsTranscript(message, sessionId)) {
-          transcriptIncomplete = true;
-          process.stderr.write(transcriptLostWarning(message, sdkSessionPath));
-        }
-      } else if (message.type === 'assistant') {
-        const content = message.message?.content;
-        if (content && Array.isArray(content)) {
-          const textParts: string[] = [];
-          for (const block of content) {
-            if (block.type === 'thinking' && block.thinking) {
-              writeThinking(block.thinking);
-            } else if (block.type === 'text' && block.text) {
-              writeAssistant(block.text);
-              textParts.push(block.text);
-            } else if (block.type === 'tool_use' && block.name) {
-              writeTool(block.name, block.input);
-              toolCallCount++;
-              recordToolFile(block.name, block.input, {
-                written: filesWritten,
-                edited: filesEdited,
-                read: filesRead,
-              });
-            }
-          }
-          if (textParts.length > 0 && syntheticUser) {
-            syntheticUser.addAssistantMessage(textParts.join('\n'));
-          }
-        }
-      } else if (message.type === 'result') {
-        const subtype = message.subtype;
-        resultArrived = true;
-
-        // Extract stats from result
-        resultNumTurns = message.num_turns || 0;
-        resultTotalCostUsd = message.total_cost_usd || 0;
-
-        if (subtype === 'success' && syntheticUser) {
-          // Consult turn policy
-          const decision = await syntheticUser.decideTurn();
-
-          // Write oracle turn policy decision only when the oracle was
-          // actually consulted. Cap-driven short-circuits (max_turns=0
-          // or userTurnCount>=cap) leave reasoning undefined and emit
-          // no transcript entry, per spec rule TurnPolicyEndsByCap.
-          if (decision.reasoning !== undefined) {
-            writeOracleTurn(decision.decision, decision.message, decision.reasoning);
-          }
-
-          if (decision.decision === 'continue' && decision.message) {
-            syntheticUser.addUserMessage(decision.message);
-            writeUser(decision.message);
-            // A new turn is now in flight; its result has not arrived yet.
-            resultArrived = false;
-            resolveNextAction?.({ type: 'continue', message: decision.message });
-          } else {
-            resolveNextAction?.({ type: 'end' });
-            exitCode = EXIT_SUCCESS;
-          }
-        } else {
-          resolveNextAction?.({ type: 'end' });
-          exitCode = exitCodeForUnfinishedResult(message, config.sandbox.enabled);
-        }
-      }
+      await handleMessage(message, state);
     }
 
     // Check for timeout
     if (timedOut) {
       process.stderr.write(`[scuttlerun] timed out after ${timeoutSeconds}s\n`);
-      exitCode = EXIT_TIMEOUT;
+      state.exitCode = EXIT_TIMEOUT;
     } else if (signaled) {
-      exitCode = EXIT_SIGINT;
-    } else if (oracleFailed) {
-      exitCode = EXIT_RUNTIME_ERROR;
+      state.exitCode = EXIT_SIGINT;
+    } else if (state.oracleFailed) {
+      state.exitCode = EXIT_RUNTIME_ERROR;
     }
   } catch (err) {
     if (timedOut) {
       process.stderr.write(`[scuttlerun] timed out after ${timeoutSeconds}s\n`);
-      exitCode = EXIT_TIMEOUT;
-    } else if (signaled) exitCode = EXIT_SIGINT;
+      state.exitCode = EXIT_TIMEOUT;
+    } else if (signaled) state.exitCode = EXIT_SIGINT;
     else {
-      exitCode = EXIT_RUNTIME_ERROR;
+      state.exitCode = EXIT_RUNTIME_ERROR;
       // Surface the exception that escaped the message loop as a diagnostic
       // annotation paired with the runtime-error exit code (spec rule
       // SessionFailsFromUncaughtException). Informational only.
@@ -388,17 +193,17 @@ export async function runSession(
       const duration = Date.now() - startTime;
       const oracleUsage = oracle.getTotalUsage();
       writeFooter({
-        turns: resultNumTurns,
-        toolCalls: toolCallCount,
+        turns: state.resultNumTurns,
+        toolCalls: state.toolCallCount,
         durationMs: duration,
-        totalCostUsd: resultTotalCostUsd + oracleUsage.cost_usd,
-        costIncomplete: !resultArrived || oracle.hasUnknownCost(),
-        transcriptIncomplete,
+        totalCostUsd: state.resultTotalCostUsd + oracleUsage.cost_usd,
+        costIncomplete: !state.resultArrived || oracle.hasUnknownCost(),
+        transcriptIncomplete: state.transcriptIncomplete,
         oracleCostUsd: oracleUsage.cost_usd,
         timedOut,
-        filesWritten: Array.from(filesWritten),
-        filesEdited: Array.from(filesEdited),
-        filesRead: Array.from(filesRead),
+        filesWritten: Array.from(state.filesWritten),
+        filesEdited: Array.from(state.filesEdited),
+        filesRead: Array.from(state.filesRead),
         oracleUsage,
       });
     } finally {
@@ -411,71 +216,5 @@ export async function runSession(
     }
   }
 
-  return { exitCode, sessionId };
-}
-
-// Covers error subtypes, and a success result that arrives before init (no
-// synthetic user to consult), which can only end the session as a failure.
-function exitCodeForUnfinishedResult(message: SDKResultMessage, sandboxEnabled: boolean): number {
-  if (message.subtype === 'error_max_turns') return EXIT_MAX_TURNS;
-  if (message.subtype === 'error_max_budget_usd') return EXIT_BUDGET_EXCEEDED;
-  if ((message as { terminal_reason?: string }).terminal_reason === 'max_turns') {
-    // The turn cap was reached mid-execution: a tool/skill call was accepted
-    // as the Nth tool use, then the next model turn could not start. The SDK
-    // reports error_during_execution but attributes the cause via
-    // terminal_reason = max_turns, so the same logical condition as
-    // error_max_turns yields the same exit code regardless of where in the
-    // tool-call lifecycle the cap fired (spec rule
-    // AgentTurnHitsTurnCapDuringExecution).
-    return EXIT_MAX_TURNS;
-  }
-  // Surface the SDK's error detail as a diagnostic annotation paired with the
-  // runtime-error exit code (spec rule AgentTurnFailsAtRuntime). Informational
-  // only; downstream tools should not parse it.
-  const sdkErrors = (message as { errors?: string[] }).errors;
-  if (sdkErrors && sdkErrors.length > 0) {
-    process.stderr.write(`[scuttlerun] ${sdkErrors.join('\n')}\n`);
-  }
-  const hint = startupFailureHint(
-    (message as { startup_failure_reason?: SDKStartupFailureReason }).startup_failure_reason,
-    sandboxEnabled,
-  );
-  if (hint) process.stderr.write(hint);
-  return EXIT_RUNTIME_ERROR;
-}
-
-// BetaToolUseBlock.input is typed `unknown` by the SDK because tool input shapes
-// are user-defined. We only read file_path for the built-in Read/Write/Edit tools.
-function recordToolFile(
-  name: string,
-  input: unknown,
-  files: { written: Set<string>; edited: Set<string>; read: Set<string> },
-): void {
-  const inp = input as Record<string, unknown>;
-  if (typeof inp.file_path !== 'string') return;
-  if (name === 'Write') files.written.add(inp.file_path);
-  if (name === 'Edit') files.edited.add(inp.file_path);
-  if (name === 'Read') files.read.add(inp.file_path);
-}
-
-function buildSdkSessionPath(
-  cwd: string,
-  sessionId: string,
-  sandboxHome?: string,
-  claudeDir?: string,
-): string {
-  const home = sandboxHome || process.env.HOME;
-  if (!home && !claudeDir) {
-    throw new Error(
-      'Cannot locate SDK session file: HOME is not set. scuttlerun requires HOME to be set when sandbox is disabled.',
-    );
-  }
-  let resolved: string;
-  try {
-    resolved = realpathSync(cwd);
-  } catch {
-    resolved = cwd;
-  }
-  const encodedCwd = resolved.replace(/[/_]/g, '-');
-  return `${claudeDir ?? `${home}/.claude`}/projects/${encodedCwd}/${sessionId}.jsonl`;
+  return { exitCode: state.exitCode, sessionId: state.sessionId };
 }
