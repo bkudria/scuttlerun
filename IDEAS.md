@@ -127,6 +127,17 @@ priority.
   policy decision can then rest on a subagent's words. Shape, if that
   misleads the oracle: skip messages with `parent_tool_use_id` set when
   building the oracle context, and consider marking their entries.
+- **Backgrounded Bash outcomes.** A Bash command run with
+  `run_in_background`, or moved to the background when it outran its
+  timeout, returns a placeholder result ("Command running in background with
+  ID: …", `is_error: false`), so its result entry says nothing about how the
+  command ended. The SDK reports the end later as a `system`
+  `task_notification` carrying `tool_use_id`, `status` (completed, failed or
+  stopped) and `summary`; the session loop ignores it. Shape: when its
+  `tool_use_id` names a recorded call, write a second result entry with that
+  id, `is_error` true for `failed`, and the summary as `text`. Unverified
+  whether a headless session reaches the notification before its result
+  ends the turn.
 
 ## Synthetic user
 

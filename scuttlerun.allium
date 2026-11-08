@@ -1717,7 +1717,11 @@ surface StreamingTranscript {
         -- config.tools_with_recorded_results, success included. An error
         -- the agent later recovered from is still written, so an error
         -- result alone does not mean the task failed. A call cut short by
-        -- a timeout or interrupt may have no result.
+        -- a timeout or interrupt may have no result. A Bash command moved
+        -- to the background, because it asked to run there or outran its
+        -- timeout, reports only that it started: its result says nothing
+        -- about how the command ended, and the outcome Claude Code
+        -- reports later is not recorded.
         --
         -- Its fields, in order: `result` (the tool name), `id` (the id of
         -- the tool entry it reports), `is_error` (always present, true
