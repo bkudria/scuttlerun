@@ -165,7 +165,7 @@ function describeToolFields(rule: ToolFieldRule): string {
 const OUTPUT_CAP_CHARS = 4000;
 const RESULT_EDGE_CHARS = OUTPUT_CAP_CHARS / 2;
 
-const RESULT_RECORDED_TOOLS = ['Bash', 'AskUserQuestion', 'ExitPlanMode'];
+export const RESULT_RECORDED_TOOLS = ['Bash', 'AskUserQuestion', 'ExitPlanMode'];
 
 export function recordsResult(tool: string, isError: boolean): boolean {
   return isError || RESULT_RECORDED_TOOLS.includes(tool);

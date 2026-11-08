@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { HELP_TEXT } from '../src/help-text.js';
+import { RESULT_RECORDED_TOOLS } from '../src/transcript.js';
 
 describe('HELP_TEXT exit codes', () => {
   it('notes that a mid-run budget exhaustion can surface as code 2, not only code 5', () => {
@@ -22,5 +23,12 @@ describe('HELP_TEXT output', () => {
   it('lists hook runs and tool results among what the transcript records', () => {
     expect(HELP_TEXT).toMatch(/hook\s+runs/);
     expect(HELP_TEXT).toMatch(/tool\s+results/);
+  });
+
+  it('names every tool whose every result the transcript records', () => {
+    const named = /tool results \(errors, and every ([^)]*) result\)/
+      .exec(HELP_TEXT.replace(/\s+/g, ' '))?.[1]
+      .split(/, | and /);
+    expect(named).toEqual(RESULT_RECORDED_TOOLS);
   });
 });
