@@ -12,8 +12,11 @@ ran the same day against what the transcript does and does not show. The
 Synthetic user, Isolation and sandbox, Cost and diagnostics, and Spec sections
 come from reviewing the Agent SDK 0.3.310 → 0.3.317 bump (#89) on 2026-11-07.
 The hook-entry follow-ups come from building hook entries (#103) on
-2026-11-07; the Code health entry comes from the 0.5.0 publish (#105).
-Entries are not ordered by priority.
+2026-11-07; the Code health entry comes from the 0.5.0 publish (#105). The
+result-entry follow-ups and the background-agent, plan-file and Bash edit
+diff findings come from a headless spike of CLI 2.1.317 (haiku-4-5) on
+2026-11-08 and from building result entries. Entries are not ordered by
+priority.
 
 ## Decided, not yet built
 
@@ -69,27 +72,6 @@ Entries are not ordered by priority.
   spanning the bump cannot tell from its transcripts which CLI produced which
   side. The init's `capabilities` list follows from the version, so recording
   the version is enough.
-- **Bounded tool results.** The runner loop has no `user` branch, so
-  tool_result blocks and the structured `tool_use_result` are dropped; the
-  probe read "The user did not answer the questions." (the outcome of allow
-  plus updatedInput skipping the dialog) only from the child's JSONL, and the
-  hook-deny reason as the model sees it ("PreToolUse:AskUserQuestion hook
-  error: …") only from the screen. Shape: `- result: {tool, is_error, text}`
-  keyed by tool_use_id, under the 4000-character cap hook entries use. Width,
-  open and leaning to the middle: error results only; error results plus the
-  decision-bearing tools, AskUserQuestion's `tool_use_result` (the post-hook
-  question text, so a check about "the question the human saw" grades against
-  the right text when a hook rewrote it) and ExitPlanMode's response; or a
-  full per-tool cap table including Bash heads. Bash, Read, Grep and Glob
-  stay in the JSONL by design (FullConversationInJsonl). Strains
-  "intentionally lossy": a cap is required or outputs balloon past
-  craboodle's 10 MB stdout buffer; judge cost rises with size; the judge now
-  sees error text the agent recovered from, so some negative checks need a
-  note. Demand seen since hook entries: grading a real run, the judge cited a
-  PreToolUse hook's `exit_code: 0` as proof that the Bash commit after it
-  succeeded. The legend now says a hook's outcome is its own, which stops
-  that misreading but leaves "did the call succeed?" ungradeable from the
-  transcript.
 - **Hook entries do not name their source.** `hook:` carries the SDK's
   `hook_name`, which is `Event:matcher` only. A settings hook and a plugin
   hook on the same event and matcher write identical names (a spike loading
@@ -106,13 +88,13 @@ Entries are not ordered by priority.
   existing failure line. Unverified whether a failing SessionStart hook can
   stop startup at all.
 - **Plan approval through the synthetic user.** Under
-  `permission_mode: plan`, ExitPlanMode reaches canUseTool and is silently
-  allowed with no oracle involvement and no entry. The TUI offers
-  approve-with-auto,
-  approve-manually and reject-with-feedback; the probe saw rejection arrive
-  as PreToolUse only, with the feedback as a user turn and an unprompted
-  re-plan, and approval fire PostToolUse ({plan, isAgent, filePath,
-  hasTaskTool}) and flip plan → default. Shape: route through the existing
+  `permission_mode: plan`, ExitPlanMode reaches canUseTool and is allowed
+  with no oracle involvement; only its result entry shows the approval text.
+  The TUI offers approve-with-auto, approve-manually and
+  reject-with-feedback; the probe saw rejection arrive as PreToolUse only,
+  with the feedback as a user turn and an unprompted re-plan, and approval
+  fire PostToolUse ({plan, isAgent, filePath, hasTaskTool}) and flip plan →
+  default. Shape: route through the existing
   ask_user schema (Approve / Reject with feedback) rather than a third;
   approve → allow with `updatedPermissions: setMode` mirroring the TUI
   flavours; reject → the feedback as the next user turn, since a canUseTool
@@ -129,6 +111,22 @@ Entries are not ordered by priority.
   current release emits and record the answer in CLAUDE.md; no routing, since
   the kind union is open and fails closed, and a fourth oracle schema family
   strains fewer concepts.
+- **Hook output head and tail like results.** Hook entries keep the first
+  4000 characters of each stream, while result entries keep 2000 from each
+  end. A command's closing lines often say how it ended, so align hook
+  entries with results if a check turns out to need a hook's last lines.
+- **Subagent origin on tool and result entries.** A subagent's tool calls
+  and their results are written like the main thread's, with nothing marking
+  the subagent. The messages carry `parent_tool_use_id` and `agent_id`. Add
+  them to the entries only when a check must tell main-thread calls from a
+  subagent's.
+- **Subagent text reaches the oracle.** A subagent's assistant and thinking
+  blocks arrive in the parent stream like its tool calls, so they are written
+  as `assistant:` and `thinking:` entries and the assistant text joins the
+  oracle's conversation context as if the main agent had said it. A turn
+  policy decision can then rest on a subagent's words. Shape, if that
+  misleads the oracle: skip messages with `parent_tool_use_id` set when
+  building the oracle context, and consider marking their entries.
 
 ## Synthetic user
 
@@ -142,13 +140,20 @@ Entries are not ordered by priority.
   `annotations[question].unanswered` (`skipped`, `replied_in_chat`,
   `dismissed`), to be sent only when `system/init.capabilities` lists
   `ask_user_question_unanswered_v1`; the model never sees it, and it lands
-  only in the JSONL's `tool_use_result`, which the runner drops. Shape: an
-  optional per-question decline in the oracle schema, steered by the persona
-  with no YAML knob; empty answers for a whole-card dismiss; the annotation
-  when the capability is present; an `unanswered` map in the `oracle: ask`
-  entry for graders. `replied_in_chat` is out, since scuttlerun can only send
-  user input after a result. Demand unproven; an oracle that skips when the
-  persona would not adds noise to existing evals.
+  only in `tool_use_result`, of which result entries keep only the
+  questions. Shape: an optional per-question decline in the oracle schema,
+  steered by the persona with no YAML knob; empty answers for a whole-card
+  dismiss; the annotation when the capability is present; an `unanswered` map
+  in the `oracle: ask` entry for graders. `replied_in_chat` is out, since
+  scuttlerun can only send user input after a result. Demand unproven; an
+  oracle that skips when the persona would not adds noise to existing evals.
+- **A background agent's completion drives a turn after the session
+  ended.** When an Agent tool call runs as a background agent, its completion
+  notification makes the CLI emit a second init and a second result after
+  the input generator has returned. `handleResult` then consults the turn
+  policy again, which costs an oracle call, and on "continue" writes a
+  `user:` entry that no turn follows. Shape: ignore results after the end
+  action, or end the query on the first end decision.
 
 ## Isolation and sandbox
 
@@ -179,17 +184,28 @@ Entries are not ordered by priority.
   shape to maintain, or keep the inheritance the spec now documents. Move to
   a neutral cwd only if something cwd-dependent is shown to reach a
   `tools: []`, `skills: []` query.
-- **Spike: Bash edit diffs under bypassPermissions.** Since CLI 2.1.317 the
-  Bash tool's diff of the files a command changed defaults on in auto and
-  bypassPermissions "when the Bash tool handles file edits or the model's
-  configuration turns it on" (`bashEditDiffEnabled`); the binary gates this
-  on what looks like server-side config, and the changelog does not mention
-  it. scuttlerun defaults to bypassPermissions, so agent-visible Bash results
-  may change per account with no version change. Also unverified: the binary
-  reads `bashEditDiffEnabled === false` straight from user settings, possibly
-  past `setting_sources` excluding `user`. Spike: run a Bash file edit
-  headless and read its tool_result in the JSONL; if diffs appear, consider
-  pinning the setting through `Options.settings` for reproducibility.
+- **Bash edit diffs reach hooks, not the transcript.** Since CLI 2.1.317
+  the Bash tool can attach a diff of the files a command changed
+  (`bashEditDiffEnabled`), gated on what looks like server-side config. A
+  headless spike of CLI 2.1.317 under bypassPermissions with default
+  settings saw no diff. With `bashEditDiffEnabled: true` in a git project,
+  the diff appeared only in the structured result
+  (`tool_use_result.bashEditDiff`) and in the PostToolUse hook's
+  `tool_response`; the text the model sees was unchanged. Result entries
+  render that text, so transcripts are unaffected; the remaining exposure is
+  a PostToolUse hook that reads `tool_response`, whose input may change per
+  account with no version change. Still unverified: whether the binary reads
+  `bashEditDiffEnabled === false` from user settings even when
+  `setting_sources` excludes `user`. Shape, if hook inputs turn out to vary
+  across accounts: pin `bashEditDiffEnabled` through `Options.settings`.
+  That is the flag tier, so it overrides a scenario's `project.settings`,
+  and the pin must be documented as such.
+- **Plan files outside the sandbox.** ExitPlanMode writes the plan to
+  `$CLAUDE_CONFIG_DIR/plans/<slug>.md`, or to `~/.claude/plans/` when neither
+  the sandbox's HOME nor `project.claude_dir` redirects the config dir. A
+  plan-mode scenario with `sandbox.enabled: false` and no `claude_dir`
+  therefore writes into the operator's real config dir. Document it, or set
+  `CLAUDE_CONFIG_DIR` into the project for every run.
 
 ## Cost and diagnostics
 
@@ -233,6 +249,14 @@ Entries are not ordered by priority.
   is noise today, but it would hide a real loss of the command if npm began
   enforcing it. Shape: an `npm run build` step before `npm publish` in
   `release-please.yml`.
+- **Message-handler tests in runner.test.ts.** The older handler tests
+  drive `runSession` through a mocked `query()`. Moving them to
+  `tests/session-loop.test.ts`, calling `handleMessage` directly, makes them
+  pure and keeps the 1:1 test mapping.
+- **Lint's default-project cap is full.** `eslint.config.js` lets 20 test
+  files fall back to the default TypeScript project, and `tests/` now holds
+  20; the next test file fails lint. Shape: raise the cap, or give the tests
+  a tsconfig that typescript-eslint's project service finds on its own.
 
 ## Decided against
 
