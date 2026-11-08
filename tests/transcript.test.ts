@@ -82,8 +82,7 @@ describe('transcript', () => {
           TaskList: 'no fields',
           'any other tool': 'input, the full input',
         },
-        'not recorded':
-          "tool results; the session log at the header's transcript path has them",
+        'not recorded': "tool results; the session log at the header's transcript path has them",
         footer: {
           cost_incomplete: 'some spend went unreported',
           transcript_incomplete: 'the session log is missing lines',
