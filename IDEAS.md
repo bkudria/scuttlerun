@@ -11,8 +11,9 @@ skill-frontmatter hooks and plan mode; craboodle evals of the fabrica plugin
 ran the same day against what the transcript does and does not show. The
 Synthetic user, Isolation and sandbox, Cost and diagnostics, and Spec sections
 come from reviewing the Agent SDK 0.3.310 → 0.3.317 bump (#89) on 2026-11-07.
-The hook-entry follow-ups and the Code health section come from building hook
-entries (#103) on 2026-11-07. Entries are not ordered by priority.
+The hook-entry follow-ups come from building hook entries (#103) on
+2026-11-07; the Code health entry comes from the 0.5.0 publish (#105).
+Entries are not ordered by priority.
 
 ## Decided, not yet built
 
