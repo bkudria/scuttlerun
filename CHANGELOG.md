@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Release sections below are generated automatically by release-please from Conventional Commit messages.
 
+## [0.5.0](https://github.com/bkudria/scuttlerun/compare/v0.4.0...v0.5.0) (2026-11-08)
+
+
+### Features
+
+* **project:** add claude_dir to seed the agent's Claude config dir ([#90](https://github.com/bkudria/scuttlerun/issues/90)) ([e090813](https://github.com/bkudria/scuttlerun/commit/e09081313b5e0df890fab5b11d0295dbde361c8f))
+* **runner:** flag lost session-transcript writes and hint at sandbox startup failures ([#98](https://github.com/bkudria/scuttlerun/issues/98)) ([0daba32](https://github.com/bkudria/scuttlerun/commit/0daba325102f66e86ee4153d828ea08a28ffc682))
+* **transcript:** describe the transcript format in a header legend ([#102](https://github.com/bkudria/scuttlerun/issues/102)) ([45651f7](https://github.com/bkudria/scuttlerun/commit/45651f7bdfcbd6b652cc59c84969082d467778de))
+* **transcript:** record each hook that runs as a hook entry ([#103](https://github.com/bkudria/scuttlerun/issues/103)) ([922caea](https://github.com/bkudria/scuttlerun/commit/922caea8cfbd11909746d9a0cd3dce928256feeb))
+
+
+### Bug Fixes
+
+* **oracle:** isolate oracle queries from host Claude Code configuration ([#95](https://github.com/bkudria/scuttlerun/issues/95)) ([96c9d5a](https://github.com/bkudria/scuttlerun/commit/96c9d5abfd0fd0a7b4b5a87c010be0e31fb15f20))
+* **oracle:** take oracle cost from the SDK and count every attempt ([#96](https://github.com/bkudria/scuttlerun/issues/96)) ([12e5d8d](https://github.com/bkudria/scuttlerun/commit/12e5d8d689d97100bd2f41f8db1361316b973ddc))
+* **sandbox:** expand ~ in sandbox paths against the operator's home ([#101](https://github.com/bkudria/scuttlerun/issues/101)) ([53b9721](https://github.com/bkudria/scuttlerun/commit/53b9721e293c7827b78637efbaa00b25b7820951))
+* **transcript:** round oracle_usage.cost_usd; drop non-POSIX mention and spec history narration ([#100](https://github.com/bkudria/scuttlerun/issues/100)) ([8b6044b](https://github.com/bkudria/scuttlerun/commit/8b6044b4af851e38392d73dcc7aa3ac82963fc89))
+
 ## [0.4.0](https://github.com/bkudria/scuttlerun/compare/v0.3.0...v0.4.0) (2026-10-28)
 
 
