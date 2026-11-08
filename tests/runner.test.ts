@@ -197,7 +197,7 @@ describe('runSession', () => {
         session_id: 'test-session-1',
         stop_reason: 'end_turn',
         is_error: false,
-        num_turns: 1,
+        num_turns: 3,
         total_cost_usd: 0.001,
         duration_ms: 5000,
         usage: { input_tokens: 100, output_tokens: 50 },
@@ -213,6 +213,56 @@ describe('runSession', () => {
     expect(result.exitCode).toBe(0);
     expect(result.sessionId).toBe('test-session-1');
     expect(mockQuery.close).toHaveBeenCalled();
+    expect(parseYaml(stdoutOutput).turns).toBe(3);
+  });
+
+  it('ignores an init message after the first', async () => {
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(
+      createMockQuery([
+        { type: 'system', subtype: 'init', session_id: 's-first', slash_commands: [] },
+        { type: 'system', subtype: 'init', session_id: 's-second' },
+        { type: 'result', subtype: 'success', session_id: 's-first', num_turns: 1 },
+      ]),
+    );
+
+    const result = await runSession(minConfig());
+
+    expect(stdoutOutput.match(/^session:/gm)).toHaveLength(1);
+    const parsed = parseYaml(stdoutOutput);
+    expect(parsed.session).toBe('s-first');
+    expect(
+      (parsed.conversation as Array<Record<string, unknown>>).filter((e) => 'user' in e),
+    ).toHaveLength(1);
+    expect(result.sessionId).toBe('s-first');
+  });
+
+  it('writes the blocks of one assistant message in block order', async () => {
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(
+      createMockQuery([
+        { type: 'system', subtype: 'init', session_id: 's-block-order' },
+        {
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: 'before' },
+              { type: 'tool_use', name: 'Bash', input: { command: 'ls' } },
+              { type: 'text', text: 'after' },
+            ],
+          },
+        },
+        { type: 'result', subtype: 'success', session_id: 's-block-order', num_turns: 1 },
+      ]),
+    );
+
+    await runSession(minConfig());
+
+    const conversation = parseYaml(stdoutOutput).conversation as Array<Record<string, unknown>>;
+    expect(conversation.slice(1).map((e) => e.assistant ?? e.tool)).toEqual([
+      'before',
+      'Bash',
+      'after',
+    ]);
   });
 
   it('swallows cleanup rejections so the session still runs', async () => {
@@ -1656,6 +1706,10 @@ describe('runSession', () => {
     expect(result.exitCode).toBe(0);
     expect(stdoutOutput).toContain('oracle: turn');
     expect(stdoutOutput).toContain('Please add tests');
+    expect(parseYaml(stdoutOutput).conversation).toContainEqual({ user: 'Please add tests' });
+    const secondTurnPrompt = oracleQueryCalls()[1].prompt;
+    expect(secondTurnPrompt).toContain('Write a haiku');
+    expect(secondTurnPrompt).toContain('Please add tests');
   });
 
   it('does not emit oracle_turn transcript entry on cap-driven termination', async () => {
@@ -2111,6 +2165,7 @@ describe('runSession', () => {
     // Timeout fires during oracle call. Oracle completes with "continue".
     // Loop re-enters → abortPromise sees already-aborted signal → breaks.
     expect(result.exitCode).toBe(6);
+    expect(stdoutOutput).not.toContain('More.');
   });
 
   it('handles error result after generator is consumed (resolveNextAction defined)', async () => {
@@ -2245,6 +2300,7 @@ describe('runSession', () => {
     );
 
     expect(result.exitCode).toBe(130);
+    expect(stdoutOutput).not.toContain('More.');
   });
 
   it('calls queryHandle.interrupt() when options.signal is aborted', async () => {
@@ -3007,6 +3063,37 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
       expect(result.exitCode).toBe(0);
       expect(oracleQueryCalls()).toHaveLength(2);
       expect(stdoutOutput).toContain('cost_incomplete: true');
+    });
+
+    it('flags cost_incomplete when the session crashes during a continuation turn', async () => {
+      oracleReplies.push({
+        structured: { decision: 'continue', message: 'Keep going', reasoning: 'not done' },
+      });
+      const agentQuery = {
+        close: vi.fn(),
+        interrupt: vi.fn().mockResolvedValue(undefined),
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: 'system', subtype: 'init', session_id: 's-fin-continuation-crash' };
+          yield {
+            type: 'result',
+            subtype: 'success',
+            session_id: 's-fin-continuation-crash',
+            num_turns: 1,
+            total_cost_usd: 0.01,
+          };
+          throw new Error('crashed before the continuation turn finished');
+        },
+      };
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt?: unknown }) =>
+        typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : agentQuery,
+      );
+
+      const result = await runSession(
+        minConfig({ user: { oracle_model: 'claude-haiku-4-5', max_turns: 5 } }),
+      );
+
+      expect(result.exitCode).toBe(2);
+      expect(parseYaml(stdoutOutput).cost_incomplete).toBe(true);
     });
 
     it('omits cost_incomplete when the in-flight turn produced a result', async () => {
