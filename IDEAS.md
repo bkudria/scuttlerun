@@ -11,7 +11,8 @@ skill-frontmatter hooks and plan mode; craboodle evals of the fabrica plugin
 ran the same day against what the transcript does and does not show. The
 Synthetic user, Isolation and sandbox, Cost and diagnostics, and Spec sections
 come from reviewing the Agent SDK 0.3.310 → 0.3.317 bump (#89) on 2026-11-07.
-Entries are not ordered by priority.
+The hook-entry follow-ups and the Code health section come from building hook
+entries (#103) on 2026-11-07. Entries are not ordered by priority.
 
 ## Decided, not yet built
 
@@ -83,7 +84,26 @@ Entries are not ordered by priority.
   "intentionally lossy": a cap is required or outputs balloon past
   craboodle's 10 MB stdout buffer; judge cost rises with size; the judge now
   sees error text the agent recovered from, so some negative checks need a
-  note.
+  note. Demand seen since hook entries: grading a real run, the judge cited a
+  PreToolUse hook's `exit_code: 0` as proof that the Bash commit after it
+  succeeded. The legend now says a hook's outcome is its own, which stops
+  that misreading but leaves "did the call succeed?" ungradeable from the
+  transcript.
+- **Hook entries do not name their source.** `hook:` carries the SDK's
+  `hook_name`, which is `Event:matcher` only. A settings hook and a plugin
+  hook on the same event and matcher write identical names (a spike loading
+  both saw two `PreToolUse:Bash` responses), and the message carries a
+  `hook_id` but neither the command nor where it was registered. Matters
+  only when a check must tell two hooks apart; until then, distinct output
+  text is the workaround. Spike before any shape: whether a later SDK adds
+  source fields to `hook_response`.
+- **Held hook responses vanish on a failed start.** SessionStart responses
+  arrive before init and are held for the preamble; a run that ends before
+  init writes only the footer, so they are never written. If a SessionStart
+  hook's output is what explains a failed start, it is lost from stdout.
+  Shape, if that case appears: print held responses to stderr after the
+  existing failure line. Unverified whether a failing SessionStart hook can
+  stop startup at all.
 - **Plan approval through the synthetic user.** Under
   `permission_mode: plan`, ExitPlanMode reaches canUseTool and is silently
   allowed with no oracle involvement and no entry. The TUI offers
@@ -200,6 +220,22 @@ Entries are not ordered by priority.
   exception before init. Relax the guard as AgentTurnFailsAtRuntime was. The
   header comment of tests/session-state-machine.test.ts also omits the
   spec's `running -> interrupted` edge.
+
+## Code health
+
+- **A message-loop dispatcher before the next entry kind.** #103 moved
+  `buildSdkOptions` and the slash-command warning out of `runner.ts` to make
+  room for one branch; `runSession` is back at 273 of the 280 lines lint
+  allows. Bounded tool results, permission and mode entries, and plan
+  approval each add a branch to the same `for await` loop. Shape: one
+  handler per message kind sharing a small session-state object (session id,
+  synthetic user, counters, flags), done as a behaviour-neutral refactor PR
+  before the next transcript feature rather than inside it.
+- **Tests for `sdk-options.ts` live in the runner suite.** CLAUDE.md promises
+  a 1:1 mapping of tests to source files, but `buildSdkOptions` is covered
+  only through `runSession` in `tests/runner.test.ts`. Moving the
+  option-shape assertions into `tests/sdk-options.test.ts` would make them
+  pure (no mocked query stream) and shorten the runner suite.
 
 ## Decided against
 
