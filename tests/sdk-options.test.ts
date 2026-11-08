@@ -209,7 +209,7 @@ describe('buildSdkOptions', () => {
   });
 
   describe('plugins', () => {
-    it('resolves sdk.plugins paths and forwards them to query', () => {
+    it('resolves sdk.plugins paths against the config dir', () => {
       vi.stubEnv('HOME', '/home/operator');
 
       const options = buildSdkOptions(
@@ -244,7 +244,7 @@ describe('buildSdkOptions', () => {
       expect(options.plugins).toEqual([{ type: 'local', path: resolve(process.cwd(), 'rel') }]);
     });
 
-    it('translates project.plugins entries into sdk.plugins forwarded to query', () => {
+    it('translates project.plugins entries into sdk.plugins', () => {
       vi.stubEnv('HOME', '/home/operator');
 
       const options = buildSdkOptions(
