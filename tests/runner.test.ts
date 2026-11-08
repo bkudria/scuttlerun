@@ -1205,8 +1205,8 @@ describe('runSession', () => {
     return () => capturedOptions;
   }
 
-  it('builds the agent SDK options from the seeded claude_dir, verbose flag and config dir', async () => {
-    const { claudeDir } = seededScaffold();
+  it('builds the agent SDK options from the project dir, seeded claude_dir, verbose flag and config dir', async () => {
+    const { projectPath, claudeDir } = seededScaffold();
     const options = captureOptions('s-sdk-options-inputs');
     const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
@@ -1226,6 +1226,7 @@ describe('runSession', () => {
       stderrWrite.mockRestore();
     }
 
+    expect(options()?.cwd).toBe(projectPath);
     expect((options()?.env as Record<string, string>).CLAUDE_CONFIG_DIR).toBe(claudeDir);
     expect(options()?.stderr).toBeTypeOf('function');
     expect(mockResolveConfigPath).toHaveBeenCalledWith('./plugin', '/tmp/cfg');
