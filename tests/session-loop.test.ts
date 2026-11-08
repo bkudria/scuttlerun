@@ -23,6 +23,18 @@ function assistantToolUse(
   });
 }
 
+function toolResultMessage(
+  blocks: unknown[] | string,
+  extra: Record<string, unknown> = {},
+): SDKMessage {
+  return sdkMessage({
+    type: 'user',
+    message: { role: 'user', content: blocks },
+    parent_tool_use_id: null,
+    ...extra,
+  });
+}
+
 describe('handleMessage', () => {
   let output: string;
   let state: SessionState;
@@ -61,6 +73,230 @@ describe('handleMessage', () => {
         { tool: 'Bash', id: 1, command: 'ls' },
         { tool: 'Read', id: 2, path: '/tmp/x' },
       ]);
+    });
+  });
+
+  describe('result entries', () => {
+    it('writes a result entry per tool_result block, linked to its call by id', async () => {
+      await handleMessage(assistantToolUse('toolu_a', 'Bash', { command: 'a' }), state);
+      await handleMessage(assistantToolUse('toolu_b', 'Bash', { command: 'b' }), state);
+      await handleMessage(
+        toolResultMessage([
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_b',
+            is_error: true,
+            content: 'Exit code 1\nb',
+          },
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_a',
+            is_error: true,
+            content: 'Exit code 1\na',
+          },
+        ]),
+        state,
+      );
+
+      expect(conversation()).toEqual([
+        { tool: 'Bash', id: 1, command: 'a' },
+        { tool: 'Bash', id: 2, command: 'b' },
+        { result: 'Bash', id: 2, is_error: true, text: 'Exit code 1\nb' },
+        { result: 'Bash', id: 1, is_error: true, text: 'Exit code 1\na' },
+      ]);
+    });
+
+    it('skips a successful Read result, whose block has no is_error key', async () => {
+      await handleMessage(assistantToolUse('toolu_r', 'Read', { file_path: '/tmp/x' }), state);
+      await handleMessage(
+        toolResultMessage([{ type: 'tool_result', tool_use_id: 'toolu_r', content: '1\talpha' }]),
+        state,
+      );
+
+      expect(conversation()).toEqual([{ tool: 'Read', id: 1, path: '/tmp/x' }]);
+    });
+
+    it('writes a successful Bash result', async () => {
+      await handleMessage(assistantToolUse('toolu_s', 'Bash', { command: 'echo ok' }), state);
+      await handleMessage(
+        toolResultMessage(
+          [{ type: 'tool_result', tool_use_id: 'toolu_s', is_error: false, content: 'spike-ok' }],
+          {
+            tool_use_result: {
+              stdout: 'spike-ok',
+              stderr: '',
+              interrupted: false,
+              isImage: false,
+              noOutputExpected: false,
+            },
+          },
+        ),
+        state,
+      );
+
+      expect(conversation()[1]).toEqual({
+        result: 'Bash',
+        id: 1,
+        is_error: false,
+        text: 'spike-ok',
+      });
+    });
+
+    it('renders array content as its text blocks joined by newlines, other blocks by type', async () => {
+      await handleMessage(assistantToolUse('toolu_i', 'Read', { file_path: '/tmp/p.png' }), state);
+      await handleMessage(
+        toolResultMessage([
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_i',
+            is_error: true,
+            content: [
+              { type: 'text', text: 'a' },
+              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+              { type: 'text', text: 'b' },
+            ],
+          },
+        ]),
+        state,
+      );
+
+      expect(conversation()[1]).toEqual({
+        result: 'Read',
+        id: 1,
+        is_error: true,
+        text: 'a\n[image]\nb',
+      });
+    });
+
+    it('writes no text for a result block without content', async () => {
+      await handleMessage(assistantToolUse('toolu_e', 'Bash', { command: 'true' }), state);
+      await handleMessage(
+        toolResultMessage([{ type: 'tool_result', tool_use_id: 'toolu_e', is_error: false }]),
+        state,
+      );
+
+      expect(conversation()[1]).toEqual({ result: 'Bash', id: 1, is_error: false });
+    });
+
+    it('lists AskUserQuestion questions from the structured result, as a hook left them', async () => {
+      await handleMessage(
+        assistantToolUse('toolu_q', 'AskUserQuestion', {
+          questions: [
+            {
+              question: 'Original?',
+              header: 'H',
+              options: [{ label: 'Red' }, { label: 'Blue' }],
+              multiSelect: false,
+            },
+          ],
+        }),
+        state,
+      );
+      const answered = 'Your questions have been answered: "Rewritten?"="Blue".';
+      await handleMessage(
+        toolResultMessage([{ type: 'tool_result', tool_use_id: 'toolu_q', content: answered }], {
+          tool_use_result: {
+            questions: [
+              {
+                question: 'Rewritten?',
+                header: 'H',
+                options: [
+                  { label: 'Red', description: 'warm' },
+                  { label: 'Blue', description: 'cool' },
+                ],
+                multiSelect: false,
+              },
+            ],
+            answers: { 'Rewritten?': 'Blue' },
+          },
+        }),
+        state,
+      );
+
+      expect(conversation()[1]).toEqual({
+        result: 'AskUserQuestion',
+        id: 1,
+        is_error: false,
+        questions: [{ question: 'Rewritten?', options: ['Red', 'Blue'] }],
+        text: answered,
+      });
+    });
+
+    it('writes an AskUserQuestion result without questions when the structured result is missing or a string', async () => {
+      await handleMessage(
+        assistantToolUse('toolu_q1', 'AskUserQuestion', { questions: [] }),
+        state,
+      );
+      await handleMessage(
+        assistantToolUse('toolu_q2', 'AskUserQuestion', { questions: [] }),
+        state,
+      );
+      await handleMessage(
+        toolResultMessage([{ type: 'tool_result', tool_use_id: 'toolu_q1', content: 'answered' }]),
+        state,
+      );
+      await handleMessage(
+        toolResultMessage(
+          [{ type: 'tool_result', tool_use_id: 'toolu_q2', is_error: true, content: 'denied' }],
+          { tool_use_result: 'Error: denied' },
+        ),
+        state,
+      );
+
+      expect(conversation().slice(2)).toEqual([
+        { result: 'AskUserQuestion', id: 1, is_error: false, text: 'answered' },
+        { result: 'AskUserQuestion', id: 2, is_error: true, text: 'denied' },
+      ]);
+    });
+
+    it('skips a tool_result whose call has no tool entry', async () => {
+      await handleMessage(
+        toolResultMessage([
+          { type: 'tool_result', tool_use_id: 'toolu_unknown', is_error: true, content: 'x' },
+        ]),
+        state,
+      );
+
+      expect(conversation()).toEqual([]);
+    });
+
+    it('ignores replayed user messages and user text content', async () => {
+      await handleMessage(assistantToolUse('toolu_p', 'Bash', { command: 'false' }), state);
+      const failed = { type: 'tool_result', tool_use_id: 'toolu_p', is_error: true, content: 'x' };
+      await handleMessage(toolResultMessage([failed], { isReplay: true }), state);
+      await handleMessage(toolResultMessage('a prompt echoed as a string'), state);
+      await handleMessage(toolResultMessage([{ type: 'text', text: 'a text block' }]), state);
+
+      expect(conversation()).toEqual([{ tool: 'Bash', id: 1, command: 'false' }]);
+    });
+
+    it("records a subagent call's error result like a main-thread one", async () => {
+      const fromSubagent = { parent_tool_use_id: 'toolu_agent' };
+      await handleMessage(
+        assistantToolUse('toolu_sub', 'Read', { file_path: '/tmp/missing' }, fromSubagent),
+        state,
+      );
+      await handleMessage(
+        toolResultMessage(
+          [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_sub',
+              is_error: true,
+              content: 'File does not exist.',
+            },
+          ],
+          fromSubagent,
+        ),
+        state,
+      );
+
+      expect(conversation()[1]).toEqual({
+        result: 'Read',
+        id: 1,
+        is_error: true,
+        text: 'File does not exist.',
+      });
     });
   });
 });
