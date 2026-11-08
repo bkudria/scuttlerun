@@ -304,6 +304,21 @@ The output is valid YAML and machine-parseable (e.g. with `yq`).
 
 **Tool-call entries are observations, not reproductions.** Each tool entry carries the tool name plus a small, fixed set of identifying fields — `path` for `Read`/`Write`/`Edit`, `command` for `Bash`, `pattern` for `Glob`/`Grep`, and similar minimal handles for `Task*`/`TodoWrite`. Content-bearing fields (the bytes a `Write` wrote, the strings an `Edit` replaced) are **intentionally dropped from the YAML transcript** and are not available to downstream graders that consume the transcript text alone. Unknown tool names emit their full `input` mapping. A tool entry shows that the agent asked for the call, not that it succeeded: tool results are not in the transcript. The complete contract is `@guarantee TranscriptToolFieldContract` in [`scuttlerun.allium`](scuttlerun.allium); the SDK JSONL below is the source of truth for full tool inputs and results.
 
+**Hook entries record every hook that ran.** When a hook from the scenario's settings or a loaded plugin runs, the transcript gets an entry like this:
+
+```yaml
+- tool: Bash
+  command: git commit -m "Update file"
+
+- hook: PreToolUse:Bash
+  outcome: error
+  exit_code: 2
+  stderr: |
+    Run the tests before committing.
+```
+
+`hook:` is the event plus the matcher when there is one. `stdout` and `stderr` appear only when the hook printed to them, cut to their first 4000 characters with a note saying how much more the SDK session file holds. A hook's JSON output, such as `additionalContext` or a permission decision, appears verbatim in `stdout`. A `PreToolUse` or `PostToolUse` entry follows the tool call it answered. `SessionStart` hooks and the `UserPromptSubmit` hook for the scenario prompt run before the header can be written, so their entries follow the first `user:` entry. The contract is `@guarantee HookEntryContract`.
+
 **Project directory** — Always created in `$TMPDIR` as `scuttlerun-project-<id>/`, preserved after the session ends so you can inspect agent-created files. On the next run, scuttlerun garbage-collects its own `scuttlerun-project-*` directories that are older than 7 days; nothing else in `$TMPDIR` is touched.
 
 **SDK session file** — Full conversation record in Claude Code's native JSONL format at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Queryable with `jq`. This is the authoritative record of full tool inputs and outputs; the YAML transcript is a lossy summary. If a full disk or exhausted quota keeps Claude Code from saving part of it, the transcript footer carries `transcript_incomplete: true` and scuttlerun prints a warning naming the file to stderr; the exit code is unaffected.

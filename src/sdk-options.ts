@@ -41,6 +41,7 @@ export function buildSdkOptions(
     effort: config.effort,
     settingSources: config.sdk.setting_sources,
     model: config.model,
+    includeHookEvents: true,
   };
 
   if (config.max_budget_usd) sdkOptions.maxBudgetUsd = config.max_budget_usd;

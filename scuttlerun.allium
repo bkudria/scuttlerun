@@ -386,6 +386,7 @@ entity Session {
 
     transcript: Transcript with session = this
     synthetic_user: SyntheticUser? with session = this
+    held_hook_responses: List<HeldHookResponse> with session = this
 
     @guidance
         -- status is a logical/observable property of the session, not a
@@ -575,7 +576,14 @@ entity TranscriptEntry {
     transcript: Transcript
     sequence: Integer
     kind: user_message | assistant_text | thinking
-        | tool_call | oracle_ask | oracle_turn | oracle_error
+        | tool_call | hook_response | oracle_ask | oracle_turn | oracle_error
+}
+
+-- A hook response that arrived before the transcript's preamble could be
+-- written; SessionBecomesRunning turns each into a transcript entry.
+entity HeldHookResponse {
+    session: Session
+    sequence: Integer
 }
 
 
@@ -686,6 +694,13 @@ rule SessionBecomesRunning {
         transcript: session.transcript,
         kind: user_message
     )
+    -- Hook responses held while pending follow the prompt's entry, in
+    -- the order they arrived (HookResponseHeldBeforeInit).
+    for held in session.held_hook_responses:
+        ensures: TranscriptEntry.created(
+            transcript: session.transcript,
+            kind: hook_response
+        )
     -- The initial prompt enters the synthetic user's conversation
     -- buffer so the oracle has context on the very first follow-up
     -- or clarifying question. Subsequent user entries are added by
@@ -1292,6 +1307,43 @@ rule AssistantToolCallEmitted {
     ensures: session.tool_call_count = session.tool_call_count + 1
 }
 
+rule HookResponseEmitted {
+    when: AgentEmitsHookResponse(client, session, hook_name)
+
+    requires: session.status = running
+
+    -- Hook responses reach the transcript but never the oracle context.
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: hook_response
+    )
+
+    @guidance
+        -- The runner asks the Agent SDK to stream hook lifecycle events
+        -- in every session. Each hook that runs yields a hook_started
+        -- and a hook_response message; only the response carries what a
+        -- reader needs (outcome, exit code, output), so only it becomes
+        -- an entry (HookEntryContract). A PreToolUse or PostToolUse
+        -- response arrives after the tool call it answered, so its entry
+        -- follows that call's entry.
+}
+
+rule HookResponseHeldBeforeInit {
+    when: AgentEmitsHookResponse(client, session, hook_name)
+
+    requires: session.status = pending
+
+    ensures: HeldHookResponse.created(session: session)
+
+    @guidance
+        -- SessionStart hooks, and the UserPromptSubmit hook for the
+        -- scenario prompt, run before the init message announces the
+        -- session id the preamble needs. Their responses are held and
+        -- written by SessionBecomesRunning. A run that ends before any
+        -- init message writes no preamble or entries (StreamingYaml), so
+        -- its held responses are not written.
+}
+
 
 -- =============================================================
 -- Rules: Cost accumulation
@@ -1520,9 +1572,10 @@ surface StreamingTranscript {
         -- a preamble mapping, a `conversation:` sequence with one entry
         -- per event, and a footer mapping. The preamble and the
         -- `conversation:` sequence are written when the init message
-        -- announces the SDK session id; a run that ends before any init
-        -- message (e.g. Claude Code refusing to start) writes the footer
-        -- mapping alone. The preamble carries five
+        -- announces the SDK session id; hook responses that arrive
+        -- earlier are held until then (HookResponseHeldBeforeInit). A run
+        -- that ends before any init message (e.g. Claude Code refusing to
+        -- start) writes the footer mapping alone. The preamble carries five
         -- keys: `session` (the SDK session id), `config` (the path or
         -- list of paths to the YAML config files supplied at
         -- invocation), `project` (the workspace path),
@@ -1588,8 +1641,9 @@ surface StreamingTranscript {
         -- (see `FullConversationInJsonl`) is the source of truth for full
         -- tool inputs. A tool entry records that the agent requested the
         -- call: tool results are not written to the transcript, so whether
-        -- the call ran, failed or was blocked (by a hook, for instance)
-        -- is not shown.
+        -- the call ran or failed is not shown. Hook entries after it
+        -- (HookEntryContract) show how any hooks responded to it,
+        -- including a hook that blocked it.
         --
         --   * Read, Write, Edit  → `path` (from `file_path`).
         --     Content-bearing fields (`content`, `old_string`,
@@ -1612,15 +1666,28 @@ surface StreamingTranscript {
         -- changes the legend with them; downstream graders read the
         -- legend rather than embedding a copy of this list.
 
+    @guarantee HookEntryContract
+        -- A hook entry records one hook that ran (HookResponseEmitted).
+        -- `hook:` carries the hook's event, followed by `:` and its
+        -- matcher when it has one (`PreToolUse:Bash`,
+        -- `SessionStart:startup`, `Stop`). `outcome` is success, error or
+        -- cancelled. `exit_code` appears when Claude Code reported one; a
+        -- hook that blocks with exit code 2 shows `outcome: error`,
+        -- `exit_code: 2` and its reason in `stderr`. `stdout` and
+        -- `stderr` appear only when non-empty, each holding at most the
+        -- first 4000 characters of the stream followed, when cut, by a
+        -- line saying how many more characters the SDK session JSONL
+        -- holds. A hook's structured JSON output (a permission decision,
+        -- additionalContext) appears verbatim in `stdout`.
+
     @guarantee SelfDescribingTranscript
         -- The preamble's `legend` mapping states how to read the
         -- transcript, so a reader or grader needs no copy of this spec.
         -- It has four keys: `entries` (one line per entry kind: user,
-        -- assistant, thinking, tool, oracle); `tool fields` (the
+        -- assistant, thinking, tool, hook, oracle); `tool fields` (the
         -- TranscriptToolFieldContract, one line per tool group plus
-        -- `any other tool`); `not recorded` (tool results and hook
-        -- activity, pointing to the SDK session JSONL named by
-        -- `transcript`); and `footer` (what `cost_incomplete`,
+        -- `any other tool`); `not recorded` (tool results, pointing to
+        -- the SDK session JSONL named by `transcript`); and `footer` (what `cost_incomplete`,
         -- `transcript_incomplete` and `timed_out` mean). The legend is
         -- the same in every transcript, and the --dry-run summary carries
         -- it under the same key, so a consumer can read it before any
@@ -1647,6 +1714,7 @@ surface AgentSdkBoundary {
         AgentEmitsAssistantMessage(client, session, text_blocks)
         AgentEmitsThinking(client, session, text)
         AgentEmitsToolCall(client, session, tool_name)
+        AgentEmitsHookResponse(client, session, hook_name)
         AgentSessionWritesLost(client, session, error_code, lost, transcript_session_ids)
         RunnerCaughtException(session)
 

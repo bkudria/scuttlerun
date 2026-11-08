@@ -162,12 +162,15 @@ function describeToolFields(rule: ToolFieldRule): string {
   return rule.dropped ? `${kept}; ${listFormat.format(rule.dropped)} are dropped` : kept;
 }
 
+const OUTPUT_CAP_CHARS = 4000;
+
 export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
   entries: {
     user: 'a synthetic-user message; the first is the scenario prompt, any leading slash command included',
     assistant: "the agent's reply text",
     thinking: "the agent's thinking text",
-    tool: 'a tool call the agent requested, with only the fields under tool fields; whether it ran, failed or was blocked is not shown',
+    tool: 'a tool call the agent requested, with only the fields under tool fields; whether it ran or failed is not shown, but hook entries after it show how any hooks responded',
+    hook: `a hook that ran: its event and matcher, outcome, exit_code, and stdout and stderr when non-empty, each cut to ${OUTPUT_CAP_CHARS} characters`,
     oracle:
       "the synthetic user's decisions: ask_user (answers, reasoning), turn (decision, message, reasoning), error (reason)",
   },
@@ -177,8 +180,7 @@ export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
     ),
     'any other tool': 'input, the full input',
   },
-  'not recorded':
-    "tool results and hook activity; the session log at the header's transcript path has them",
+  'not recorded': "tool results; the session log at the header's transcript path has them",
   footer: {
     cost_incomplete: 'some spend went unreported',
     transcript_incomplete: 'the session log is missing lines',
@@ -202,6 +204,29 @@ export function writeTool(name: string, input: unknown): void {
     }
   }
 
+  writeEntry(entry);
+}
+
+function capOutput(text: string): string {
+  if (text.length <= OUTPUT_CAP_CHARS) return text;
+  const rest = text.length - OUTPUT_CAP_CHARS;
+  return `${text.slice(0, OUTPUT_CAP_CHARS)}\n… [${rest} more characters; the session log has the full output]`;
+}
+
+// The fields of the SDK's hook_response message that an entry keeps.
+export interface HookResponse {
+  hook_name: string;
+  outcome: string;
+  exit_code?: number;
+  stdout: string;
+  stderr: string;
+}
+
+export function writeHook(hook: HookResponse): void {
+  const entry: Record<string, unknown> = { hook: hook.hook_name, outcome: hook.outcome };
+  if (hook.exit_code !== undefined) entry.exit_code = hook.exit_code;
+  if (hook.stdout) entry.stdout = capOutput(hook.stdout);
+  if (hook.stderr) entry.stderr = capOutput(hook.stderr);
   writeEntry(entry);
 }
 

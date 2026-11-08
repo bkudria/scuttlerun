@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 import { runSession } from '../src/runner.js';
 import type { SessionConfig } from '../src/config.js';
 import { DEFAULT_SESSION_TIMEOUT_SECONDS } from '../src/config.js';
@@ -726,6 +727,95 @@ describe('runSession', () => {
 
       expect(stdoutOutput).toContain('transcript_incomplete: true');
       expect(stderrOutput).toMatch(/\[scuttlerun\] WARNING: .*EDQUOT.*SDK session JSONL/);
+    });
+  });
+
+  describe('hook activity', () => {
+    const initMessage = (sessionId: string) => ({
+      type: 'system',
+      subtype: 'init',
+      session_id: sessionId,
+      tools: [],
+      model: 'claude-haiku-4-5',
+    });
+    const successResult = (sessionId: string) => ({
+      type: 'result',
+      subtype: 'success',
+      session_id: sessionId,
+      is_error: false,
+      num_turns: 1,
+      total_cost_usd: 0.01,
+    });
+    const hookStarted = (name: string) => ({
+      type: 'system',
+      subtype: 'hook_started',
+      hook_id: `id-${name}`,
+      hook_name: name,
+      hook_event: name.split(':')[0],
+    });
+    const hookResponse = (name: string, stdout: string) => ({
+      type: 'system',
+      subtype: 'hook_response',
+      hook_id: `id-${name}`,
+      hook_name: name,
+      hook_event: name.split(':')[0],
+      output: stdout,
+      stdout,
+      stderr: '',
+      exit_code: 0,
+      outcome: 'success',
+    });
+
+    async function runConversation(messages: Array<Record<string, unknown>>) {
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(createMockQuery(messages));
+      await runSession(minConfig());
+      return parseYaml(stdoutOutput).conversation as Array<Record<string, unknown>>;
+    }
+
+    it('asks the SDK to stream hook events', async () => {
+      await runConversation([initMessage('s-hooks'), successResult('s-hooks')]);
+
+      const agentCall = (mockQueryFn as ReturnType<typeof vi.fn>).mock.calls.find(
+        (c) => !isOraclePrompt(c[0]),
+      );
+      expect(agentCall?.[0].options.includeHookEvents).toBe(true);
+    });
+
+    it('writes one hook entry per hook response, after the tool call it answered', async () => {
+      const conversation = await runConversation([
+        initMessage('s-hooks'),
+        {
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } }],
+          },
+        },
+        hookStarted('PreToolUse:Bash'),
+        hookResponse('PreToolUse:Bash', 'checked\n'),
+        successResult('s-hooks'),
+      ]);
+
+      expect(conversation.slice(1)).toEqual([
+        { tool: 'Bash', command: 'ls' },
+        { hook: 'PreToolUse:Bash', outcome: 'success', exit_code: 0, stdout: 'checked\n' },
+      ]);
+    });
+
+    it('writes hook responses that arrive before init after the first user entry, in arrival order', async () => {
+      const conversation = await runConversation([
+        hookStarted('SessionStart:startup'),
+        hookResponse('SessionStart:startup', 'status\n'),
+        hookResponse('UserPromptSubmit', 'noted\n'),
+        initMessage('s-early-hooks'),
+        successResult('s-early-hooks'),
+      ]);
+
+      expect(conversation.map((e) => e.user ?? e.hook)).toEqual([
+        'Write a haiku',
+        'SessionStart:startup',
+        'UserPromptSubmit',
+      ]);
     });
   });
 

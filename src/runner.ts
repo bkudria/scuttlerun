@@ -34,6 +34,8 @@ import {
   writeThinking,
   writeAssistant,
   writeTool,
+  writeHook,
+  type HookResponse,
   writeOracleAsk,
   writeOracleTurn,
   writeOracleError,
@@ -249,6 +251,10 @@ export async function runSession(
       queryHandle?.interrupt().catch(() => {});
     }, timeoutSeconds * 1000);
 
+    // SessionStart and first-prompt hooks fire before init, so their entries
+    // wait for the header and the prompt's own entry.
+    const hooksBeforeInit: HookResponse[] = [];
+
     // Launch the query
     queryHandle = query({
       prompt: inputGenerator(),
@@ -279,9 +285,13 @@ export async function runSession(
           transcriptPath: sdkSessionPath,
         });
         writeUser(config.prompt);
+        hooksBeforeInit.forEach(writeHook);
 
         // Add initial prompt to conversation buffer
         syntheticUser.addUserMessage(config.prompt);
+      } else if (message.type === 'system' && message.subtype === 'hook_response') {
+        if (sessionId) writeHook(message);
+        else hooksBeforeInit.push(message);
       } else if (message.type === 'system' && message.subtype === 'session_writes_lost') {
         if (lostThisSessionsTranscript(message, sessionId)) {
           transcriptIncomplete = true;

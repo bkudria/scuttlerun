@@ -6,6 +6,7 @@ import {
   writeThinking,
   writeAssistant,
   writeTool,
+  writeHook,
   writeOracleAsk,
   writeOracleTurn,
   writeOracleError,
@@ -65,7 +66,8 @@ describe('transcript', () => {
           user: 'a synthetic-user message; the first is the scenario prompt, any leading slash command included',
           assistant: "the agent's reply text",
           thinking: "the agent's thinking text",
-          tool: 'a tool call the agent requested, with only the fields under tool fields; whether it ran, failed or was blocked is not shown',
+          tool: 'a tool call the agent requested, with only the fields under tool fields; whether it ran or failed is not shown, but hook entries after it show how any hooks responded',
+          hook: 'a hook that ran: its event and matcher, outcome, exit_code, and stdout and stderr when non-empty, each cut to 4000 characters',
           oracle:
             "the synthetic user's decisions: ask_user (answers, reasoning), turn (decision, message, reasoning), error (reason)",
         },
@@ -81,7 +83,7 @@ describe('transcript', () => {
           'any other tool': 'input, the full input',
         },
         'not recorded':
-          "tool results and hook activity; the session log at the header's transcript path has them",
+          "tool results; the session log at the header's transcript path has them",
         footer: {
           cost_incomplete: 'some spend went unreported',
           transcript_incomplete: 'the session log is missing lines',
@@ -306,6 +308,50 @@ describe('transcript', () => {
     it('handles missing pattern in Glob', () => {
       writeTool('Glob', {});
       expect(output).toContain('pattern:');
+    });
+  });
+
+  describe('writeHook', () => {
+    it('writes the hook name, outcome, exit code and the streams the hook printed to', () => {
+      writeHook({
+        hook_name: 'PreToolUse:Bash',
+        outcome: 'error',
+        exit_code: 2,
+        stdout: '',
+        stderr: 'use printf\n',
+      });
+      const parsed = parseYaml('conversation:\n' + output);
+      expect(parsed.conversation[0]).toEqual({
+        hook: 'PreToolUse:Bash',
+        outcome: 'error',
+        exit_code: 2,
+        stderr: 'use printf\n',
+      });
+    });
+
+    it('omits exit_code when the hook reported none', () => {
+      writeHook({ hook_name: 'Stop', outcome: 'cancelled', stdout: 'partial\n', stderr: '' });
+      const parsed = parseYaml('conversation:\n' + output);
+      expect(parsed.conversation[0]).toEqual({
+        hook: 'Stop',
+        outcome: 'cancelled',
+        stdout: 'partial\n',
+      });
+    });
+
+    it('keeps the first 4000 characters of a stream and says how many more the session log has', () => {
+      const head = 'x'.repeat(4000);
+      writeHook({
+        hook_name: 'SessionStart:startup',
+        outcome: 'success',
+        exit_code: 0,
+        stdout: head + 'y'.repeat(1234),
+        stderr: '',
+      });
+      const parsed = parseYaml('conversation:\n' + output);
+      expect(parsed.conversation[0].stdout).toBe(
+        `${head}\n… [1234 more characters; the session log has the full output]`,
+      );
     });
   });
 
