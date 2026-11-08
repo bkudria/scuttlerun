@@ -1706,8 +1706,9 @@ surface StreamingTranscript {
         -- `stderr` appear only when non-empty, each holding at most the
         -- first 4000 characters of the stream followed, when cut, by a
         -- line saying how many more characters the SDK session JSONL
-        -- holds. A hook's structured JSON output (a permission decision,
-        -- additionalContext) appears verbatim in `stdout`.
+        -- holds; the cut never splits a character in two. A hook's
+        -- structured JSON output (a permission decision, additionalContext)
+        -- appears verbatim in `stdout`.
 
     @guarantee ToolResultEntryContract
         -- A result entry records how one tool call ended
@@ -1728,8 +1729,9 @@ surface StreamingTranscript {
         -- written whole; a longer one keeps its first and last 2000
         -- characters around a line saying how many characters were
         -- omitted and that the SDK session JSONL, or its subagents/
-        -- directory for a subagent's call, holds them all. Long lines are
-        -- wrapped like other multi-line strings (StreamingYaml).
+        -- directory for a subagent's call, holds them all. Neither cut
+        -- splits a character in two. Long lines are wrapped like other
+        -- multi-line strings (StreamingYaml).
         --
         -- `questions` lists each question an AskUserQuestion call asked,
         -- as answered: the question text after any hook rewrote it, and

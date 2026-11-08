@@ -377,6 +377,30 @@ describe('transcript', () => {
       expect(entry().text).toBe(whole);
     });
 
+    it('never cuts a character in two at either edge of a long text', () => {
+      const emoji = '\u{1F600}';
+      writeResult({
+        tool: 'Bash',
+        id: 1,
+        isError: false,
+        text: 'a'.repeat(1999) + emoji.repeat(1100),
+      });
+      expect(entry().text).toBe(
+        `${'a'.repeat(1999)}\n… [200 characters omitted; see the session log or its subagents/] …\n${emoji.repeat(1000)}`,
+      );
+
+      output = '';
+      writeResult({
+        tool: 'Bash',
+        id: 1,
+        isError: false,
+        text: emoji.repeat(1100) + 'z'.repeat(1999),
+      });
+      expect(entry().text).toBe(
+        `${emoji.repeat(1000)}\n… [200 characters omitted; see the session log or its subagents/] …\n${'z'.repeat(1999)}`,
+      );
+    });
+
     it('lists AskUserQuestion questions with their option labels, between is_error and text', () => {
       writeResult({
         tool: 'AskUserQuestion',
@@ -441,6 +465,20 @@ describe('transcript', () => {
       const parsed = parseYaml('conversation:\n' + output);
       expect(parsed.conversation[0].stdout).toBe(
         `${head}\n… [1234 more characters; the session log has the full output]`,
+      );
+    });
+    it('never cuts a character in two at the end of a stream', () => {
+      const emoji = '\u{1F600}';
+      writeHook({
+        hook_name: 'SessionStart:startup',
+        outcome: 'success',
+        exit_code: 0,
+        stdout: 'x'.repeat(3999) + emoji.repeat(10),
+        stderr: '',
+      });
+      const parsed = parseYaml('conversation:\n' + output);
+      expect(parsed.conversation[0].stdout).toBe(
+        `${'x'.repeat(3999)}\n… [20 more characters; the session log has the full output]`,
       );
     });
   });

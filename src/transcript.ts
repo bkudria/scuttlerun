@@ -221,18 +221,35 @@ export function writeTool(name: string, input: unknown, id: number): void {
   writeEntry(entry);
 }
 
+// A cut inside a surrogate pair leaves a lone surrogate, which the yaml
+// library escapes and then folds into replacement characters.
+function isLowSurrogate(text: string, index: number): boolean {
+  const unit = text.charCodeAt(index);
+  return unit >= 0xdc00 && unit <= 0xdfff;
+}
+
+function headEnd(text: string, length: number): number {
+  return isLowSurrogate(text, length) ? length - 1 : length;
+}
+
+function tailStart(text: string, length: number): number {
+  const start = text.length - length;
+  return isLowSurrogate(text, start) ? start + 1 : start;
+}
+
 function capOutput(text: string): string {
   if (text.length <= OUTPUT_CAP_CHARS) return text;
-  const rest = text.length - OUTPUT_CAP_CHARS;
-  return `${text.slice(0, OUTPUT_CAP_CHARS)}\n… [${rest} more characters; the session log has the full output]`;
+  const end = headEnd(text, OUTPUT_CAP_CHARS);
+  const rest = text.length - end;
+  return `${text.slice(0, end)}\n… [${rest} more characters; the session log has the full output]`;
 }
 
 function capHeadAndTail(text: string): string {
   if (text.length <= OUTPUT_CAP_CHARS) return text;
-  const omitted = text.length - OUTPUT_CAP_CHARS;
-  const head = text.slice(0, RESULT_EDGE_CHARS);
-  const tail = text.slice(-RESULT_EDGE_CHARS);
-  return `${head}\n… [${omitted} characters omitted; see the session log or its subagents/] …\n${tail}`;
+  const end = headEnd(text, RESULT_EDGE_CHARS);
+  const start = tailStart(text, RESULT_EDGE_CHARS);
+  const omitted = start - end;
+  return `${text.slice(0, end)}\n… [${omitted} characters omitted; see the session log or its subagents/] …\n${text.slice(start)}`;
 }
 
 // The fields of the SDK's hook_response message that an entry keeps.
