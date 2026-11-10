@@ -2353,6 +2353,86 @@ describe('runSession', () => {
     expect(stdoutOutput).not.toContain('More.');
   });
 
+  it('exits 130 when options.signal is aborted while the oracle decides to end', async () => {
+    oracleReplies.push({ structured: { decision: 'end', reasoning: 'done' }, delayMs: 100 });
+    const abortError = new Error('Claude Code process aborted by user');
+    let aborted = false;
+    let abortStream: ((err: Error) => void) | undefined;
+    const agentQuery = {
+      close: vi.fn(),
+      interrupt: vi.fn(async () => {
+        aborted = true;
+        abortStream?.(abortError);
+      }),
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: 'system', subtype: 'init', session_id: 's-sigint-end', tools: [] };
+        yield {
+          type: 'result',
+          subtype: 'success',
+          session_id: 's-sigint-end',
+          num_turns: 1,
+          total_cost_usd: 0,
+        };
+        await new Promise<void>((_, reject) => {
+          if (aborted) reject(abortError);
+          abortStream = reject;
+        });
+      },
+    };
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt?: unknown }) =>
+      typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : agentQuery,
+    );
+
+    const signalController = new AbortController();
+    setTimeout(() => signalController.abort(), 30);
+
+    const result = await runSession(
+      minConfig({ user: { oracle_model: 'claude-haiku-4-5', max_turns: 5 } }),
+      { signal: signalController.signal },
+    );
+
+    expect(result.exitCode).toBe(130);
+  });
+
+  it('exits 6 when the session times out while the oracle decides to end', async () => {
+    oracleReplies.push({ structured: { decision: 'end', reasoning: 'done' }, delayMs: 100 });
+    const abortError = new Error('Claude Code process aborted by user');
+    let aborted = false;
+    let abortStream: ((err: Error) => void) | undefined;
+    const agentQuery = {
+      close: vi.fn(),
+      interrupt: vi.fn(async () => {
+        aborted = true;
+        abortStream?.(abortError);
+      }),
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: 'system', subtype: 'init', session_id: 's-timeout-end', tools: [] };
+        yield {
+          type: 'result',
+          subtype: 'success',
+          session_id: 's-timeout-end',
+          num_turns: 1,
+          total_cost_usd: 0,
+        };
+        await new Promise<void>((_, reject) => {
+          if (aborted) reject(abortError);
+          abortStream = reject;
+        });
+      },
+    };
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt?: unknown }) =>
+      typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : agentQuery,
+    );
+
+    const result = await runSession(
+      minConfig({ user: { oracle_model: 'claude-haiku-4-5', max_turns: 5 } }),
+      { timeoutSeconds: 0.03 },
+    );
+
+    expect(result.exitCode).toBe(6);
+    expect(parseYaml(stdoutOutput).timed_out).toBe(true);
+  });
+
   it('calls queryHandle.interrupt() when options.signal is aborted', async () => {
     oracleReplies.push({
       structured: { decision: 'continue', message: 'm', reasoning: 'ok' },
@@ -3221,11 +3301,13 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
     });
 
     describe('when the CLI is still running after the session ends', () => {
-      function queryStillRunningAfterEnd() {
+      // Like the real SDK, close() ends the stream while an abort makes it throw.
+      function queryStillRunningAfterEnd({ lateResults = 0 }: { lateResults?: number } = {}) {
         let release: (() => void) | undefined;
+        let abort: ((err: Error) => void) | undefined;
         const handle = {
           close: vi.fn(() => release?.()),
-          interrupt: vi.fn(async () => release?.()),
+          interrupt: vi.fn(async () => abort?.(new Error('Claude Code process aborted by user'))),
           [Symbol.asyncIterator]: async function* () {
             yield { type: 'system', subtype: 'init', session_id: 's-after-end', tools: [] };
             yield {
@@ -3235,8 +3317,18 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
               num_turns: 1,
               total_cost_usd: 0.01,
             };
-            await new Promise<void>((resolve) => {
+            for (let i = 0; i < lateResults; i++) {
+              await new Promise((resolve) => setTimeout(resolve, 1_000));
+              yield {
+                type: 'result',
+                subtype: 'success',
+                session_id: 's-after-end',
+                total_cost_usd: 0.02,
+              };
+            }
+            await new Promise<void>((resolve, reject) => {
               release = resolve;
+              abort = reject;
             });
           },
         };
@@ -3261,6 +3353,36 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
         expect(result.exitCode).toBe(0);
         expect(handle.close).toHaveBeenCalled();
         expect(parseYaml(stdoutOutput).cost_incomplete).toBe(true);
+      });
+
+      it('times the grace from the end, not from later messages, and leaves no timer behind', async () => {
+        vi.useFakeTimers();
+        const handle = queryStillRunningAfterEnd({ lateResults: 2 });
+
+        const run = runSession(minConfig());
+        await vi.advanceTimersByTimeAsync(CLI_EXIT_GRACE_MS - 1);
+        expect(handle.close).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        await run;
+
+        expect(handle.close).toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it('leaves no timer behind when the CLI exits by itself', async () => {
+        vi.useFakeTimers();
+        (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(
+          createMockQuery([
+            { type: 'system', subtype: 'init', session_id: 's-exits', tools: [] },
+            { type: 'result', subtype: 'success', session_id: 's-exits', total_cost_usd: 0 },
+          ]),
+        );
+
+        const result = await runSession(minConfig());
+
+        expect(result.exitCode).toBe(0);
+        expect(vi.getTimerCount()).toBe(0);
+        expect(parseYaml(stdoutOutput).cost_incomplete).toBeUndefined();
       });
 
       it('keeps exit 0 when the session timeout passes during the grace period', async () => {

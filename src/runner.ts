@@ -111,20 +111,11 @@ export async function runSession(
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
   let signaled = false;
+  // A signal interrupts the session only while it runs; once it has ended, a
+  // signal just stops the CLI's grace early.
+  let signaledWhileRunning = false;
   let exitGraceHandle: ReturnType<typeof setTimeout> | undefined;
   let cutOffAfterEnd = false;
-
-  // Forward an externally-supplied AbortSignal (e.g. SIGINT from cli.ts) into
-  // our internal abortController so the SDK and oracle stop in flight.
-  let onExternalAbort: (() => void) | undefined;
-  if (options.signal) {
-    onExternalAbort = () => {
-      signaled = true;
-      abortController.abort();
-      queryHandle?.interrupt().catch(() => {});
-    };
-    options.signal.addEventListener('abort', onExternalAbort);
-  }
 
   // Track stats
   const state = newSessionState({
@@ -135,6 +126,21 @@ export async function runSession(
     claudeDir,
     oracle,
   });
+
+  // Forward an externally-supplied AbortSignal (e.g. SIGINT from cli.ts) into
+  // our internal abortController so the SDK and oracle stop in flight.
+  let onExternalAbort: (() => void) | undefined;
+  if (options.signal) {
+    onExternalAbort = () => {
+      signaled = true;
+      if (state.ended) cutOffAfterEnd = true;
+      else signaledWhileRunning = true;
+      abortController.abort();
+      queryHandle?.interrupt().catch(() => {});
+    };
+    options.signal.addEventListener('abort', onExternalAbort);
+  }
+
   const startTime = Date.now();
 
   try {
@@ -180,9 +186,7 @@ export async function runSession(
     if (timedOut) {
       process.stderr.write(`[scuttlerun] timed out after ${timeoutSeconds}s\n`);
       state.exitCode = EXIT_TIMEOUT;
-    } else if (signaled && state.ended) {
-      cutOffAfterEnd = true;
-    } else if (signaled) {
+    } else if (signaledWhileRunning) {
       state.exitCode = EXIT_SIGINT;
     } else if (state.oracleFailed) {
       state.exitCode = EXIT_RUNTIME_ERROR;
@@ -191,7 +195,7 @@ export async function runSession(
     if (timedOut) {
       process.stderr.write(`[scuttlerun] timed out after ${timeoutSeconds}s\n`);
       state.exitCode = EXIT_TIMEOUT;
-    } else if (signaled && !state.ended) state.exitCode = EXIT_SIGINT;
+    } else if (signaledWhileRunning) state.exitCode = EXIT_SIGINT;
     else if (!state.ended) {
       state.exitCode = EXIT_RUNTIME_ERROR;
       // Surface the exception that escaped the message loop as a diagnostic

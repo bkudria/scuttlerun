@@ -408,6 +408,7 @@ describe('handleMessage', () => {
 
     it('raises the agent cost to a later running total but never lowers it', async () => {
       await handleMessage(result('success', 0.03), state);
+      await handleMessage(result('success', 0.02), state);
       await handleMessage(result('error_during_execution', 0), state);
 
       expect(state.resultTotalCostUsd).toBe(0.03);
@@ -432,6 +433,24 @@ describe('handleMessage', () => {
       expect(answerQuestions).not.toHaveBeenCalled();
       expect(output).toBe('');
       expect(state.oracleFailed).toBe(false);
+    });
+
+    it('also follows an error result that ended it', async () => {
+      state = newSessionState({ ...state, oracle: state.oracle });
+      state.sessionId = 's';
+      await handleMessage(result('error_max_turns', 0.01), state);
+      output = '';
+
+      await handleMessage(
+        sdkMessage({
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'Still here.' }] },
+          parent_tool_use_id: null,
+        }),
+        state,
+      );
+
+      expect(output).toBe('');
     });
 
     it('keeps the exit code of the decision that ended it', async () => {
