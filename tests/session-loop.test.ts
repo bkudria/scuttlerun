@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import { handleMessage, newSessionState, type SessionState } from '../src/session-loop.js';
+import {
+  canUseTool,
+  handleMessage,
+  newSessionState,
+  type SessionState,
+} from '../src/session-loop.js';
 import { parseSessionConfig } from '../src/config.js';
 import type { Oracle } from '../src/oracle.js';
 import { SyntheticUser } from '../src/synthetic-user.js';
@@ -342,6 +347,7 @@ describe('handleMessage', () => {
 
   describe('after the session has ended', () => {
     let decideTurnPolicy: ReturnType<typeof vi.fn>;
+    let answerQuestions: ReturnType<typeof vi.fn>;
 
     function result(subtype: string, totalCostUsd: number): SDKMessage {
       return sdkMessage({ type: 'result', subtype, num_turns: 1, total_cost_usd: totalCostUsd });
@@ -352,6 +358,7 @@ describe('handleMessage', () => {
         .fn()
         .mockResolvedValueOnce({ decision: 'end', reasoning: 'done' })
         .mockResolvedValue({ decision: 'continue', message: 'one more thing', reasoning: 'r' });
+      answerQuestions = vi.fn().mockRejectedValue(new Error('oracle unavailable'));
       const config = parseSessionConfig({ prompt: 'p', user: { max_turns: 5 } });
       state = newSessionState({
         config,
@@ -359,7 +366,7 @@ describe('handleMessage', () => {
         projectDir: '/tmp/project',
         sandboxHome: undefined,
         claudeDir: undefined,
-        oracle: { decideTurnPolicy } as unknown as Oracle,
+        oracle: { decideTurnPolicy, answerQuestions } as unknown as Oracle,
       });
       state.sessionId = 's';
       state.syntheticUser = new SyntheticUser(state.oracle, config.user, config.prompt);
@@ -404,6 +411,27 @@ describe('handleMessage', () => {
       await handleMessage(result('error_during_execution', 0), state);
 
       expect(state.resultTotalCostUsd).toBe(0.03);
+    });
+
+    it('refuses a question without asking the oracle, recording it or failing the session', async () => {
+      const question = {
+        question: 'Which one?',
+        header: 'Pick',
+        options: [
+          { label: 'A', description: 'a' },
+          { label: 'B', description: 'b' },
+        ],
+        multiSelect: false,
+      };
+
+      const decision = await canUseTool(state, new AbortController())('AskUserQuestion', {
+        questions: [question],
+      });
+
+      expect(decision).toMatchObject({ behavior: 'deny' });
+      expect(answerQuestions).not.toHaveBeenCalled();
+      expect(output).toBe('');
+      expect(state.oracleFailed).toBe(false);
     });
 
     it('keeps the exit code of the decision that ended it', async () => {

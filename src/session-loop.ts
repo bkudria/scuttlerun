@@ -145,6 +145,9 @@ export async function* inputMessages(state: SessionState) {
 // returning a bare `{ behavior }` triggers a ZodError for every tool call.
 export function canUseTool(state: SessionState, abortController: AbortController) {
   return async (toolName: string, input: Record<string, unknown>) => {
+    if (toolName === 'AskUserQuestion' && state.ended) {
+      return { behavior: 'deny', message: 'The session has ended' };
+    }
     if (toolName === 'AskUserQuestion' && state.syntheticUser) {
       const parsed = AskUserQuestionInputSchema.safeParse(input);
       if (!parsed.success) {

@@ -966,45 +966,39 @@ describe('runSession', () => {
 
   it('denies AskUserQuestion with malformed input', async () => {
     type CanUseToolFn = (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
-    let capturedCanUseTool: CanUseToolFn | undefined;
+    let denyResult: unknown;
 
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
-      (opts: { options: { canUseTool?: CanUseToolFn } }) => {
-        capturedCanUseTool = opts.options.canUseTool;
-        return createMockQuery([
-          {
+      (opts: { options: { canUseTool: CanUseToolFn } }) => ({
+        close: vi.fn(),
+        interrupt: vi.fn().mockResolvedValue(undefined),
+        [Symbol.asyncIterator]: async function* () {
+          yield {
             type: 'system',
             subtype: 'init',
             session_id: 's6',
             tools: ['AskUserQuestion'],
             model: 'claude-haiku-4-5',
-          },
-          {
+          };
+          denyResult = await opts.options.canUseTool('AskUserQuestion', { garbage: true });
+          yield {
             type: 'result',
             subtype: 'success',
             session_id: 's6',
-            stop_reason: 'end_turn',
-            is_error: false,
             num_turns: 1,
             total_cost_usd: 0.001,
-            duration_ms: 3000,
-            usage: { input_tokens: 100, output_tokens: 50 },
-            result: 'Done',
-          },
-        ]);
-      },
+          };
+        },
+      }),
     );
 
     await runSession(minConfig());
-    expect(capturedCanUseTool).toBeDefined();
-    if (!capturedCanUseTool) throw new Error('capturedCanUseTool not set');
 
     // Deny branch must include a `message` per the SDK's PermissionResult
     // schema (see issue #36).
-    const denyResult = await capturedCanUseTool('AskUserQuestion', { garbage: true });
     expect(denyResult).toEqual({
       behavior: 'deny',
-      message: expect.stringMatching(/\S/),
+      message: expect.stringContaining('schema validation'),
     });
   });
 
