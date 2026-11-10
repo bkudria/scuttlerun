@@ -13,6 +13,10 @@ import { EXIT_RUNTIME_ERROR, EXIT_TIMEOUT, EXIT_SIGINT } from './exit-codes.js';
 import { writeFooter } from './transcript.js';
 import { canUseTool, handleMessage, inputMessages, newSessionState } from './session-loop.js';
 
+// How long the CLI may keep running once the session has ended, so it can
+// exit by itself and run its SessionEnd hooks, before it is closed.
+export const CLI_EXIT_GRACE_MS = 10_000;
+
 export interface RunResult {
   exitCode: number;
   sessionId?: string;
@@ -107,18 +111,11 @@ export async function runSession(
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   let timedOut = false;
   let signaled = false;
-
-  // Forward an externally-supplied AbortSignal (e.g. SIGINT from cli.ts) into
-  // our internal abortController so the SDK and oracle stop in flight.
-  let onExternalAbort: (() => void) | undefined;
-  if (options.signal) {
-    onExternalAbort = () => {
-      signaled = true;
-      abortController.abort();
-      queryHandle?.interrupt().catch(() => {});
-    };
-    options.signal.addEventListener('abort', onExternalAbort);
-  }
+  // A signal interrupts the session only while it runs; once it has ended, a
+  // signal just stops the CLI's grace early.
+  let signaledWhileRunning = false;
+  let exitGraceHandle: ReturnType<typeof setTimeout> | undefined;
+  let cutOffAfterEnd = false;
 
   // Track stats
   const state = newSessionState({
@@ -129,6 +126,21 @@ export async function runSession(
     claudeDir,
     oracle,
   });
+
+  // Forward an externally-supplied AbortSignal (e.g. SIGINT from cli.ts) into
+  // our internal abortController so the SDK and oracle stop in flight.
+  let onExternalAbort: (() => void) | undefined;
+  if (options.signal) {
+    onExternalAbort = () => {
+      signaled = true;
+      if (state.ended) cutOffAfterEnd = true;
+      else signaledWhileRunning = true;
+      abortController.abort();
+      queryHandle?.interrupt().catch(() => {});
+    };
+    options.signal.addEventListener('abort', onExternalAbort);
+  }
+
   const startTime = Date.now();
 
   try {
@@ -161,13 +173,20 @@ export async function runSession(
       if (timedOut) break;
       if (signaled) break;
       await handleMessage(message, state);
+      if (state.ended && !exitGraceHandle) {
+        clearTimeout(timeoutHandle);
+        exitGraceHandle = setTimeout(() => {
+          cutOffAfterEnd = true;
+          queryHandle?.close();
+        }, CLI_EXIT_GRACE_MS);
+      }
     }
 
     // Check for timeout
     if (timedOut) {
       process.stderr.write(`[scuttlerun] timed out after ${timeoutSeconds}s\n`);
       state.exitCode = EXIT_TIMEOUT;
-    } else if (signaled) {
+    } else if (signaledWhileRunning) {
       state.exitCode = EXIT_SIGINT;
     } else if (state.oracleFailed) {
       state.exitCode = EXIT_RUNTIME_ERROR;
@@ -176,8 +195,8 @@ export async function runSession(
     if (timedOut) {
       process.stderr.write(`[scuttlerun] timed out after ${timeoutSeconds}s\n`);
       state.exitCode = EXIT_TIMEOUT;
-    } else if (signaled) state.exitCode = EXIT_SIGINT;
-    else {
+    } else if (signaledWhileRunning) state.exitCode = EXIT_SIGINT;
+    else if (!state.ended) {
       state.exitCode = EXIT_RUNTIME_ERROR;
       // Surface the exception that escaped the message loop as a diagnostic
       // annotation paired with the runtime-error exit code (spec rule
@@ -197,7 +216,7 @@ export async function runSession(
         toolCalls: state.toolCallCount,
         durationMs: duration,
         totalCostUsd: state.resultTotalCostUsd + oracleUsage.cost_usd,
-        costIncomplete: !state.resultArrived || oracle.hasUnknownCost(),
+        costIncomplete: !state.resultArrived || cutOffAfterEnd || oracle.hasUnknownCost(),
         transcriptIncomplete: state.transcriptIncomplete,
         oracleCostUsd: oracleUsage.cost_usd,
         timedOut,
@@ -209,6 +228,7 @@ export async function runSession(
     } finally {
       /* v8 ignore next -- timeoutHandle is always set; defensive guard */
       if (timeoutHandle) clearTimeout(timeoutHandle);
+      clearTimeout(exitGraceHandle);
       if (queryHandle) queryHandle.close();
       if (options.signal && onExternalAbort) {
         options.signal.removeEventListener('abort', onExternalAbort);

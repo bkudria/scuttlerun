@@ -1,9 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import { handleMessage, newSessionState, type SessionState } from '../src/session-loop.js';
+import {
+  canUseTool,
+  handleMessage,
+  newSessionState,
+  type SessionState,
+} from '../src/session-loop.js';
 import { parseSessionConfig } from '../src/config.js';
 import type { Oracle } from '../src/oracle.js';
+import { SyntheticUser } from '../src/synthetic-user.js';
+import { EXIT_SUCCESS } from '../src/exit-codes.js';
 
 function sdkMessage(message: Record<string, unknown>): SDKMessage {
   return message as unknown as SDKMessage;
@@ -335,6 +342,121 @@ describe('handleMessage', () => {
         is_error: true,
         text: 'File does not exist.',
       });
+    });
+  });
+
+  describe('after the session has ended', () => {
+    let decideTurnPolicy: ReturnType<typeof vi.fn>;
+    let answerQuestions: ReturnType<typeof vi.fn>;
+
+    function result(subtype: string, totalCostUsd: number): SDKMessage {
+      return sdkMessage({ type: 'result', subtype, num_turns: 1, total_cost_usd: totalCostUsd });
+    }
+
+    beforeEach(async () => {
+      decideTurnPolicy = vi
+        .fn()
+        .mockResolvedValueOnce({ decision: 'end', reasoning: 'done' })
+        .mockResolvedValue({ decision: 'continue', message: 'one more thing', reasoning: 'r' });
+      answerQuestions = vi.fn().mockRejectedValue(new Error('oracle unavailable'));
+      const config = parseSessionConfig({ prompt: 'p', user: { max_turns: 5 } });
+      state = newSessionState({
+        config,
+        configPaths: ['/tmp/session.yaml'],
+        projectDir: '/tmp/project',
+        sandboxHome: undefined,
+        claudeDir: undefined,
+        oracle: { decideTurnPolicy, answerQuestions } as unknown as Oracle,
+      });
+      state.sessionId = 's';
+      state.syntheticUser = new SyntheticUser(state.oracle, config.user, config.prompt);
+
+      await handleMessage(result('success', 0.01), state);
+      output = '';
+    });
+
+    it('neither consults the oracle nor records what the agent does next', async () => {
+      await handleMessage(
+        sdkMessage({
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'The task finished.' }] },
+          parent_tool_use_id: null,
+        }),
+        state,
+      );
+      await handleMessage(assistantToolUse('toolu_late', 'Bash', { command: 'ls' }), state);
+      await handleMessage(
+        sdkMessage({
+          type: 'system',
+          subtype: 'hook_response',
+          hook_id: 'id-stop',
+          hook_name: 'Stop',
+          hook_event: 'Stop',
+          output: 'x',
+          stdout: 'x',
+          stderr: '',
+          exit_code: 0,
+          outcome: 'success',
+        }),
+        state,
+      );
+      await handleMessage(result('success', 0.02), state);
+
+      expect(decideTurnPolicy).toHaveBeenCalledTimes(1);
+      expect(output).toBe('');
+    });
+
+    it('raises the agent cost to a later running total but never lowers it', async () => {
+      await handleMessage(result('success', 0.03), state);
+      await handleMessage(result('success', 0.02), state);
+      await handleMessage(result('error_during_execution', 0), state);
+
+      expect(state.resultTotalCostUsd).toBe(0.03);
+    });
+
+    it('refuses a question without asking the oracle, recording it or failing the session', async () => {
+      const question = {
+        question: 'Which one?',
+        header: 'Pick',
+        options: [
+          { label: 'A', description: 'a' },
+          { label: 'B', description: 'b' },
+        ],
+        multiSelect: false,
+      };
+
+      const decision = await canUseTool(state, new AbortController())('AskUserQuestion', {
+        questions: [question],
+      });
+
+      expect(decision).toMatchObject({ behavior: 'deny' });
+      expect(answerQuestions).not.toHaveBeenCalled();
+      expect(output).toBe('');
+      expect(state.oracleFailed).toBe(false);
+    });
+
+    it('also follows an error result that ended it', async () => {
+      state = newSessionState({ ...state, oracle: state.oracle });
+      state.sessionId = 's';
+      await handleMessage(result('error_max_turns', 0.01), state);
+      output = '';
+
+      await handleMessage(
+        sdkMessage({
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'Still here.' }] },
+          parent_tool_use_id: null,
+        }),
+        state,
+      );
+
+      expect(output).toBe('');
+    });
+
+    it('keeps the exit code of the decision that ended it', async () => {
+      await handleMessage(result('error_max_turns', 0.02), state);
+
+      expect(state.exitCode).toBe(EXIT_SUCCESS);
     });
   });
 });
