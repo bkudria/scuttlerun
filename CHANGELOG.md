@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Release sections below are generated automatically by release-please from Conventional Commit messages.
 
+## [0.6.0](https://github.com/bkudria/scuttlerun/compare/v0.5.0...v0.6.0) (2026-11-10)
+
+
+### Features
+
+* **transcript:** record tool results as result entries linked to their calls by id ([#107](https://github.com/bkudria/scuttlerun/issues/107)) ([7a0877b](https://github.com/bkudria/scuttlerun/commit/7a0877b4725801f259a54a7d9784842bd4580a66))
+
 ## [0.5.0](https://github.com/bkudria/scuttlerun/compare/v0.4.0...v0.5.0) (2026-11-08)
 
 
