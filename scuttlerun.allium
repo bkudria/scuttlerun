@@ -1307,9 +1307,11 @@ rule SessionTranscriptWritesLost {
         -- stand, the SDK does not change the CLI's exit status for this
         -- loss, and the exit code is unchanged (ExitCodeReflectsOutcome).
         -- The report arrives as the CLI exits, which is usually after the
-        -- session has ended, so this rule carries no status guard: it is
-        -- the one recording the runner still makes once the session is
-        -- terminal. It is observed whenever the CLI exits by itself
+        -- session has ended, so this rule carries no status guard. With
+        -- AgentTurnCompletesAfterEnd's cost update it is one of the two
+        -- things the runner still takes from the CLI once the session is
+        -- terminal, and the only one that writes anything (its stderr
+        -- warning). It is observed whenever the CLI exits by itself
         -- (AgentCliExitsAfterEnd); a timeout, a signal, or the CLI being
         -- closed when its grace passes (CliExitGraceExpires) stops the
         -- stream first and may leave it unobserved.
@@ -1850,7 +1852,9 @@ surface StreamingTranscript {
         -- legend rather than embedding a copy of this list.
 
     @guarantee HookEntryContract
-        -- A hook entry records one hook that ran (HookResponseEmitted).
+        -- A hook entry records one hook that ran while the session was
+        -- running (HookResponseEmitted). Hooks that run after the result
+        -- that ended it, SessionEnd hooks among them, get no entry.
         -- `hook:` carries the hook's event, followed by `:` and its
         -- matcher when it has one (`PreToolUse:Bash`,
         -- `SessionStart:startup`, `Stop`). `outcome` is success, error or
@@ -1911,7 +1915,9 @@ surface StreamingTranscript {
         -- (the TranscriptToolFieldContract, one line per tool group plus
         -- `any other tool`); `not recorded` (successful results of tools
         -- outside config.tools_with_recorded_results, pointing to the SDK
-        -- session JSONL named by `transcript`); and `footer` (what
+        -- session JSONL named by `transcript`, and anything after the
+        -- result that ended the session, SessionEnd hooks included
+        -- (SessionEnds)); and `footer` (what
         -- `cost_incomplete`, `transcript_incomplete` and `timed_out`
         -- mean). The `entries` line for results names the tools whose
         -- every result is written from the same list that selects them. The legend is

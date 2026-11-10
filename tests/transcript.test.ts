@@ -99,7 +99,7 @@ describe('transcript', () => {
           'any other tool': 'input, the full input',
         },
         'not recorded':
-          "results of other tools' calls that succeeded; the session log at the header's transcript path, or for a subagent's calls the subagents/ directory the header describes, has every result",
+          "results of other tools' calls that succeeded; the session log at the header's transcript path, or for a subagent's calls the subagents/ directory the header describes, has every result. Nothing after the result that ended the session either, such as a turn the agent takes when a background task finishes, or a SessionEnd hook",
         footer: {
           cost_incomplete: 'some spend went unreported',
           transcript_incomplete: 'the session log is missing lines',

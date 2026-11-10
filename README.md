@@ -336,7 +336,7 @@ The output is valid YAML and machine-parseable (e.g. with `yq`).
 
 `is_error` is always present. `text` is what the agent was shown, omitted when empty; a text longer than 4000 characters keeps its first and last 2000, with a line in between saying how many characters were cut. An `AskUserQuestion` result also lists `questions`: each question as it was answered, after any hook rewrote it, with its option labels; a subagent's call or an error has none. An error the agent later recovered from still gets its entry, so an error result alone does not mean the task failed. A `Bash` command moved to the background, by `run_in_background` or by outrunning its timeout, reports only that it started, so its result says nothing about how the command ended. The contract is `@guarantee ToolResultEntryContract`.
 
-**Hook entries record every hook that ran.** When a hook from the scenario's settings or a loaded plugin runs, the transcript gets an entry like this:
+**Hook entries record every hook that ran during the session.** When a hook from the scenario's settings or a loaded plugin runs, the transcript gets an entry like this (hooks that run after the session has ended, `SessionEnd` among them, get none; see [When the session ends](#how-it-works)):
 
 ```yaml
 - tool: Bash

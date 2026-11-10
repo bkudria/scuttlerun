@@ -218,13 +218,6 @@ building result entries. Entries are not ordered by priority.
   only when no result arrived, so a crashed agent turn reports a
   confirmed-looking figure. Shape: the oracle's rule, a non-success result
   with `total_cost_usd` 0 sets `cost_incomplete`.
-- **Duplicate error line on stderr.** After an error result, when the CLI
-  exits non-zero the SDK throws "Claude Code returned an error result: …"
-  carrying the same errors, and the runner's catch writes it as a second
-  `[scuttlerun]` line after the one the result branch already wrote.
-  Startup failures, the sandbox-unavailable case included, show their error
-  twice. Shape: skip the catch's line when the result branch already
-  reported that result's errors.
 - **Oracle token counts from `modelUsage`.** Oracle cost comes from
   `total_cost_usd`, which covers every call in the query, but oracle tokens
   come from the result's `usage`, which the SDK marks "MAIN AGENT LOOP ONLY …
