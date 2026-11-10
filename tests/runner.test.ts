@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { parse as parseYaml } from 'yaml';
-import { runSession } from '../src/runner.js';
+import { CLI_EXIT_GRACE_MS, runSession } from '../src/runner.js';
 import type { SessionConfig } from '../src/config.js';
 import { DEFAULT_SESSION_TIMEOUT_SECONDS } from '../src/config.js';
 
@@ -3224,6 +3224,108 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
 
       await expect(runSession(minConfig())).rejects.toThrow('stdout closed during footer');
       expect(mockQuery.close).toHaveBeenCalledTimes(1);
+    });
+
+    describe('when the CLI is still running after the session ends', () => {
+      function queryStillRunningAfterEnd() {
+        let release: (() => void) | undefined;
+        const handle = {
+          close: vi.fn(() => release?.()),
+          interrupt: vi.fn(async () => release?.()),
+          [Symbol.asyncIterator]: async function* () {
+            yield { type: 'system', subtype: 'init', session_id: 's-after-end', tools: [] };
+            yield {
+              type: 'result',
+              subtype: 'success',
+              session_id: 's-after-end',
+              num_turns: 1,
+              total_cost_usd: 0.01,
+            };
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+          },
+        };
+        (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(handle);
+        return handle;
+      }
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('closes the query once the grace period passes and flags the cost incomplete', async () => {
+        vi.useFakeTimers();
+        const handle = queryStillRunningAfterEnd();
+
+        const run = runSession(minConfig());
+        await vi.advanceTimersByTimeAsync(CLI_EXIT_GRACE_MS - 1);
+        expect(handle.close).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        const result = await run;
+
+        expect(result.exitCode).toBe(0);
+        expect(handle.close).toHaveBeenCalled();
+        expect(parseYaml(stdoutOutput).cost_incomplete).toBe(true);
+      });
+
+      it('keeps exit 0 when the session timeout passes during the grace period', async () => {
+        vi.useFakeTimers();
+        queryStillRunningAfterEnd();
+
+        const run = runSession(minConfig(), { timeoutSeconds: 1 });
+        await vi.advanceTimersByTimeAsync(CLI_EXIT_GRACE_MS);
+        const result = await run;
+
+        expect(result.exitCode).toBe(0);
+        expect(parseYaml(stdoutOutput).timed_out).toBeUndefined();
+      });
+
+      it('keeps exit 0 and flags the cost incomplete when the operator interrupts during the grace period', async () => {
+        vi.useFakeTimers();
+        queryStillRunningAfterEnd();
+        const signalController = new AbortController();
+
+        const run = runSession(minConfig(), { signal: signalController.signal });
+        await vi.advanceTimersByTimeAsync(10);
+        signalController.abort();
+        const result = await run;
+
+        expect(result.exitCode).toBe(0);
+        expect(parseYaml(stdoutOutput).cost_incomplete).toBe(true);
+      });
+
+      it('keeps exit 0 and reports nothing when the query throws after the end', async () => {
+        (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue({
+          close: vi.fn(),
+          interrupt: vi.fn().mockResolvedValue(undefined),
+          [Symbol.asyncIterator]: async function* () {
+            yield { type: 'system', subtype: 'init', session_id: 's-throw-after-end', tools: [] };
+            yield {
+              type: 'result',
+              subtype: 'success',
+              session_id: 's-throw-after-end',
+              num_turns: 1,
+              total_cost_usd: 0.01,
+            };
+            throw new Error('Claude Code process exited with code 143');
+          },
+        });
+        let stderrOutput = '';
+        const origStderrWrite = process.stderr.write;
+        process.stderr.write = ((chunk: string) => {
+          stderrOutput += chunk;
+          return true;
+        }) as typeof process.stderr.write;
+
+        try {
+          const result = await runSession(minConfig());
+          expect(result.exitCode).toBe(0);
+          expect(stderrOutput).not.toContain('exited with code 143');
+        } finally {
+          process.stderr.write = origStderrWrite;
+        }
+      });
     });
   });
 });
