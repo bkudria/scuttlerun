@@ -77,6 +77,10 @@ export interface SessionState {
   transcriptIncomplete: boolean;
   oracleFailed: boolean;
   exitCode: number;
+  // Set once a result ends the session. The CLI can keep running after that,
+  // e.g. to finish a background task, and its later turns are not part of the
+  // session.
+  ended: boolean;
 }
 
 export type SessionInputs = Pick<
@@ -99,6 +103,7 @@ export function newSessionState(inputs: SessionInputs): SessionState {
     transcriptIncomplete: false,
     oracleFailed: false,
     exitCode: EXIT_SUCCESS,
+    ended: false,
   };
 }
 
@@ -164,6 +169,10 @@ export function canUseTool(state: SessionState, abortController: AbortController
 }
 
 export async function handleMessage(message: SDKMessage, state: SessionState): Promise<void> {
+  if (state.ended) {
+    handleMessageAfterEnd(message, state);
+    return;
+  }
   switch (message.type) {
     case 'system':
       handleSystem(message, state);
@@ -177,6 +186,17 @@ export async function handleMessage(message: SDKMessage, state: SessionState): P
     case 'result':
       await handleResult(message, state);
       break;
+  }
+}
+
+// What arrives after the end still costs money and can report a lost session
+// log, but records nothing and decides nothing. A later result's cost is the
+// running total, except that an error result may carry a zero.
+function handleMessageAfterEnd(message: SDKMessage, state: SessionState): void {
+  if (message.type === 'result') {
+    state.resultTotalCostUsd = Math.max(state.resultTotalCostUsd, message.total_cost_usd || 0);
+  } else if (message.type === 'system' && message.subtype === 'session_writes_lost') {
+    handleSystem(message, state);
   }
 }
 
@@ -328,10 +348,12 @@ async function handleResult(message: SDKResultMessage, state: SessionState): Pro
     } else {
       state.resolveNextAction?.({ type: 'end' });
       state.exitCode = EXIT_SUCCESS;
+      state.ended = true;
     }
   } else {
     state.resolveNextAction?.({ type: 'end' });
     state.exitCode = exitCodeForUnfinishedResult(message, state.config.sandbox.enabled);
+    state.ended = true;
   }
 }
 
