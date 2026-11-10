@@ -11,8 +11,9 @@ skill-frontmatter hooks and plan mode; craboodle evals of the fabrica plugin
 ran the same day against what the transcript does and does not show. The
 Synthetic user, Isolation and sandbox, Cost and diagnostics, and Spec sections
 come from reviewing the Agent SDK 0.3.310 → 0.3.317 bump (#89) on 2026-11-07.
-The hook-entry follow-ups and the Code health section come from building hook
-entries (#103) on 2026-11-07. Entries are not ordered by priority.
+The hook-entry follow-ups come from building hook entries (#103) on
+2026-11-07; the Code health entry comes from the 0.5.0 publish (#105).
+Entries are not ordered by priority.
 
 ## Decided, not yet built
 
@@ -223,19 +224,6 @@ entries (#103) on 2026-11-07. Entries are not ordered by priority.
 
 ## Code health
 
-- **A message-loop dispatcher before the next entry kind.** #103 moved
-  `buildSdkOptions` and the slash-command warning out of `runner.ts` to make
-  room for one branch; `runSession` is back at 273 of the 280 lines lint
-  allows. Bounded tool results, permission and mode entries, and plan
-  approval each add a branch to the same `for await` loop. Shape: one
-  handler per message kind sharing a small session-state object (session id,
-  synthetic user, counters, flags), done as a behaviour-neutral refactor PR
-  before the next transcript feature rather than inside it.
-- **Tests for `sdk-options.ts` live in the runner suite.** CLAUDE.md promises
-  a 1:1 mapping of tests to source files, but `buildSdkOptions` is covered
-  only through `runSession` in `tests/runner.test.ts`. Moving the
-  option-shape assertions into `tests/sdk-options.test.ts` would make them
-  pure (no mocked query stream) and shorten the runner suite.
 - **Build before `npm publish`.** The release workflow's publish job runs
   `npm publish` right after `npm ci`, so `dist/` exists only once
   `prepublishOnly` builds it. npm checks `bin` before that script runs: the

@@ -39,9 +39,9 @@ npm run dev -- examples/simple.yaml             # Run via tsx (no build step)
 
 ## Architecture
 
-**Data flow:** CLI (`cli.ts`) → parses YAML + merges configs → `runner.ts` orchestrates the session → Agent SDK `query()` with async generator for multi-turn input → `synthetic-user.ts` handles AskUserQuestion (via `canUseTool` callback) and turn policy decisions → `oracle.ts` runs a one-shot Agent SDK `query()` (no tools, JSON-schema structured output, validated with Zod) → `transcript.ts` streams formatted output to stdout.
+**Data flow:** CLI (`cli.ts`) → parses YAML + merges configs → `runner.ts` sets up the session and runs the `for await` loop → `session-loop.ts` dispatches the SDK messages scuttlerun records (init, hook responses, lost session writes, assistant blocks, results) to one handler each, against a shared session state, and owns the async input generator and the `canUseTool` callback → Agent SDK `query()` with async generator for multi-turn input → `synthetic-user.ts` handles AskUserQuestion (via `canUseTool` callback) and turn policy decisions → `oracle.ts` runs a one-shot Agent SDK `query()` (no tools, JSON-schema structured output, validated with Zod) → `transcript.ts` streams formatted output to stdout.
 
-**Key coordination pattern:** The runner uses an async generator + Promise/resolver to coordinate multi-turn input. After each SDK `ResultMessage`, the synthetic user's turn policy decides whether to yield another message or return (ending the session). This pattern exists because `streamInput()` fails with `ERR_STREAM_WRITE_AFTER_END`.
+**Key coordination pattern:** The runner uses an async generator + Promise/resolver to coordinate multi-turn input. The generator and resolver live in `session-loop.ts`: `inputMessages` stores the resolver on the session state, and `handleResult` calls it. After each SDK `ResultMessage`, the synthetic user's turn policy decides whether to yield another message or return (ending the session). This pattern exists because `streamInput()` fails with `ERR_STREAM_WRITE_AFTER_END`.
 
 **Output:** scuttlerun streams a human-readable transcript to stdout (preamble → messages → summary). The SDK session file (full conversation JSONL) is preserved automatically. The project temp dir is always created and preserved at session end; on the next session start, scuttlerun garbage-collects its own `scuttlerun-project-*` directories in `$TMPDIR` that are older than 7 days.
 
@@ -64,4 +64,4 @@ When working with Agent SDK code (`@anthropic-ai/claude-agent-sdk`), load the `/
 
 ## Testing
 
-Tests are in `tests/` with 1:1 mapping to source files. Uses vitest. The project follows TDD — bottom-up order: config → transcript → oracle → project → synthetic-user → runner → cli.
+Tests are in `tests/` with 1:1 mapping to source files. Uses vitest. The project follows TDD — bottom-up order: config → transcript → oracle → project → synthetic-user → sdk-options → runner → cli.
