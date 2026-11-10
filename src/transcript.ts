@@ -163,13 +163,26 @@ function describeToolFields(rule: ToolFieldRule): string {
 }
 
 const OUTPUT_CAP_CHARS = 4000;
+const RESULT_EDGE_CHARS = OUTPUT_CAP_CHARS / 2;
+
+export const RESULT_RECORDED_TOOLS = ['Bash', 'AskUserQuestion', 'ExitPlanMode'];
+
+export function recordsResult(tool: string, isError: boolean): boolean {
+  return isError || RESULT_RECORDED_TOOLS.includes(tool);
+}
 
 export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
+  header: {
+    project: 'the directory the agent worked in; files it wrote are there',
+    transcript:
+      "the session log, Claude Code's own record of the session with every tool input and result; a subagent's calls are under subagents/ in the session-named directory beside it",
+  },
   entries: {
     user: 'a synthetic-user message; the first is the scenario prompt, any leading slash command included',
     assistant: "the agent's reply text",
     thinking: "the agent's thinking text",
-    tool: 'a tool call the agent requested, with only the fields under tool fields; whether it ran or failed is not shown, but hook entries after it show how any hooks responded',
+    tool: "a tool call the agent requested, a subagent's included: id, its number among this transcript's tool entries, then only the fields under tool fields; hook entries after it show how any hooks responded",
+    result: `how a tool call ended, linked to its tool entry by id: is_error (true when the call failed or was blocked) and text, what the agent was shown (absent when empty), with long lines wrapped and cut to its first and last ${RESULT_EDGE_CHARS} characters when longer than ${OUTPUT_CAP_CHARS}; AskUserQuestion results also list the questions as answered, after any hook rewrote them, with option labels only, except on a subagent's call or an error. A Bash command moved to the background reports only that it started, so its result says nothing about how the command ended. Written for every ${listFormat.format(RESULT_RECORDED_TOOLS)} call and for any call that returned an error, including errors the agent later recovered from, so an error result alone does not mean the task failed; a call cut short by a timeout or interrupt may have no result`,
     hook: `a hook that ran: its event and matcher, outcome, exit_code, and stdout and stderr when non-empty, each cut to ${OUTPUT_CAP_CHARS} characters; outcome and exit_code are the hook's own, not the tool call's`,
     oracle:
       "the synthetic user's decisions: ask_user (answers, reasoning), turn (decision, message, reasoning), error (reason)",
@@ -180,7 +193,8 @@ export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
     ),
     'any other tool': 'input, the full input',
   },
-  'not recorded': "tool results; the session log at the header's transcript path has them",
+  'not recorded':
+    "results of other tools' calls that succeeded; the session log at the header's transcript path, or for a subagent's calls the subagents/ directory the header describes, has every result",
   footer: {
     cost_incomplete: 'some spend went unreported',
     transcript_incomplete: 'the session log is missing lines',
@@ -188,9 +202,9 @@ export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
   },
 };
 
-export function writeTool(name: string, input: unknown): void {
+export function writeTool(name: string, input: unknown, id: number): void {
   const inp = input as Record<string, unknown>;
-  const entry: Record<string, unknown> = { tool: name };
+  const entry: Record<string, unknown> = { tool: name, id };
   const rule = TOOL_FIELD_RULES.find((r) => r.tools.includes(name));
 
   if (!rule) {
@@ -207,10 +221,35 @@ export function writeTool(name: string, input: unknown): void {
   writeEntry(entry);
 }
 
+// A cut inside a surrogate pair leaves a lone surrogate, which the yaml
+// library escapes and then folds into replacement characters.
+function isLowSurrogate(text: string, index: number): boolean {
+  const unit = text.charCodeAt(index);
+  return unit >= 0xdc00 && unit <= 0xdfff;
+}
+
+function headEnd(text: string, length: number): number {
+  return isLowSurrogate(text, length) ? length - 1 : length;
+}
+
+function tailStart(text: string, length: number): number {
+  const start = text.length - length;
+  return isLowSurrogate(text, start) ? start + 1 : start;
+}
+
 function capOutput(text: string): string {
   if (text.length <= OUTPUT_CAP_CHARS) return text;
-  const rest = text.length - OUTPUT_CAP_CHARS;
-  return `${text.slice(0, OUTPUT_CAP_CHARS)}\n… [${rest} more characters; the session log has the full output]`;
+  const end = headEnd(text, OUTPUT_CAP_CHARS);
+  const rest = text.length - end;
+  return `${text.slice(0, end)}\n… [${rest} more characters; the session log has the full output]`;
+}
+
+function capHeadAndTail(text: string): string {
+  if (text.length <= OUTPUT_CAP_CHARS) return text;
+  const end = headEnd(text, RESULT_EDGE_CHARS);
+  const start = tailStart(text, RESULT_EDGE_CHARS);
+  const omitted = start - end;
+  return `${text.slice(0, end)}\n… [${omitted} characters omitted; see the session log or its subagents/] …\n${text.slice(start)}`;
 }
 
 // The fields of the SDK's hook_response message that an entry keeps.
@@ -227,6 +266,30 @@ export function writeHook(hook: HookResponse): void {
   if (hook.exit_code !== undefined) entry.exit_code = hook.exit_code;
   if (hook.stdout) entry.stdout = capOutput(hook.stdout);
   if (hook.stderr) entry.stderr = capOutput(hook.stderr);
+  writeEntry(entry);
+}
+
+export interface AskedQuestion {
+  question: string;
+  options: string[];
+}
+
+export interface ToolResult {
+  tool: string;
+  id: number;
+  isError: boolean;
+  text: string;
+  questions?: AskedQuestion[];
+}
+
+export function writeResult(result: ToolResult): void {
+  const entry: Record<string, unknown> = {
+    result: result.tool,
+    id: result.id,
+    is_error: result.isError,
+  };
+  if (result.questions) entry.questions = result.questions;
+  if (result.text) entry.text = capHeadAndTail(result.text);
   writeEntry(entry);
 }
 

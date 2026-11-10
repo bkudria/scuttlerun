@@ -2,10 +2,12 @@ import type {
   SDKAssistantMessage,
   SDKMessage,
   SDKResultMessage,
+  SDKUserMessage,
   SDKStartupFailureReason,
   SDKSystemMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { realpathSync } from 'node:fs';
+import { z } from 'zod';
 import { unresolvedSlashCommandWarning } from './slash-command.js';
 import {
   lostThisSessionsTranscript,
@@ -29,10 +31,18 @@ import {
   writeTool,
   writeHook,
   type HookResponse,
+  writeResult,
+  type AskedQuestion,
+  recordsResult,
   writeOracleAsk,
   writeOracleTurn,
   writeOracleError,
 } from './transcript.js';
+
+type ToolResultBlock = Extract<
+  Exclude<SDKUserMessage['message']['content'], string>[number],
+  { type: 'tool_result' }
+>;
 
 export type SyntheticAction = { type: 'continue'; message: string } | { type: 'end' };
 
@@ -53,6 +63,7 @@ export interface SessionState {
   // wait for the header and the prompt's own entry.
   hooksBeforeInit: HookResponse[];
   toolCallCount: number;
+  toolCalls: Map<string, { name: string; id: number }>;
   filesWritten: Set<string>;
   filesEdited: Set<string>;
   filesRead: Set<string>;
@@ -78,6 +89,7 @@ export function newSessionState(inputs: SessionInputs): SessionState {
     ...inputs,
     hooksBeforeInit: [],
     toolCallCount: 0,
+    toolCalls: new Map(),
     filesWritten: new Set<string>(),
     filesEdited: new Set<string>(),
     filesRead: new Set<string>(),
@@ -159,6 +171,9 @@ export async function handleMessage(message: SDKMessage, state: SessionState): P
     case 'assistant':
       handleAssistant(message, state);
       break;
+    case 'user':
+      handleUser(message, state);
+      break;
     case 'result':
       await handleResult(message, state);
       break;
@@ -225,8 +240,9 @@ function handleAssistant(message: SDKAssistantMessage, state: SessionState): voi
         writeAssistant(block.text);
         textParts.push(block.text);
       } else if (block.type === 'tool_use' && block.name) {
-        writeTool(block.name, block.input);
-        state.toolCallCount++;
+        const id = ++state.toolCallCount;
+        writeTool(block.name, block.input, id);
+        state.toolCalls.set(block.id, { name: block.name, id });
         recordToolFile(block.name, block.input, state);
       }
     }
@@ -234,6 +250,52 @@ function handleAssistant(message: SDKAssistantMessage, state: SessionState): voi
       state.syntheticUser.addAssistantMessage(textParts.join('\n'));
     }
   }
+}
+
+function handleUser(message: Extract<SDKMessage, { type: 'user' }>, state: SessionState): void {
+  if ('isReplay' in message && message.isReplay) return;
+  const content = message.message.content;
+  if (!Array.isArray(content)) return;
+  for (const block of content) {
+    if (block.type !== 'tool_result') continue;
+    const call = state.toolCalls.get(block.tool_use_id);
+    if (!call) continue;
+    // Under CLI 2.1.317 most successful results carry no is_error key; Bash sets it false.
+    const isError = block.is_error === true;
+    if (!recordsResult(call.name, isError)) continue;
+    writeResult({
+      tool: call.name,
+      id: call.id,
+      isError,
+      questions:
+        call.name === 'AskUserQuestion' ? askedQuestions(message.tool_use_result) : undefined,
+      text: toolResultText(block.content),
+    });
+  }
+}
+
+function toolResultText(content: ToolResultBlock['content']): string {
+  if (content === undefined) return '';
+  if (typeof content === 'string') return content;
+  return content.map((part) => (part.type === 'text' ? part.text : `[${part.type}]`)).join('\n');
+}
+
+// An AskUserQuestion call's structured result holds the questions after any
+// PreToolUse hook rewrote them. Under CLI 2.1.317 it is absent on subagent
+// results, and failed calls carry an "Error: ..." string instead.
+const AnsweredQuestionsSchema = z.object({
+  questions: z.array(
+    z.object({ question: z.string(), options: z.array(z.object({ label: z.string() })) }),
+  ),
+});
+
+function askedQuestions(toolUseResult: unknown): AskedQuestion[] | undefined {
+  const parsed = AnsweredQuestionsSchema.safeParse(toolUseResult);
+  if (!parsed.success) return undefined;
+  return parsed.data.questions.map((q) => ({
+    question: q.question,
+    options: q.options.map((o) => o.label),
+  }));
 }
 
 async function handleResult(message: SDKResultMessage, state: SessionState): Promise<void> {

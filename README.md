@@ -278,7 +278,7 @@ transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
 legend:
   entries:
     assistant: the agent's reply text
-    # … one line per entry kind, tool group and footer flag
+    # … one line per header key, entry kind, tool group and footer flag
 
 conversation:
   - user: |
@@ -288,26 +288,57 @@ conversation:
       I'll write a haiku about the ocean.
 
   - tool: Write
+    id: 1
     path: ocean.txt
+
+  - tool: Bash
+    id: 2
+    command: cat ocean.txt
+
+  - result: Bash
+    id: 2
+    is_error: false
+    text: |-
+      Waves fold into foam
+      salt wind carries gull voices
+      the tide keeps its time
 
   - assistant: |
       Done! I saved the haiku to ocean.txt.
 
 turns: 2
-tool_calls: 1
+tool_calls: 2
 duration_s: 12.3
 ```
 
 The output is valid YAML and machine-parseable (e.g. with `yq`).
 
-**The transcript explains itself.** The header's `legend:` says what each entry kind records, which fields each tool entry keeps, what the transcript leaves out, and what the footer flags mean. A grader or reader can rely on it instead of keeping its own copy of these rules. It is the same in every transcript, and `--dry-run` prints it too, so tools can read it before running a session.
+**The transcript explains itself.** The header's `legend:` says what the header's `project` and `transcript` keys point to, what each entry kind records, which fields each tool entry keeps, what the transcript leaves out, and what the footer flags mean. A grader or reader can rely on it instead of keeping its own copy of these rules. It is the same in every transcript, and `--dry-run` prints it too, so tools can read it before running a session.
 
-**Tool-call entries are observations, not reproductions.** Each tool entry carries the tool name plus a small, fixed set of identifying fields — `path` for `Read`/`Write`/`Edit`, `command` for `Bash`, `pattern` for `Glob`/`Grep`, and similar minimal handles for `Task*`/`TodoWrite`. Content-bearing fields (the bytes a `Write` wrote, the strings an `Edit` replaced) are **intentionally dropped from the YAML transcript** and are not available to downstream graders that consume the transcript text alone. Unknown tool names emit their full `input` mapping. A tool entry shows that the agent asked for the call, not that it succeeded: tool results are not in the transcript. The complete contract is `@guarantee TranscriptToolFieldContract` in [`scuttlerun.allium`](scuttlerun.allium); the SDK JSONL below is the source of truth for full tool inputs and results.
+**Tool-call entries are observations, not reproductions.** Each tool entry carries the tool name plus a small, fixed set of identifying fields — `path` for `Read`/`Write`/`Edit`, `command` for `Bash`, `pattern` for `Glob`/`Grep`, and similar minimal handles for `Task*`/`TodoWrite`. Content-bearing fields (the bytes a `Write` wrote, the strings an `Edit` replaced) are **intentionally dropped from the YAML transcript** and are not available to downstream graders that consume the transcript text alone. Unknown tool names emit their full `input` mapping. Each tool entry carries an `id`, its position among the transcript's tool entries counting from 1, a subagent's calls included. A tool entry shows that the agent asked for the call; a result entry with the same `id`, when one is recorded, shows how the call ended. The complete contract is `@guarantee TranscriptToolFieldContract` in [`scuttlerun.allium`](scuttlerun.allium); the SDK JSONL below is the source of truth for full tool inputs and results.
+
+**Result entries record how calls ended.** A result entry is written for every call that returned an error, whatever the tool, and for every `Bash`, `AskUserQuestion` and `ExitPlanMode` call, success included. Successful results of other tools are left to the SDK session file.
+
+```yaml
+- tool: Read
+  id: 3
+  path: /tmp/scuttlerun-project-xK3f9m/missing.txt
+
+- result: Read
+  id: 3
+  is_error: true
+  text: >-
+    File does not exist. Note: your current working directory is
+    /tmp/scuttlerun-project-xK3f9m.
+```
+
+`is_error` is always present. `text` is what the agent was shown, omitted when empty; a text longer than 4000 characters keeps its first and last 2000, with a line in between saying how many characters were cut. An `AskUserQuestion` result also lists `questions`: each question as it was answered, after any hook rewrote it, with its option labels; a subagent's call or an error has none. An error the agent later recovered from still gets its entry, so an error result alone does not mean the task failed. A `Bash` command moved to the background, by `run_in_background` or by outrunning its timeout, reports only that it started, so its result says nothing about how the command ended. The contract is `@guarantee ToolResultEntryContract`.
 
 **Hook entries record every hook that ran.** When a hook from the scenario's settings or a loaded plugin runs, the transcript gets an entry like this:
 
 ```yaml
 - tool: Bash
+  id: 4
   command: git commit -m "Update file"
 
 - hook: PreToolUse:Bash
@@ -315,13 +346,20 @@ The output is valid YAML and machine-parseable (e.g. with `yq`).
   exit_code: 2
   stderr: |
     Run the tests before committing.
+
+- result: Bash
+  id: 4
+  is_error: true
+  text: |
+    PreToolUse:Bash hook error: [./check-tests.sh]: Run the tests before
+    committing.
 ```
 
-`hook:` is the event plus the matcher when there is one. `stdout` and `stderr` appear only when the hook printed to them, cut to their first 4000 characters with a note saying how much more the SDK session file holds. A hook's JSON output, such as `additionalContext` or a permission decision, appears verbatim in `stdout`. A `PreToolUse` or `PostToolUse` entry follows the tool call it answered. `SessionStart` hooks and the `UserPromptSubmit` hook for the scenario prompt run before the header can be written, so their entries follow the first `user:` entry. The contract is `@guarantee HookEntryContract`.
+`hook:` is the event plus the matcher when there is one. `stdout` and `stderr` appear only when the hook printed to them, cut to their first 4000 characters with a note saying how much more the SDK session file holds. A hook's JSON output, such as `additionalContext` or a permission decision, appears verbatim in `stdout`. A hook's `outcome` and `exit_code` are its own; the call's result entry shows whether the call itself succeeded. A `PreToolUse` or `PostToolUse` entry follows the tool call it answered. `SessionStart` hooks and the `UserPromptSubmit` hook for the scenario prompt run before the header can be written, so their entries follow the first `user:` entry. The contract is `@guarantee HookEntryContract`.
 
 **Project directory** — Always created in `$TMPDIR` as `scuttlerun-project-<id>/`, preserved after the session ends so you can inspect agent-created files. On the next run, scuttlerun garbage-collects its own `scuttlerun-project-*` directories that are older than 7 days; nothing else in `$TMPDIR` is touched.
 
-**SDK session file** — Full conversation record in Claude Code's native JSONL format at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Queryable with `jq`. This is the authoritative record of full tool inputs and outputs; the YAML transcript is a lossy summary. If a full disk or exhausted quota keeps Claude Code from saving part of it, the transcript footer carries `transcript_incomplete: true` and scuttlerun prints a warning naming the file to stderr; the exit code is unaffected.
+**SDK session file** — Full conversation record in Claude Code's native JSONL format at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. Queryable with `jq`. This is the authoritative record of full tool inputs and outputs; the YAML transcript is a lossy summary. A subagent's calls are recorded in the `<session-id>/subagents/` directory beside it. If a full disk or exhausted quota keeps Claude Code from saving part of it, the transcript footer carries `transcript_incomplete: true` and scuttlerun prints a warning naming the file to stderr; the exit code is unaffected.
 
 ## Privacy
 

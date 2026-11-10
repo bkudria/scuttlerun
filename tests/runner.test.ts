@@ -843,7 +843,7 @@ describe('runSession', () => {
       ]);
 
       expect(conversation.slice(1)).toEqual([
-        { tool: 'Bash', command: 'ls' },
+        { tool: 'Bash', id: 1, command: 'ls' },
         { hook: 'PreToolUse:Bash', outcome: 'success', exit_code: 0, stdout: 'checked\n' },
       ]);
     });
@@ -861,6 +861,61 @@ describe('runSession', () => {
         'Write a haiku',
         'SessionStart:startup',
         'UserPromptSubmit',
+      ]);
+    });
+  });
+
+  describe('tool results', () => {
+    it('writes tool results from the SDK stream as result entries', async () => {
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(
+        createMockQuery([
+          {
+            type: 'system',
+            subtype: 'init',
+            session_id: 's-results',
+            tools: [],
+            model: 'claude-haiku-4-5',
+          },
+          {
+            type: 'assistant',
+            message: {
+              role: 'assistant',
+              content: [
+                { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'false' } },
+              ],
+            },
+            parent_tool_use_id: null,
+          },
+          {
+            type: 'user',
+            message: {
+              role: 'user',
+              content: [
+                {
+                  type: 'tool_result',
+                  tool_use_id: 'toolu_1',
+                  is_error: true,
+                  content: 'Exit code 1',
+                },
+              ],
+            },
+            parent_tool_use_id: null,
+          },
+          {
+            type: 'result',
+            subtype: 'success',
+            session_id: 's-results',
+            num_turns: 1,
+            total_cost_usd: 0,
+          },
+        ]),
+      );
+      await runSession(minConfig());
+
+      const conversation = parseYaml(stdoutOutput).conversation as Array<Record<string, unknown>>;
+      expect(conversation.slice(1)).toEqual([
+        { tool: 'Bash', id: 1, command: 'false' },
+        { result: 'Bash', id: 1, is_error: true, text: 'Exit code 1' },
       ]);
     });
   });
@@ -2826,7 +2881,7 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
   // the oracle is consulted.
   // -------------------------------------------------------------------------
   describe('[invariant] OnlyTextReachesOracleContext', () => {
-    it("strips thinking and tool_use blocks before the oracle's decideTurn call", async () => {
+    it("strips thinking, tool_use and tool_result blocks before the oracle's decideTurn call", async () => {
       oracleReplies.push({
         structured: { decision: 'end', reasoning: 'done' },
         usage: { input_tokens: 50, output_tokens: 20 },
@@ -2857,6 +2912,21 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
           },
         },
         {
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'tu-1',
+                is_error: true,
+                content: 'TOOL_RESULT_MARKER must be hidden',
+              },
+            ],
+          },
+          parent_tool_use_id: null,
+        },
+        {
           type: 'result',
           subtype: 'success',
           session_id: 's-text-only',
@@ -2879,6 +2949,7 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
       expect(userMsg).not.toContain('INTERNAL_THINKING_MARKER');
       expect(userMsg).not.toContain('TOOL_INPUT_MARKER');
       expect(userMsg).not.toContain('/tmp/leak.txt');
+      expect(userMsg).not.toContain('TOOL_RESULT_MARKER');
     });
   });
 
