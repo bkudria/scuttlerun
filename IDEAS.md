@@ -114,11 +114,6 @@ building result entries. Entries are not ordered by priority.
   4000 characters of each stream, while result entries keep 2000 from each
   end. A command's closing lines often say how it ended, so align hook
   entries with results if a check turns out to need a hook's last lines.
-- **Subagent origin on tool and result entries.** A subagent's tool calls
-  and their results are written like the main thread's, with nothing marking
-  the subagent. The messages carry `parent_tool_use_id` and `agent_id`. Add
-  them to the entries only when a check must tell main-thread calls from a
-  subagent's.
 - **Subagent text reaches the oracle.** A subagent's assistant and thinking
   blocks arrive in the parent stream like its tool calls, so they are written
   as `assistant:` and `thinking:` entries and the assistant text joins the
