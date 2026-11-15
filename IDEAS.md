@@ -15,7 +15,8 @@ The hook-entry follow-ups come from building hook entries (#103) on
 2026-11-07; the Code health entry comes from the 0.5.0 publish (#105). The
 result-entry follow-ups and the plan-file and Bash edit diff findings come
 from a headless spike of CLI 2.1.317 (haiku-4-5) on 2026-11-08 and from
-building result entries. Entries are not ordered by priority.
+building result entries; the background-subagent entry from live runs of
+CLI 2.1.317 on 2026-11-14. Entries are not ordered by priority.
 
 ## Decided, not yet built
 
@@ -78,7 +79,7 @@ building result entries. Entries are not ordered by priority.
   `hook_id` but neither the command nor where it was registered. Matters
   only when a check must tell two hooks apart; until then, distinct output
   text is the workaround. Spike before any shape: whether a later SDK adds
-  source fields to `hook_response`.
+  source fields to `hook_response`; 0.3.322's has none.
 - **Held hook responses vanish on a failed start.** SessionStart responses
   arrive before init and are held for the preamble; a run that ends before
   init writes only the footer, so they are never written. If a SessionStart
@@ -137,6 +138,19 @@ building result entries. Entries are not ordered by priority.
   id, `is_error` true for `failed`, and the summary as `text`. Unverified
   whether a headless session reaches the notification before its result
   ends the turn.
+- **A background subagent's calls are lost when the session ends.** In a
+  live run of CLI 2.1.317 the agent's Agent call ran in the background
+  though its input did not ask for that; the agent's turn ended at once
+  ("Agent is running. Waiting for it to complete..."), the turn policy
+  (`user.max_turns: 0`) ended the session, and none of the subagent's calls
+  were written, since nothing after the end is. A check on what a subagent
+  did then sees only the Agent call. The same prompt with
+  `run_in_background: false` recorded every call. Shapes: say in the
+  legend's not-recorded line that a subagent still running at the end has
+  no entries (cheap, changes no behaviour); or hold the end while a
+  subagent the session started is running, up to the timeout, and record
+  its calls (changes when a session ends and what it costs). Unverified
+  whether the CLI backgrounds every Agent call or only some.
 
 ## Synthetic user
 
@@ -273,14 +287,16 @@ building result entries. Entries are not ordered by priority.
 
 ## Hook-probe fixture
 
-The probe that produced most of this file is a scratch project. Its intended
+The probe that produced most of this file was a scratch project that was
+not kept: its script and its 47-event log are gone, so the fixture is built
+from the description below. Its intended
 home is its own directory under ~/code beside the three tools
 (version-coupled, tool-specific content that is neither a skill nor a
 craboodle demo); it is recorded here until that exists. It is the per-release
 counterpart of the Non-Goals decision above: TUI-only facts are settled by
 it, then exercised headlessly.
 
-- **Promote the scratch probe to a fixture.** Keep: a `.claude/settings.json`
+- **Build the probe as a fixture.** Contents: a `.claude/settings.json`
   registering one logger on every hook event (the five used plus
   PermissionRequest, PermissionDenied, Notification, SubagentStart,
   SubagentStop, PreCompact, SessionEnd); a probe script emitting one JSON line
@@ -295,7 +311,7 @@ it, then exercised headlessly.
   question, answers, response keys, permission_mode) replacing the thirteen
   inline filters written by hand; a findings template with a header of Claude
   Code version, model and permission mode, each finding marked documented or
-  observed; the existing 47-event log as a golden sample. One README rule:
+  observed; the first run's log as a golden sample. One README rule:
   hook-syntax questions are answered by running the probe's skill-frontmatter
   step, not by mining the claude binary (a `strings` detour produced a 1.1 MB
   dump and settled nothing). Runs unchanged under the tmux driver and as a
