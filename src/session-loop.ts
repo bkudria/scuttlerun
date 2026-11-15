@@ -5,6 +5,7 @@ import type {
   SDKUserMessage,
   SDKStartupFailureReason,
   SDKSystemMessage,
+  SDKTaskNotificationMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { realpathSync } from 'node:fs';
 import { z } from 'zod';
@@ -47,6 +48,15 @@ type ToolResultBlock = Extract<
 
 export type SyntheticAction = { type: 'continue'; message: string } | { type: 'end' };
 
+interface ToolCall {
+  name: string;
+  id: number;
+  subagentOf?: SubagentOrigin;
+  // Its tool_result only says the work started; how it ended arrives later
+  // as a task notification.
+  backgrounded?: boolean;
+}
+
 export interface SessionState {
   readonly config: SessionConfig;
   readonly configPaths: string[];
@@ -64,7 +74,9 @@ export interface SessionState {
   // wait for the header and the prompt's own entry.
   hooksBeforeInit: HookResponse[];
   toolCallCount: number;
-  toolCalls: Map<string, { name: string; id: number; subagentOf?: SubagentOrigin }>;
+  toolCalls: Map<string, ToolCall>;
+  // task_updated names only the task, so each task's call is kept from its task_started.
+  taskToolUseIds: Map<string, string>;
   filesWritten: Set<string>;
   filesEdited: Set<string>;
   filesRead: Set<string>;
@@ -98,6 +110,7 @@ export function newSessionState(inputs: SessionInputs): SessionState {
     hooksBeforeInit: [],
     toolCallCount: 0,
     toolCalls: new Map(),
+    taskToolUseIds: new Map(),
     filesWritten: new Set<string>(),
     filesEdited: new Set<string>(),
     filesRead: new Set<string>(),
@@ -230,7 +243,38 @@ function handleSystem(message: Extract<SDKMessage, { type: 'system' }>, state: S
         (task) => task.task_type === 'local_agent' && !task.ambient,
       );
       break;
+    case 'task_started':
+      if (message.tool_use_id) state.taskToolUseIds.set(message.task_id, message.tool_use_id);
+      if (message.is_backgrounded) markBackgrounded(message.tool_use_id, state);
+      break;
+    case 'task_updated':
+      if (message.patch.is_backgrounded) {
+        markBackgrounded(state.taskToolUseIds.get(message.task_id), state);
+      }
+      break;
+    case 'task_notification':
+      writeBackgroundOutcome(message, state);
+      break;
   }
+}
+
+function markBackgrounded(toolUseId: string | undefined, state: SessionState): void {
+  const call = toolUseId ? state.toolCalls.get(toolUseId) : undefined;
+  if (call) call.backgrounded = true;
+}
+
+function writeBackgroundOutcome(message: SDKTaskNotificationMessage, state: SessionState): void {
+  const call = message.tool_use_id ? state.toolCalls.get(message.tool_use_id) : undefined;
+  if (!call?.backgrounded) return;
+  const isError = message.status === 'failed';
+  if (!recordsResult(call.name, isError)) return;
+  writeResult({
+    tool: call.name,
+    id: call.id,
+    subagentOf: call.subagentOf,
+    isError,
+    text: message.summary,
+  });
 }
 
 function handleInit(message: SDKSystemMessage, state: SessionState): void {

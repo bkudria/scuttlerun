@@ -439,6 +439,48 @@ describe('handleMessage', () => {
 
     const subagentTask = { task_id: 'a1', task_type: 'local_agent', description: 'd' };
 
+    function taskStarted(toolUseId: string, isBackgrounded: boolean): SDKMessage {
+      return sdkMessage({
+        type: 'system',
+        subtype: 'task_started',
+        task_id: `task-${toolUseId}`,
+        tool_use_id: toolUseId,
+        description: 'd',
+        is_backgrounded: isBackgrounded,
+      });
+    }
+
+    function taskNotification(toolUseId: string, status: string, summary: string): SDKMessage {
+      return sdkMessage({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: `task-${toolUseId}`,
+        tool_use_id: toolUseId,
+        status,
+        output_file: '/tmp/out',
+        summary,
+      });
+    }
+
+    async function startBackgroundCommand(): Promise<void> {
+      await handleMessage(
+        assistantToolUse('toolu_bg', 'Bash', { command: 'sleep 8', run_in_background: true }),
+        state,
+      );
+      await handleMessage(taskStarted('toolu_bg', true), state);
+      await handleMessage(
+        toolResultMessage([
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_bg',
+            content: 'Command running in background with ID: b1.',
+            is_error: false,
+          },
+        ]),
+        state,
+      );
+    }
+
     beforeEach(() => {
       decideTurnPolicy = vi.fn().mockResolvedValue({ decision: 'end', reasoning: 'done' });
       const config = parseSessionConfig({ prompt: 'p', user: { max_turns: 5 } });
@@ -496,6 +538,101 @@ describe('handleMessage', () => {
 
       expect(decideTurnPolicy).toHaveBeenCalledTimes(1);
       expect(state.ended).toBe(true);
+    });
+
+    it('records how a background command ended as a second result for its call', async () => {
+      await startBackgroundCommand();
+      await handleMessage(
+        taskNotification('toolu_bg', 'completed', 'Background command "d" completed (exit code 0)'),
+        state,
+      );
+
+      expect(conversation()).toEqual([
+        { tool: 'Bash', id: 1, command: 'sleep 8' },
+        {
+          result: 'Bash',
+          id: 1,
+          is_error: false,
+          text: 'Command running in background with ID: b1.',
+        },
+        {
+          result: 'Bash',
+          id: 1,
+          is_error: false,
+          text: 'Background command "d" completed (exit code 0)',
+        },
+      ]);
+    });
+
+    it.each([
+      ['failed', true],
+      ['stopped', false],
+    ])('marks a background command that %s as is_error %s', async (status, isError) => {
+      await startBackgroundCommand();
+      await handleMessage(
+        taskNotification('toolu_bg', status, `Background command ${status}`),
+        state,
+      );
+
+      expect(conversation().slice(-1)).toEqual([
+        {
+          result: 'Bash',
+          id: 1,
+          is_error: isError,
+          text: `Background command ${status}`,
+        },
+      ]);
+    });
+
+    it('records how a command ended after it was moved to the background', async () => {
+      await handleMessage(assistantToolUse('toolu_slow', 'Bash', { command: 'make' }), state);
+      await handleMessage(taskStarted('toolu_slow', false), state);
+      await handleMessage(
+        sdkMessage({
+          type: 'system',
+          subtype: 'task_updated',
+          task_id: 'task-toolu_slow',
+          patch: { is_backgrounded: true },
+        }),
+        state,
+      );
+      await handleMessage(taskNotification('toolu_slow', 'failed', 'make failed'), state);
+
+      expect(conversation().slice(-1)).toEqual([
+        { result: 'Bash', id: 1, is_error: true, text: 'make failed' },
+      ]);
+    });
+
+    it('records a background subagent ending only when it failed, like any Agent result', async () => {
+      await handleMessage(assistantToolUse('toolu_ok', 'Agent', { prompt: 'a' }), state);
+      await handleMessage(taskStarted('toolu_ok', true), state);
+      await handleMessage(assistantToolUse('toolu_bad', 'Agent', { prompt: 'b' }), state);
+      await handleMessage(taskStarted('toolu_bad', true), state);
+      output = '';
+
+      await handleMessage(taskNotification('toolu_ok', 'completed', 'the report'), state);
+      await handleMessage(taskNotification('toolu_bad', 'failed', 'it broke'), state);
+
+      expect(conversation()).toEqual([
+        { result: 'Agent', id: 2, is_error: true, text: 'it broke' },
+      ]);
+    });
+
+    it('leaves the outcome of a call that ran in the foreground to its tool_result', async () => {
+      await handleMessage(assistantToolUse('toolu_fg', 'Bash', { command: 'ls' }), state);
+      await handleMessage(taskStarted('toolu_fg', false), state);
+      await handleMessage(taskNotification('toolu_fg', 'completed', 'done'), state);
+      await handleMessage(
+        toolResultMessage([
+          { type: 'tool_result', tool_use_id: 'toolu_fg', content: 'a.txt', is_error: false },
+        ]),
+        state,
+      );
+
+      expect(conversation()).toEqual([
+        { tool: 'Bash', id: 1, command: 'ls' },
+        { result: 'Bash', id: 1, is_error: false, text: 'a.txt' },
+      ]);
     });
   });
 
