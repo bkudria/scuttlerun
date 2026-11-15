@@ -5,6 +5,7 @@ import type {
   SDKUserMessage,
   SDKStartupFailureReason,
   SDKSystemMessage,
+  SDKTaskNotificationMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import { realpathSync } from 'node:fs';
 import { z } from 'zod';
@@ -47,6 +48,15 @@ type ToolResultBlock = Extract<
 
 export type SyntheticAction = { type: 'continue'; message: string } | { type: 'end' };
 
+interface ToolCall {
+  name: string;
+  id: number;
+  subagentOf?: SubagentOrigin;
+  // Its tool_result only says the work started; how it ended arrives later
+  // as a task notification.
+  backgrounded?: boolean;
+}
+
 export interface SessionState {
   readonly config: SessionConfig;
   readonly configPaths: string[];
@@ -64,7 +74,9 @@ export interface SessionState {
   // wait for the header and the prompt's own entry.
   hooksBeforeInit: HookResponse[];
   toolCallCount: number;
-  toolCalls: Map<string, { name: string; id: number; subagentOf?: SubagentOrigin }>;
+  toolCalls: Map<string, ToolCall>;
+  // task_updated names only the task, so each task's call is kept from its task_started.
+  taskToolUseIds: Map<string, string>;
   filesWritten: Set<string>;
   filesEdited: Set<string>;
   filesRead: Set<string>;
@@ -78,6 +90,9 @@ export interface SessionState {
   transcriptIncomplete: boolean;
   oracleFailed: boolean;
   exitCode: number;
+  // The CLI starts a turn of its own when a background subagent finishes, so
+  // a result that arrives while one runs does not end the agent's turn.
+  subagentsRunning: boolean;
   // Set once a result ends the session. The CLI can keep running after that,
   // e.g. to finish a background task, and its later turns are not part of the
   // session.
@@ -95,6 +110,7 @@ export function newSessionState(inputs: SessionInputs): SessionState {
     hooksBeforeInit: [],
     toolCallCount: 0,
     toolCalls: new Map(),
+    taskToolUseIds: new Map(),
     filesWritten: new Set<string>(),
     filesEdited: new Set<string>(),
     filesRead: new Set<string>(),
@@ -104,6 +120,7 @@ export function newSessionState(inputs: SessionInputs): SessionState {
     transcriptIncomplete: false,
     oracleFailed: false,
     exitCode: EXIT_SUCCESS,
+    subagentsRunning: false,
     ended: false,
   };
 }
@@ -219,7 +236,45 @@ function handleSystem(message: Extract<SDKMessage, { type: 'system' }>, state: S
         process.stderr.write(transcriptLostWarning(message, state.sdkSessionPath));
       }
       break;
+    case 'background_tasks_changed':
+      // A background command may never end (a dev server), and an ambient
+      // task is a watcher, so only subagents hold the turn open.
+      state.subagentsRunning = message.tasks.some(
+        (task) => task.task_type === 'local_agent' && !task.ambient,
+      );
+      break;
+    case 'task_started':
+      if (message.tool_use_id) state.taskToolUseIds.set(message.task_id, message.tool_use_id);
+      if (message.is_backgrounded) markBackgrounded(message.tool_use_id, state);
+      break;
+    case 'task_updated':
+      if (message.patch.is_backgrounded) {
+        markBackgrounded(state.taskToolUseIds.get(message.task_id), state);
+      }
+      break;
+    case 'task_notification':
+      writeBackgroundOutcome(message, state);
+      break;
   }
+}
+
+function markBackgrounded(toolUseId: string | undefined, state: SessionState): void {
+  const call = toolUseId ? state.toolCalls.get(toolUseId) : undefined;
+  if (call) call.backgrounded = true;
+}
+
+function writeBackgroundOutcome(message: SDKTaskNotificationMessage, state: SessionState): void {
+  const call = message.tool_use_id ? state.toolCalls.get(message.tool_use_id) : undefined;
+  if (!call?.backgrounded) return;
+  const isError = message.status === 'failed';
+  if (!recordsResult(call.name, isError)) return;
+  writeResult({
+    tool: call.name,
+    id: call.id,
+    subagentOf: call.subagentOf,
+    isError,
+    text: message.summary,
+  });
 }
 
 function handleInit(message: SDKSystemMessage, state: SessionState): void {
@@ -263,9 +318,14 @@ function subagentOrigin(
 
 function handleAssistant(message: SDKAssistantMessage, state: SessionState): void {
   const content = message.message?.content;
+  // Only a background subagent's text and thinking reach the stream; a
+  // foreground one's never do. Skipping them keeps a transcript the same
+  // shape whichever way the agent ran its subagent.
+  const fromSubagent = Boolean(message.parent_tool_use_id);
   if (content && Array.isArray(content)) {
     const textParts: string[] = [];
     for (const block of content) {
+      if (fromSubagent && (block.type === 'thinking' || block.type === 'text')) continue;
       if (block.type === 'thinking' && block.thinking) {
         writeThinking(block.thinking);
       } else if (block.type === 'text' && block.text) {
@@ -341,6 +401,11 @@ async function handleResult(message: SDKResultMessage, state: SessionState): Pro
   state.resultTotalCostUsd = message.total_cost_usd || 0;
 
   const { syntheticUser } = state;
+  if (subtype === 'success' && syntheticUser && state.subagentsRunning) {
+    // The subagent's spend is reported only by the result of the turn to come.
+    state.resultArrived = false;
+    return;
+  }
   if (subtype === 'success' && syntheticUser) {
     // Consult turn policy
     const decision = await syntheticUser.decideTurn();

@@ -179,10 +179,10 @@ export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
   },
   entries: {
     user: 'a synthetic-user message; the first is the scenario prompt, any leading slash command included',
-    assistant: "the agent's reply text",
-    thinking: "the agent's thinking text",
+    assistant: "the main agent's reply text",
+    thinking: "the main agent's thinking text",
     tool: "a tool call the agent requested, a subagent's included: id, its number among this transcript's tool entries; subagent_of, on a subagent's call only, the id of the Agent call that started the subagent, or unknown when that call has no entry, so a call without subagent_of is the main agent's; then only the fields under tool fields; hook entries after it show how any hooks responded",
-    result: `how a tool call ended, linked to its tool entry by id and carrying the same subagent_of: is_error (true when the call failed or was blocked) and text, what the agent was shown (absent when empty), with long lines wrapped and cut to its first and last ${RESULT_EDGE_CHARS} characters when longer than ${OUTPUT_CAP_CHARS}; AskUserQuestion results also list the questions as answered, after any hook rewrote them, with option labels only, except on a subagent's call or an error. A Bash command moved to the background reports only that it started, so its result says nothing about how the command ended. Written for every ${listFormat.format(RESULT_RECORDED_TOOLS)} call and for any call that returned an error, including errors the agent later recovered from, so an error result alone does not mean the task failed; a call cut short by a timeout or interrupt may have no result`,
+    result: `how a tool call ended, linked to its tool entry by id and carrying the same subagent_of: is_error (true when the call failed or was blocked) and text, what the agent was shown (absent when empty), with long lines wrapped and cut to its first and last ${RESULT_EDGE_CHARS} characters when longer than ${OUTPUT_CAP_CHARS}; AskUserQuestion results also list the questions as answered, after any hook rewrote them, with option labels only, except on a subagent's call or an error. Work moved to the background, a Bash command or a subagent, first reports only that it started; when it ends before the session does, a second result with the same id reports how, with is_error true if it failed and Claude Code's summary as text, under the same rule as the first. Written for every ${listFormat.format(RESULT_RECORDED_TOOLS)} call and for any call that returned an error, including errors the agent later recovered from, so an error result alone does not mean the task failed; a call cut short by a timeout or interrupt may have no result`,
     hook: `a hook that ran: its event and matcher, outcome, exit_code, and stdout and stderr when non-empty, each cut to ${OUTPUT_CAP_CHARS} characters; outcome and exit_code are the hook's own, not the tool call's`,
     oracle:
       "the synthetic user's decisions: ask_user (answers, reasoning), turn (decision, message, reasoning), error (reason)",
@@ -194,7 +194,7 @@ export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
     'any other tool': 'input, the full input',
   },
   'not recorded':
-    "results of other tools' calls that succeeded; the session log at the header's transcript path, or for a subagent's calls the subagents/ directory the header describes, has every result. Nothing after the result that ended the session either, such as a turn the agent takes when a background task finishes, or a SessionEnd hook",
+    "results of other tools' calls that succeeded; the session log at the header's transcript path, or for a subagent's calls the subagents/ directory the header describes, has every result. A subagent's text and thinking. Nothing after the result that ended the session either, such as how a background command still running then ended, the turn the agent takes when it does, or a SessionEnd hook; a result that arrives while a subagent is still running does not end the session, which waits for the turn the agent takes when the subagent finishes",
   footer: {
     cost_incomplete: 'some spend went unreported',
     transcript_incomplete: 'the session log is missing lines',

@@ -421,6 +421,294 @@ describe('handleMessage', () => {
     });
   });
 
+  describe('background work', () => {
+    let decideTurnPolicy: ReturnType<typeof vi.fn>;
+
+    function result(totalCostUsd: number): SDKMessage {
+      return sdkMessage({
+        type: 'result',
+        subtype: 'success',
+        num_turns: 1,
+        total_cost_usd: totalCostUsd,
+      });
+    }
+
+    function backgroundTasks(...tasks: Array<Record<string, unknown>>): SDKMessage {
+      return sdkMessage({ type: 'system', subtype: 'background_tasks_changed', tasks });
+    }
+
+    const subagentTask = { task_id: 'a1', task_type: 'local_agent', description: 'd' };
+
+    function taskStarted(toolUseId: string, isBackgrounded: boolean): SDKMessage {
+      return sdkMessage({
+        type: 'system',
+        subtype: 'task_started',
+        task_id: `task-${toolUseId}`,
+        tool_use_id: toolUseId,
+        description: 'd',
+        is_backgrounded: isBackgrounded,
+      });
+    }
+
+    function taskNotification(toolUseId: string, status: string, summary: string): SDKMessage {
+      return sdkMessage({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: `task-${toolUseId}`,
+        tool_use_id: toolUseId,
+        status,
+        output_file: '/tmp/out',
+        summary,
+      });
+    }
+
+    async function startBackgroundCommand(): Promise<void> {
+      await handleMessage(
+        assistantToolUse('toolu_bg', 'Bash', { command: 'sleep 8', run_in_background: true }),
+        state,
+      );
+      await handleMessage(taskStarted('toolu_bg', true), state);
+      await handleMessage(
+        toolResultMessage([
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_bg',
+            content: 'Command running in background with ID: b1.',
+            is_error: false,
+          },
+        ]),
+        state,
+      );
+    }
+
+    beforeEach(() => {
+      decideTurnPolicy = vi.fn().mockResolvedValue({ decision: 'end', reasoning: 'done' });
+      const config = parseSessionConfig({ prompt: 'p', user: { max_turns: 5 } });
+      state = newSessionState({
+        config,
+        configPaths: ['/tmp/session.yaml'],
+        projectDir: '/tmp/project',
+        sandboxHome: undefined,
+        claudeDir: undefined,
+        oracle: { decideTurnPolicy } as unknown as Oracle,
+      });
+      state.sessionId = 's';
+      state.syntheticUser = new SyntheticUser(state.oracle, config.user, config.prompt);
+    });
+
+    it('waits for the turn the agent takes when a running subagent finishes', async () => {
+      await handleMessage(assistantToolUse('toolu_agent', 'Agent', { prompt: 'go' }), state);
+      await handleMessage(backgroundTasks(subagentTask), state);
+      await handleMessage(result(0.01), state);
+
+      expect(decideTurnPolicy).not.toHaveBeenCalled();
+      expect(state.ended).toBe(false);
+
+      await handleMessage(
+        assistantToolUse(
+          'toolu_sub',
+          'Bash',
+          { command: 'echo hi' },
+          { parent_tool_use_id: 'toolu_agent' },
+        ),
+        state,
+      );
+      await handleMessage(backgroundTasks(), state);
+      await handleMessage(result(0.02), state);
+
+      expect(conversation()).toContainEqual({
+        tool: 'Bash',
+        id: 2,
+        subagent_of: 1,
+        command: 'echo hi',
+      });
+      expect(decideTurnPolicy).toHaveBeenCalledTimes(1);
+      expect(state.ended).toBe(true);
+    });
+
+    it("keeps a subagent's text and thinking out of the transcript and the oracle's context", async () => {
+      await handleMessage(
+        sdkMessage({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking: 'subagent musing' },
+              { type: 'text', text: 'subagent report' },
+            ],
+          },
+          parent_tool_use_id: 'toolu_agent',
+        }),
+        state,
+      );
+      await handleMessage(
+        sdkMessage({
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'main reply' }] },
+          parent_tool_use_id: null,
+        }),
+        state,
+      );
+      await handleMessage(result(0.01), state);
+
+      expect(conversation()).toEqual([
+        { assistant: 'main reply' },
+        { oracle: 'turn', decision: 'end', reasoning: 'done' },
+      ]);
+      expect(decideTurnPolicy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationContext: [{ role: 'assistant', text: 'main reply' }],
+        }),
+      );
+    });
+
+    it('does not wait for a background command or an ambient task', async () => {
+      await handleMessage(
+        backgroundTasks(
+          { task_id: 'b1', task_type: 'local_bash', description: 'server' },
+          { ...subagentTask, ambient: true },
+        ),
+        state,
+      );
+      await handleMessage(result(0.01), state);
+
+      expect(decideTurnPolicy).toHaveBeenCalledTimes(1);
+      expect(state.ended).toBe(true);
+    });
+
+    it('records how a background command ended as a second result for its call', async () => {
+      await startBackgroundCommand();
+      await handleMessage(
+        taskNotification('toolu_bg', 'completed', 'Background command "d" completed (exit code 0)'),
+        state,
+      );
+
+      expect(conversation()).toEqual([
+        { tool: 'Bash', id: 1, command: 'sleep 8' },
+        {
+          result: 'Bash',
+          id: 1,
+          is_error: false,
+          text: 'Command running in background with ID: b1.',
+        },
+        {
+          result: 'Bash',
+          id: 1,
+          is_error: false,
+          text: 'Background command "d" completed (exit code 0)',
+        },
+      ]);
+    });
+
+    it.each([
+      ['failed', true],
+      ['stopped', false],
+    ])('marks a background command that %s as is_error %s', async (status, isError) => {
+      await startBackgroundCommand();
+      await handleMessage(
+        taskNotification('toolu_bg', status, `Background command ${status}`),
+        state,
+      );
+
+      expect(conversation().slice(-1)).toEqual([
+        {
+          result: 'Bash',
+          id: 1,
+          is_error: isError,
+          text: `Background command ${status}`,
+        },
+      ]);
+    });
+
+    it('records how a command ended after it was moved to the background', async () => {
+      await handleMessage(assistantToolUse('toolu_slow', 'Bash', { command: 'make' }), state);
+      await handleMessage(taskStarted('toolu_slow', false), state);
+      await handleMessage(
+        sdkMessage({
+          type: 'system',
+          subtype: 'task_updated',
+          task_id: 'task-toolu_slow',
+          patch: { is_backgrounded: true },
+        }),
+        state,
+      );
+      await handleMessage(taskNotification('toolu_slow', 'failed', 'make failed'), state);
+
+      expect(conversation().slice(-1)).toEqual([
+        { result: 'Bash', id: 1, is_error: true, text: 'make failed' },
+      ]);
+    });
+
+    it('records a background subagent ending only when it failed, like any Agent result', async () => {
+      await handleMessage(assistantToolUse('toolu_ok', 'Agent', { prompt: 'a' }), state);
+      await handleMessage(taskStarted('toolu_ok', true), state);
+      await handleMessage(assistantToolUse('toolu_bad', 'Agent', { prompt: 'b' }), state);
+      await handleMessage(taskStarted('toolu_bad', true), state);
+      output = '';
+
+      await handleMessage(taskNotification('toolu_ok', 'completed', 'the report'), state);
+      await handleMessage(taskNotification('toolu_bad', 'failed', 'it broke'), state);
+
+      expect(conversation()).toEqual([
+        { result: 'Agent', id: 2, is_error: true, text: 'it broke' },
+      ]);
+    });
+
+    it('keeps a task in the foreground through updates that do not background it', async () => {
+      await handleMessage(assistantToolUse('toolu_fg', 'Bash', { command: 'ls' }), state);
+      await handleMessage(taskStarted('toolu_fg', false), state);
+      await handleMessage(
+        sdkMessage({
+          type: 'system',
+          subtype: 'task_updated',
+          task_id: 'task-toolu_fg',
+          patch: { status: 'completed' },
+        }),
+        state,
+      );
+      output = '';
+      await handleMessage(taskNotification('toolu_fg', 'completed', 'done'), state);
+
+      expect(output).toBe('');
+    });
+
+    it('writes nothing for task events that name no recorded call', async () => {
+      const unnamed = (subtype: string, extra: Record<string, unknown>) =>
+        sdkMessage({ type: 'system', subtype, task_id: 'task-x', description: 'd', ...extra });
+
+      await handleMessage(unnamed('task_started', { is_backgrounded: true }), state);
+      await handleMessage(taskStarted('toolu_unknown', true), state);
+      await handleMessage(
+        unnamed('task_updated', {
+          task_id: 'task-never-started',
+          patch: { is_backgrounded: true },
+        }),
+        state,
+      );
+      await handleMessage(unnamed('task_notification', { status: 'failed', summary: 's' }), state);
+      await handleMessage(taskNotification('toolu_unknown', 'failed', 's'), state);
+
+      expect(output).toBe('');
+    });
+
+    it('leaves the outcome of a call that ran in the foreground to its tool_result', async () => {
+      await handleMessage(assistantToolUse('toolu_fg', 'Bash', { command: 'ls' }), state);
+      await handleMessage(taskStarted('toolu_fg', false), state);
+      await handleMessage(taskNotification('toolu_fg', 'completed', 'done'), state);
+      await handleMessage(
+        toolResultMessage([
+          { type: 'tool_result', tool_use_id: 'toolu_fg', content: 'a.txt', is_error: false },
+        ]),
+        state,
+      );
+
+      expect(conversation()).toEqual([
+        { tool: 'Bash', id: 1, command: 'ls' },
+        { result: 'Bash', id: 1, is_error: false, text: 'a.txt' },
+      ]);
+    });
+  });
+
   describe('after the session has ended', () => {
     let decideTurnPolicy: ReturnType<typeof vi.fn>;
     let answerQuestions: ReturnType<typeof vi.fn>;

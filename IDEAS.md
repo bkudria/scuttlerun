@@ -15,8 +15,7 @@ The hook-entry follow-ups come from building hook entries (#103) on
 2026-11-07; the Code health entry comes from the 0.5.0 publish (#105). The
 result-entry follow-ups and the plan-file and Bash edit diff findings come
 from a headless spike of CLI 2.1.317 (haiku-4-5) on 2026-11-08 and from
-building result entries; the background-subagent entry from live runs of
-CLI 2.1.317 on 2026-11-14. Entries are not ordered by priority.
+building result entries. Entries are not ordered by priority.
 
 ## Decided, not yet built
 
@@ -115,30 +114,6 @@ CLI 2.1.317 on 2026-11-14. Entries are not ordered by priority.
   4000 characters of each stream, while result entries keep 2000 from each
   end. A command's closing lines often say how it ended, so align hook
   entries with results if a check turns out to need a hook's last lines.
-- **Backgrounded Bash outcomes.** A Bash command run with
-  `run_in_background`, or moved to the background when it outran its
-  timeout, returns a placeholder result ("Command running in background with
-  ID: …", `is_error: false`), so its result entry says nothing about how the
-  command ended. The SDK reports the end later as a `system`
-  `task_notification` carrying `tool_use_id`, `status` (completed, failed or
-  stopped) and `summary`; the session loop ignores it. Shape: when its
-  `tool_use_id` names a recorded call, write a second result entry with that
-  id, `is_error` true for `failed`, and the summary as `text`. Unverified
-  whether a headless session reaches the notification before its result
-  ends the turn.
-- **A background subagent's calls are lost when the session ends.** In a
-  live run of CLI 2.1.317 the agent's Agent call ran in the background
-  though its input did not ask for that; the agent's turn ended at once
-  ("Agent is running. Waiting for it to complete..."), the turn policy
-  (`user.max_turns: 0`) ended the session, and none of the subagent's calls
-  were written, since nothing after the end is. A check on what a subagent
-  did then sees only the Agent call. The same prompt with
-  `run_in_background: false` recorded every call. Shapes: say in the
-  legend's not-recorded line that a subagent still running at the end has
-  no entries (cheap, changes no behaviour); or hold the end while a
-  subagent the session started is running, up to the timeout, and record
-  its calls (changes when a session ends and what it costs). Unverified
-  whether the CLI backgrounds every Agent call or only some.
 
 ## Synthetic user
 
@@ -220,6 +195,14 @@ CLI 2.1.317 on 2026-11-14. Entries are not ordered by priority.
   only when no result arrived, so a crashed agent turn reports a
   confirmed-looking figure. Shape: the oracle's rule, a non-success result
   with `total_cost_usd` 0 sets `cost_incomplete`.
+- **Footer `turns` is the last turn's count.** The footer's `turns` is the
+  last result's `num_turns`, which AgentTurnSucceeds calls the SDK's
+  cumulative count, but under CLI 2.1.317 and 2.1.322 each result counts
+  only its own turn: a two-turn reactive session whose turns each made one
+  Bash call reported `turns: 2`, and the turn Claude Code starts when a
+  background subagent finishes reported `num_turns: 1` after its first
+  turn's 2. Shape: sum `num_turns` over the results the session records,
+  or name the field per-turn in the spec and README.
 - **Oracle token counts from `modelUsage`.** Oracle cost comes from
   `total_cost_usd`, which covers every call in the query, but oracle tokens
   come from the result's `usage`, which the SDK marks "MAIN AGENT LOOP ONLY …
@@ -272,14 +255,14 @@ CLI 2.1.317 on 2026-11-14. Entries are not ordered by priority.
   session (`prompt: 'Reply done.'`, `tools: []`, `user.max_turns: 0`) yields
   exactly that directory for a TUI probe to launch `claude` in. Document that
   instead; `--dry-run` deliberately creates nothing.
-- **Keeping subagent text out of the oracle context** (2026-11-14). The
-  concern was that a subagent's text joins the oracle's conversation as if
-  the main agent had said it. It cannot: the SDK forwards a subagent's text
-  and thinking blocks only under `forwardSubagentText`, which defaults to
-  off, and scuttlerun neither sets it nor passes it through from a
-  scenario's `sdk:` block, so only a subagent's tool_use and tool_result
-  blocks arrive. A live run of CLI 2.1.317 confirmed it: the subagent's
-  calls were written, its report text was not.
+- **Waiting for background commands** (2026-11-15). A result that arrives
+  while a background subagent runs waits for the turn Claude Code starts
+  when the subagent finishes; a background Bash command does not hold the
+  session. A command may run until it is stopped (a dev server started with
+  `run_in_background`), so waiting for it would end every such session at
+  its timeout, and a cap on the wait would add a config key and still spend
+  the cap on each of them. A command that ends before the session does
+  still gets its outcome as a second result entry.
 
 ## Hook-probe fixture
 
