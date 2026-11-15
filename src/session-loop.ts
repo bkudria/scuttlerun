@@ -401,7 +401,11 @@ async function handleResult(message: SDKResultMessage, state: SessionState): Pro
   state.resultTotalCostUsd = message.total_cost_usd || 0;
 
   const { syntheticUser } = state;
-  if (subtype === 'success' && syntheticUser && state.subagentsRunning) return;
+  if (subtype === 'success' && syntheticUser && state.subagentsRunning) {
+    // The subagent's spend is reported only by the result of the turn to come.
+    state.resultArrived = false;
+    return;
+  }
   if (subtype === 'success' && syntheticUser) {
     // Consult turn policy
     const decision = await syntheticUser.decideTurn();

@@ -3300,6 +3300,110 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
       expect(mockQuery.close).toHaveBeenCalledTimes(1);
     });
 
+    describe('when a subagent is still running at a result', () => {
+      const agentCall = {
+        type: 'assistant',
+        session_id: 's-bg',
+        parent_tool_use_id: null,
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 'toolu_agent', name: 'Agent', input: { prompt: 'go' } },
+          ],
+        },
+      };
+      const subagentRunning = {
+        type: 'system',
+        subtype: 'background_tasks_changed',
+        session_id: 's-bg',
+        tasks: [{ task_id: 'a1', task_type: 'local_agent', description: 'd' }],
+      };
+      const heldResult = {
+        type: 'result',
+        subtype: 'success',
+        session_id: 's-bg',
+        num_turns: 2,
+        total_cost_usd: 0.01,
+      };
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("records the subagent's calls and ends at the turn the agent takes when it finishes", async () => {
+        (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(
+          createMockQuery([
+            { type: 'system', subtype: 'init', session_id: 's-bg', tools: [] },
+            agentCall,
+            subagentRunning,
+            heldResult,
+            {
+              type: 'assistant',
+              session_id: 's-bg',
+              parent_tool_use_id: 'toolu_agent',
+              message: {
+                role: 'assistant',
+                content: [
+                  {
+                    type: 'tool_use',
+                    id: 'toolu_sub',
+                    name: 'Bash',
+                    input: { command: 'echo hi' },
+                  },
+                ],
+              },
+            },
+            { ...subagentRunning, tasks: [] },
+            { type: 'system', subtype: 'init', session_id: 's-bg', tools: [] },
+            {
+              type: 'assistant',
+              session_id: 's-bg',
+              parent_tool_use_id: null,
+              message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+            },
+            { ...heldResult, num_turns: 1, total_cost_usd: 0.02 },
+          ]),
+        );
+
+        const result = await runSession(minConfig());
+
+        const transcript = parseYaml(stdoutOutput);
+        expect(result.exitCode).toBe(0);
+        expect(transcript.conversation).toContainEqual({
+          tool: 'Bash',
+          id: 2,
+          subagent_of: 1,
+          command: 'echo hi',
+        });
+        expect(transcript.conversation).toContainEqual({ assistant: 'hi' });
+        expect(transcript.cost_incomplete).toBeUndefined();
+      });
+
+      it('times out like any running session, with its spend unconfirmed', async () => {
+        vi.useFakeTimers();
+        (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue({
+          close: vi.fn(),
+          interrupt: vi.fn().mockResolvedValue(undefined),
+          [Symbol.asyncIterator]: async function* () {
+            yield { type: 'system', subtype: 'init', session_id: 's-bg', tools: [] };
+            yield agentCall;
+            yield subagentRunning;
+            yield heldResult;
+            await new Promise((resolve) => setTimeout(resolve, 5_000));
+          },
+        });
+
+        const run = runSession(minConfig(), { timeoutSeconds: 1 });
+        await vi.advanceTimersByTimeAsync(5_000);
+        const result = await run;
+
+        const transcript = parseYaml(stdoutOutput);
+        expect(result.exitCode).toBe(6);
+        expect(transcript.timed_out).toBe(true);
+        expect(transcript.cost_incomplete).toBe(true);
+      });
+    });
+
     describe('when the CLI is still running after the session ends', () => {
       // Like the real SDK, close() ends the stream while an abort makes it throw.
       function queryStillRunningAfterEnd({ lateResults = 0 }: { lateResults?: number } = {}) {
