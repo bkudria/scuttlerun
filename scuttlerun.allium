@@ -122,6 +122,7 @@ value SessionInput {
     max_budget_usd: Decimal?
     timeout: Duration
     permission_mode: `default` | `acceptEdits` | `bypassPermissions` | `plan` | `dontAsk`
+        | `auto`
     tools: List<String>
     disallowed_tools: List<String>?
     effort: low | medium | high | xhigh | max
@@ -369,6 +370,15 @@ entity Session {
     transcript_incomplete: Boolean
     timed_out_observed: Boolean
 
+    -- The permission mode as Claude Code last reported it: first in the
+    -- init message (SessionBecomesRunning), then on each change
+    -- (PermissionModeChanged).
+    permission_mode: String?
+
+    -- The tool_use ids of every call Claude Code's permission checks
+    -- denied, as its results report them (PermissionDenialsCollected).
+    denied_call_ids: Set<String>
+
     -- Whether a subagent the agent ran in the background is still running,
     -- as Claude Code last listed its live background tasks
     -- (BackgroundTasksReported).
@@ -592,8 +602,8 @@ entity TranscriptEntry {
     transcript: Transcript
     sequence: Integer
     kind: user_message | assistant_text | thinking
-        | tool_call | tool_result | hook_response | oracle_ask | oracle_turn
-        | oracle_error
+        | tool_call | tool_result | hook_response | permission_decision
+        | mode_change | oracle_ask | oracle_turn | oracle_error
 }
 
 -- A hook response that arrived before the transcript's preamble could be
@@ -662,6 +672,7 @@ rule SessionStarts {
         cost_incomplete: false,
         transcript_incomplete: false,
         timed_out_observed: false,
+        denied_call_ids: {},
         subagents_running: false,
         agent_cli_running: true
     )
@@ -733,7 +744,9 @@ rule SessionBecomesRunning {
         -- The Agent SDK emits an init message with a session_id at the
         -- start of each query turn. scuttlerun captures the first one
         -- and uses it to identify the SDK session file and to name the
-        -- Claude Code version and model in the preamble (StreamingYaml).
+        -- Claude Code version, model and starting permission mode in the
+        -- preamble (StreamingYaml). That mode seeds
+        -- session.permission_mode.
 }
 
 rule SessionEnds {
@@ -1570,6 +1583,86 @@ rule HookResponseEmitted {
         -- follows that call's entry.
 }
 
+rule PermissionRequestAllowed {
+    when: AgentRequestsPermission(client, session, tool_name)
+
+    requires: session.status = running
+    requires: tool_name != "AskUserQuestion"
+
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: permission_decision
+    )
+    ensures: AgentReceivesPermission(session)
+
+    @guidance
+        -- Claude Code requests permission through the SDK's canUseTool
+        -- callback wherever it would ask a user: under `default`, a call
+        -- its rules do not already allow; under `plan`, ExitPlanMode;
+        -- under `auto`, a call the classifier cannot decide. Under
+        -- `bypassPermissions` it requests none. The synthetic user allows
+        -- every such call unchanged (ToolPermissionCallback), and the
+        -- entry records that it was asked (PermissionEntryContract). A
+        -- question is answered by SyntheticUserAnswersClarifyingQuestion
+        -- instead; one the synthetic user refuses gets a
+        -- permission_decision entry too. A request after the session has
+        -- ended is allowed with no entry.
+}
+
+rule PermissionDenialEmitted {
+    when: AgentReportsPermissionDenial(client, session, tool_name)
+
+    requires: session.status = running
+
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: permission_decision
+    )
+
+    @guidance
+        -- Claude Code reports a call its own checks refused without
+        -- asking (a deny rule, the `auto` classifier, the mode) with a
+        -- permission_denied message naming the call and, when it has
+        -- them, the deciding check and a reason. The message arrives
+        -- after the call's tool entry and before its error result. A
+        -- call a PreToolUse hook denied gets no such message; its hook
+        -- and result entries show the block (HookEntryContract).
+}
+
+rule PermissionModeChanged {
+    when: AgentReportsPermissionMode(client, session, mode)
+
+    requires: session.status = running
+    requires: mode != session.permission_mode
+
+    ensures: session.permission_mode = mode
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: mode_change
+    )
+
+    @guidance
+        -- Claude Code reports the mode on its status messages, so most
+        -- repeat the current mode and add no entry. Approving a plan
+        -- under `plan` moves the session to `default`.
+}
+
+rule PermissionDenialsCollected {
+    when: AgentReportsDeniedCalls(client, session, tool_use_ids)
+
+    requires: session.status = running
+
+    for id in tool_use_ids:
+        ensures: id in session.denied_call_ids
+
+    @guidance
+        -- Every result carries the calls Claude Code's permission checks
+        -- denied, which the SDK calls its authoritative record: a
+        -- permission_denied message can be lost in a race. A call
+        -- reported by more than one result is counted once. The footer
+        -- lists them as tool entry ids (StreamingYaml).
+}
+
 rule HookResponseHeldBeforeInit {
     when: AgentEmitsHookResponse(client, session, hook_name)
 
@@ -1782,12 +1875,12 @@ surface CommandLineInvocation {
         -- The CLI runs without an interactive TTY: stdin is closed for
         -- agent input, stdout streams the YAML transcript, and stderr
         -- carries diagnostics only. permission_mode defaults to
-        -- `bypassPermissions` (chosen so the headless invocation does
-        -- not block on a TTY-less permission prompt). When
-        -- permission_mode is `bypassPermissions`, tool permission
-        -- prompts are bypassed entirely; under other permission modes,
-        -- the SDK may surface prompts and the operator must answer
-        -- them on stdin explicitly.
+        -- `bypassPermissions`, under which Claude Code asks no
+        -- permission at all. Under every other mode, each permission
+        -- request Claude Code would put to a user goes to the synthetic
+        -- user (ToolPermissionCallback), so no mode waits on the
+        -- operator; the requests and their answers are recorded
+        -- (PermissionEntryContract).
 
     @guarantee SingleSessionPerInvocation
         -- One invocation runs exactly one session and produces exactly one
@@ -1840,9 +1933,10 @@ surface StreamingTranscript {
         -- earlier are held until then (HookResponseHeldBeforeInit). A run
         -- that ends before any init message (e.g. Claude Code refusing to
         -- start) writes the footer mapping alone. The preamble carries
-        -- `session` (the SDK session id); `claude_code` and `model` (the
-        -- Claude Code version and the main agent's model as the first
-        -- init message reports them, each omitted when that message
+        -- `session` (the SDK session id); `claude_code`, `model` and
+        -- `permission_mode` (the Claude Code version, the main agent's
+        -- model and the permission mode the session started in, as the
+        -- first init message reports them, each omitted when that message
         -- lacks it); `oracle_model` (SessionInput.oracle_model, the
         -- synthetic user's configured model); `config`
         -- (the path or list of paths to the YAML config files supplied
@@ -1876,7 +1970,11 @@ surface StreamingTranscript {
         -- preamble when one was written) is missing lines (see
         -- SessionTranscriptWritesLost);
         -- `timed_out`
-        -- (Boolean) appears only when truthy; and `files_written`,
+        -- (Boolean) appears only when truthy;
+        -- `permission_denials` appears when session.denied_call_ids is
+        -- non-empty and lists, in the order first reported, the tool
+        -- entry id of each denied call, or `unknown` for a call with no
+        -- tool entry; and `files_written`,
         -- `files_edited`, `files_read` each appear only when their
         -- respective list is non-empty. Long single-line strings render
         -- in block-folded (`>`) style; multi-line strings render in
@@ -1924,7 +2022,9 @@ surface StreamingTranscript {
         -- call; a result entry with the same `id`, when one is written
         -- (ToolResultEntryContract), shows how the call ended. Hook
         -- entries after it (HookEntryContract) show how any hooks
-        -- responded to it, including a hook that blocked it.
+        -- responded to it, including a hook that blocked it, and a
+        -- permission entry (PermissionEntryContract) how Claude Code's
+        -- permission check ruled on it.
         --
         --   * Read, Write, Edit  → `path` (from `file_path`).
         --     Content-bearing fields (`content`, `old_string`,
@@ -1966,6 +2066,31 @@ surface StreamingTranscript {
         -- holds; the cut never splits a character in two. A hook's
         -- structured JSON output (a permission decision, additionalContext)
         -- appears verbatim in `stdout`.
+
+    @guarantee PermissionEntryContract
+        -- A permission entry records one ruling on a tool call: a request
+        -- the synthetic user answered (PermissionRequestAllowed, or a
+        -- question it refused) or a denial Claude Code's own checks made
+        -- (PermissionDenialEmitted). Its fields, in order: `permission`
+        -- (the tool name), `id` (the tool entry id of the call, or
+        -- `unknown` when the call has no tool entry), `subagent_of` (a
+        -- subagent's call only, as on its tool entry), `decision`
+        -- (`allowed` or `denied`), `by` and `reason`. `by` is
+        -- `synthetic_user` for a request the synthetic user answered, and
+        -- otherwise the deciding check Claude Code names (`rule`,
+        -- `classifier`, `mode`, …), omitted when it names none. `reason`
+        -- appears when one was given: for a request, why Claude Code
+        -- asked; for the synthetic user's refusal, the message the agent
+        -- is shown; for Claude Code's denial, its stated reason. A call
+        -- allowed without asking has no entry, so under
+        -- `bypassPermissions` only denials appear. An answered question
+        -- has none either; its oracle entry records the answers.
+        --
+        -- A mode entry, `mode:` and the new mode, records each change of
+        -- permission mode (PermissionModeChanged). The footer's
+        -- `permission_denials` lists every denied call by Claude Code's
+        -- own record (PermissionDenialsCollected), which the denial
+        -- entries can miss in a race.
 
     @guarantee ToolResultEntryContract
         -- A result entry records how one tool call ended
@@ -2011,9 +2136,11 @@ surface StreamingTranscript {
         -- The preamble's `legend` mapping states how to read the
         -- transcript, so a reader or grader needs no copy of this spec.
         -- It has five keys: `header` (what the preamble's `claude_code`,
-        -- `model`, `oracle_model`, `project` and `transcript` hold,
-        -- including where a subagent's calls are recorded); `entries` (one line per entry kind: user,
-        -- assistant, thinking, tool, result, hook, oracle); `tool fields`
+        -- `model`, `permission_mode`, `oracle_model`, `project` and
+        -- `transcript` hold, including where a subagent's calls are
+        -- recorded); `entries` (one line per entry kind: user,
+        -- assistant, thinking, tool, result, permission, mode, hook,
+        -- oracle); `tool fields`
         -- (the TranscriptToolFieldContract, one line per tool group plus
         -- `any other tool`); `not recorded` (successful results of tools
         -- outside config.tools_with_recorded_results, pointing to the SDK
@@ -2023,8 +2150,8 @@ surface StreamingTranscript {
         -- command still running then ended included (SessionEnds), with
         -- a note that a result while a subagent runs does not end the
         -- session (AgentTurnAwaitsSubagent)); and `footer` (what
-        -- `cost_incomplete`, `transcript_incomplete` and `timed_out`
-        -- mean). The `entries` line for results names the tools whose
+        -- `cost_incomplete`, `transcript_incomplete`, `timed_out` and
+        -- `permission_denials` mean). The `entries` line for results names the tools whose
         -- every result is written from the same list that selects them. The legend is
         -- the same in every transcript, and the --dry-run summary carries
         -- it under the same key, so a consumer can read it before any
@@ -2055,6 +2182,10 @@ surface AgentSdkBoundary {
         AgentReportsBackgroundTasks(client, session, subagents_running)
         AgentReportsBackgroundOutcome(client, session, tool_name, failed)
         AgentEmitsHookResponse(client, session, hook_name)
+        AgentRequestsPermission(client, session, tool_name)
+        AgentReportsPermissionDenial(client, session, tool_name)
+        AgentReportsPermissionMode(client, session, mode)
+        AgentReportsDeniedCalls(client, session, tool_use_ids)
         AgentSessionWritesLost(client, session, error_code, lost, transcript_session_ids)
         AgentCliExited(client, session)
         RunnerCaughtException(session)
@@ -2167,6 +2298,9 @@ surface OracleSdkBoundary {
 contract ToolPermissionCallback {
     decide: (tool_name: String, input: Any) -> Any
 
+    -- decide receives Claude Code's request details, from which it reads
+    -- the call's tool_use id and why Claude Code asked.
+
     @invariant AskUserQuestionAnswered
         -- For tool_name = "AskUserQuestion", the result is
         -- { behavior: "allow", updatedInput: { questions, answers } }
@@ -2179,7 +2313,17 @@ contract ToolPermissionCallback {
         -- { behavior: "allow", updatedInput: input } — i.e. the caller's
         -- input is passed through unchanged. The configured permission_mode
         -- is responsible for any further enforcement; the callback itself
-        -- adds no extra restriction.
+        -- adds no extra restriction. A synthetic user that refuses
+        -- permission requests is not offered: allowing every request keeps
+        -- the agent's behaviour the same as the mode's own rules allow.
+
+    @invariant RequestsRecorded
+        -- While the session is running, every decision except an
+        -- answered question writes a permission entry with by
+        -- `synthetic_user` (PermissionEntryContract); an answered question
+        -- writes its oracle entry instead. After the session has ended
+        -- a question is refused, any other call is allowed, and nothing
+        -- is written.
 
     @invariant PermissionResultShapeMatchesSdkSchema
         -- All return values conform to the Agent SDK's PermissionResult

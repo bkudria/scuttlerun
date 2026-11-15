@@ -3,6 +3,16 @@ import { getKnownSdkToolNames } from './sdk-tool-names.js';
 
 export const DEFAULT_ORACLE_MODEL = 'claude-haiku-4-5';
 
+export const PERMISSION_MODES = [
+  'default',
+  'acceptEdits',
+  'bypassPermissions',
+  'plan',
+  'dontAsk',
+  'auto',
+] as const;
+export type PermissionMode = (typeof PERMISSION_MODES)[number];
+
 // Default wall-clock ceiling for a session, in seconds. Owned here because
 // `timeout` is now a config field; runner.ts imports it for its RunOptions
 // fallback. Keep in lockstep with scuttlerun.allium's config.default_session_timeout.
@@ -166,9 +176,7 @@ const AgentDefinitionSchema = z
     effort: z
       .union([z.enum(['low', 'medium', 'high', 'xhigh', 'max']), z.number().int()])
       .optional(),
-    permissionMode: z
-      .enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk'])
-      .optional(),
+    permissionMode: z.enum(PERMISSION_MODES).optional(),
   })
   .passthrough();
 
@@ -219,9 +227,7 @@ const SessionConfigRawSchema = z
     additional_tools: z.array(z.string()).optional(),
     disallowed_tools: z.array(z.string()).optional(),
     project: ProjectConfigSchema.optional(),
-    permission_mode: z
-      .enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk'])
-      .default('bypassPermissions'),
+    permission_mode: z.enum(PERMISSION_MODES).default('bypassPermissions'),
     auth: z.enum(['auto', 'subscription', 'api-key']).default('auto'),
     user: z.unknown().optional(),
     sdk: z.unknown().optional(),
@@ -254,7 +260,7 @@ export interface SessionConfig {
   tools: string[];
   disallowed_tools?: string[];
   project?: ProjectConfig;
-  permission_mode: 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk';
+  permission_mode: PermissionMode;
   auth: 'auto' | 'subscription' | 'api-key';
   user: UserConfig;
   sdk: SdkConfig;

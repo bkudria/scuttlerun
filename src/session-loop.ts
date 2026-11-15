@@ -1,4 +1,6 @@
 import type {
+  CanUseTool,
+  PermissionResult,
   SDKAssistantMessage,
   SDKMessage,
   SDKResultMessage,
@@ -35,6 +37,9 @@ import {
   writeResult,
   type AskedQuestion,
   type SubagentOrigin,
+  type ToolEntryRef,
+  writePermission,
+  writeMode,
   recordsResult,
   writeOracleAsk,
   writeOracleTurn,
@@ -80,6 +85,10 @@ export interface SessionState {
   filesWritten: Set<string>;
   filesEdited: Set<string>;
   filesRead: Set<string>;
+  permissionMode?: string;
+  // Each result lists the calls its turn's permission checks denied; keyed by
+  // tool_use_id so a call reported twice is counted once.
+  permissionDenials: Map<string, ToolEntryRef>;
   resultNumTurns: number;
   resultTotalCostUsd: number;
   // Tracks whether the in-flight turn produced an SDK result. Reset when a
@@ -114,6 +123,7 @@ export function newSessionState(inputs: SessionInputs): SessionState {
     filesWritten: new Set<string>(),
     filesEdited: new Set<string>(),
     filesRead: new Set<string>(),
+    permissionDenials: new Map(),
     resultNumTurns: 0,
     resultTotalCostUsd: 0,
     resultArrived: false,
@@ -158,35 +168,69 @@ export async function* inputMessages(state: SessionState) {
   }
 }
 
-// canUseTool callback. The Agent SDK's PermissionResult schema requires
+// canUseTool callback: Claude Code calls it wherever it would ask the user
+// for permission. The Agent SDK's PermissionResult schema requires
 // `updatedInput` on the allow branch and `message` on the deny branch;
 // returning a bare `{ behavior }` triggers a ZodError for every tool call.
 export function canUseTool(state: SessionState, abortController: AbortController) {
-  return async (toolName: string, input: Record<string, unknown>) => {
-    if (toolName === 'AskUserQuestion' && state.ended) {
-      return { behavior: 'deny', message: 'The session has ended' };
-    }
-    if (toolName === 'AskUserQuestion' && state.syntheticUser) {
-      const parsed = AskUserQuestionInputSchema.safeParse(input);
-      if (!parsed.success) {
-        return { behavior: 'deny', message: 'AskUserQuestion input failed schema validation' };
+  return async (
+    toolName: string,
+    input: Record<string, unknown>,
+    options?: Parameters<CanUseTool>[2],
+  ): Promise<PermissionResult> => {
+    if (state.ended) {
+      if (toolName === 'AskUserQuestion') {
+        return { behavior: 'deny', message: 'The session has ended' };
       }
-      try {
-        const result = await state.syntheticUser.handleAskUserQuestion(parsed.data);
-        writeOracleAsk(result.oracleResponse.answers, result.oracleResponse.reasoning);
-        return {
-          behavior: result.behavior,
-          updatedInput: result.updatedInput,
-        };
-      } catch (err) {
-        state.oracleFailed = true;
-        writeOracleError(err instanceof Error ? err.message : String(err));
-        abortController.abort();
-        return { behavior: 'deny', message: 'Synthetic-user oracle aborted with an error' };
-      }
+      return { behavior: 'allow', updatedInput: input };
     }
-    return { behavior: 'allow', updatedInput: input };
+    const decision = await decidePermission(state, abortController, toolName, input);
+    if (toolName !== 'AskUserQuestion' || decision.behavior === 'deny') {
+      writePermission({
+        tool: toolName,
+        ...toolEntry(options?.toolUseID, state),
+        decision: decision.behavior === 'allow' ? 'allowed' : 'denied',
+        by: 'synthetic_user',
+        reason: decision.behavior === 'deny' ? decision.message : options?.decisionReason,
+      });
+    }
+    return decision;
   };
+}
+
+async function decidePermission(
+  state: SessionState,
+  abortController: AbortController,
+  toolName: string,
+  input: Record<string, unknown>,
+): Promise<PermissionResult> {
+  if (toolName === 'AskUserQuestion' && state.syntheticUser) {
+    const parsed = AskUserQuestionInputSchema.safeParse(input);
+    if (!parsed.success) {
+      return { behavior: 'deny', message: 'AskUserQuestion input failed schema validation' };
+    }
+    try {
+      const result = await state.syntheticUser.handleAskUserQuestion(parsed.data);
+      writeOracleAsk(result.oracleResponse.answers, result.oracleResponse.reasoning);
+      return { behavior: result.behavior, updatedInput: result.updatedInput };
+    } catch (err) {
+      state.oracleFailed = true;
+      writeOracleError(err instanceof Error ? err.message : String(err));
+      abortController.abort();
+      return { behavior: 'deny', message: 'Synthetic-user oracle aborted with an error' };
+    }
+  }
+  return { behavior: 'allow', updatedInput: input };
+}
+
+// The tool entry a call Claude Code names by tool_use_id refers to.
+function toolEntry(
+  toolUseId: string | undefined,
+  state: SessionState,
+): { id: ToolEntryRef; subagentOf?: SubagentOrigin } {
+  const call = toolUseId ? state.toolCalls.get(toolUseId) : undefined;
+  if (!call) return { id: 'unknown' };
+  return { id: call.id, subagentOf: call.subagentOf };
 }
 
 export async function handleMessage(message: SDKMessage, state: SessionState): Promise<void> {
@@ -255,6 +299,21 @@ function handleSystem(message: Extract<SDKMessage, { type: 'system' }>, state: S
     case 'task_notification':
       writeBackgroundOutcome(message, state);
       break;
+    case 'permission_denied':
+      writePermission({
+        tool: message.tool_name,
+        ...toolEntry(message.tool_use_id, state),
+        decision: 'denied',
+        by: message.decision_reason_type,
+        reason: message.decision_reason,
+      });
+      break;
+    case 'status':
+      if (message.permissionMode && message.permissionMode !== state.permissionMode) {
+        state.permissionMode = message.permissionMode;
+        writeMode(message.permissionMode);
+      }
+      break;
   }
 }
 
@@ -281,6 +340,7 @@ function handleInit(message: SDKSystemMessage, state: SessionState): void {
   const { config } = state;
   const sessionId = message.session_id;
   state.sessionId = sessionId;
+  state.permissionMode = message.permissionMode;
 
   const slashWarning = unresolvedSlashCommandWarning(config.prompt, message.slash_commands ?? []);
   if (slashWarning) process.stderr.write(slashWarning);
@@ -299,6 +359,7 @@ function handleInit(message: SDKSystemMessage, state: SessionState): void {
     session: sessionId,
     claudeCode: message.claude_code_version,
     model: message.model,
+    permissionMode: message.permissionMode,
     oracleModel: config.user.oracle_model,
     configPaths: state.configPaths,
     projectDir: state.projectDir,
@@ -402,6 +463,11 @@ async function handleResult(message: SDKResultMessage, state: SessionState): Pro
   // Extract stats from result
   state.resultNumTurns = message.num_turns || 0;
   state.resultTotalCostUsd = message.total_cost_usd || 0;
+  for (const denial of message.permission_denials ?? []) {
+    if (!state.permissionDenials.has(denial.tool_use_id)) {
+      state.permissionDenials.set(denial.tool_use_id, toolEntry(denial.tool_use_id, state).id);
+    }
+  }
 
   const { syntheticUser } = state;
   if (subtype === 'success' && syntheticUser && state.subagentsRunning) {

@@ -85,6 +85,7 @@ describe('handleMessage', () => {
           session_id: 's',
           claude_code_version: '2.1.322',
           model: 'claude-sonnet-5-5',
+          permissionMode: 'auto',
           slash_commands: [],
         }),
         state,
@@ -93,6 +94,7 @@ describe('handleMessage', () => {
       const header = parseYaml(output);
       expect(header.claude_code).toBe('2.1.322');
       expect(header.model).toBe('claude-sonnet-5-5');
+      expect(header.permission_mode).toBe('auto');
       expect(header.oracle_model).toBe('claude-haiku-5-5');
     });
   });
@@ -735,6 +737,157 @@ describe('handleMessage', () => {
     });
   });
 
+  describe('permissions', () => {
+    function permissionDenied(toolUseId: string, extra: Record<string, unknown> = {}): SDKMessage {
+      return sdkMessage({
+        type: 'system',
+        subtype: 'permission_denied',
+        tool_name: 'Bash',
+        tool_use_id: toolUseId,
+        message: 'Permission to use Bash with command x has been denied.',
+        ...extra,
+      });
+    }
+
+    function statusMessage(extra: Record<string, unknown>): SDKMessage {
+      return sdkMessage({ type: 'system', subtype: 'status', status: null, ...extra });
+    }
+
+    it('writes a denial after the call it refused, naming the deciding check and its reason', async () => {
+      await handleMessage(assistantToolUse('toolu_a', 'Bash', { command: 'x' }), state);
+      await handleMessage(
+        permissionDenied('toolu_a', {
+          decision_reason_type: 'classifier',
+          decision_reason: 'Runs a downloaded script',
+        }),
+        state,
+      );
+
+      expect(conversation()).toEqual([
+        { tool: 'Bash', id: 1, command: 'x' },
+        {
+          permission: 'Bash',
+          id: 1,
+          decision: 'denied',
+          by: 'classifier',
+          reason: 'Runs a downloaded script',
+        },
+      ]);
+    });
+
+    it("marks a subagent's denial with subagent_of, and a denial of a call with no entry as unknown", async () => {
+      await handleMessage(assistantToolUse('toolu_agent', 'Agent', { prompt: 'go' }), state);
+      await handleMessage(
+        assistantToolUse(
+          'toolu_sub',
+          'Bash',
+          { command: 'x' },
+          { parent_tool_use_id: 'toolu_agent' },
+        ),
+        state,
+      );
+      await handleMessage(permissionDenied('toolu_sub', { decision_reason_type: 'rule' }), state);
+      await handleMessage(permissionDenied('toolu_unseen'), state);
+
+      expect(conversation().slice(2)).toEqual([
+        { permission: 'Bash', id: 2, subagent_of: 1, decision: 'denied', by: 'rule' },
+        { permission: 'Bash', id: 'unknown', decision: 'denied' },
+      ]);
+    });
+
+    it('writes a mode entry when the permission mode changes, and none when it stays', async () => {
+      await handleMessage(
+        sdkMessage({
+          type: 'system',
+          subtype: 'init',
+          session_id: 's',
+          permissionMode: 'plan',
+          slash_commands: [],
+        }),
+        state,
+      );
+      output = '';
+
+      await handleMessage(statusMessage({ permissionMode: 'plan' }), state);
+      await handleMessage(statusMessage({ status: 'requesting' }), state);
+      await handleMessage(statusMessage({ permissionMode: 'default' }), state);
+      await handleMessage(statusMessage({ permissionMode: 'default' }), state);
+
+      expect(conversation()).toEqual([{ mode: 'default' }]);
+    });
+
+    it('records each permission request the synthetic user allows, with the reason Claude Code gave', async () => {
+      await handleMessage(
+        assistantToolUse('toolu_w', 'Write', { file_path: '/tmp/project/a.txt', content: 'a' }),
+        state,
+      );
+
+      const input = { file_path: '/tmp/project/a.txt', content: 'a' };
+      const decision = await canUseTool(state, new AbortController())('Write', input, {
+        signal: new AbortController().signal,
+        requestId: 'r',
+        toolUseID: 'toolu_w',
+        decisionReason: 'Writes outside the allowed directories',
+      });
+
+      expect(decision).toEqual({ behavior: 'allow', updatedInput: input });
+      expect(conversation()[1]).toEqual({
+        permission: 'Write',
+        id: 1,
+        decision: 'allowed',
+        by: 'synthetic_user',
+        reason: 'Writes outside the allowed directories',
+      });
+    });
+
+    it('records a question the synthetic user refuses, with the reason the agent is given', async () => {
+      state.syntheticUser = {} as SyntheticUser;
+      await handleMessage(assistantToolUse('toolu_q', 'AskUserQuestion', { garbage: true }), state);
+
+      const decision = await canUseTool(state, new AbortController())(
+        'AskUserQuestion',
+        { garbage: true },
+        { signal: new AbortController().signal, requestId: 'r', toolUseID: 'toolu_q' },
+      );
+
+      expect(decision).toMatchObject({ behavior: 'deny' });
+      expect(conversation()[1]).toEqual({
+        permission: 'AskUserQuestion',
+        id: 1,
+        decision: 'denied',
+        by: 'synthetic_user',
+        reason: 'AskUserQuestion input failed schema validation',
+      });
+    });
+
+    it('collects the denials each result reports, once per call, by tool entry id', async () => {
+      state.syntheticUser = { decideTurn: vi.fn() } as unknown as SyntheticUser;
+      state.subagentsRunning = true;
+      await handleMessage(assistantToolUse('toolu_a', 'Bash', { command: 'a' }), state);
+      await handleMessage(assistantToolUse('toolu_b', 'Bash', { command: 'b' }), state);
+      const denial = (id: string) => ({ tool_name: 'Bash', tool_use_id: id, tool_input: {} });
+
+      await handleMessage(
+        sdkMessage({
+          type: 'result',
+          subtype: 'success',
+          permission_denials: [denial('toolu_b')],
+        }),
+        state,
+      );
+      await handleMessage(
+        sdkMessage({
+          type: 'result',
+          subtype: 'success',
+          permission_denials: [denial('toolu_b'), denial('toolu_unseen'), denial('toolu_a')],
+        }),
+        state,
+      );
+
+      expect([...state.permissionDenials.values()]).toEqual([2, 'unknown', 1]);
+    });
+  });
+
   describe('after the session has ended', () => {
     let decideTurnPolicy: ReturnType<typeof vi.fn>;
     let answerQuestions: ReturnType<typeof vi.fn>;
@@ -823,6 +976,17 @@ describe('handleMessage', () => {
       expect(answerQuestions).not.toHaveBeenCalled();
       expect(output).toBe('');
       expect(state.oracleFailed).toBe(false);
+    });
+
+    it('allows any other tool without recording the request', async () => {
+      const decision = await canUseTool(state, new AbortController())(
+        'Write',
+        { file_path: '/tmp/project/a.txt' },
+        { signal: new AbortController().signal, requestId: 'r', toolUseID: 'toolu_late' },
+      );
+
+      expect(decision).toMatchObject({ behavior: 'allow' });
+      expect(output).toBe('');
     });
 
     it('also follows an error result that ended it', async () => {

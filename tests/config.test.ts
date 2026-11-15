@@ -123,6 +123,17 @@ describe('parseSessionConfig', () => {
     expect(config.effort).toBe('xhigh');
   });
 
+  it('accepts the auto permission mode, for the session and for an agent definition', () => {
+    const config = parseSessionConfig({
+      prompt: 'hi',
+      permission_mode: 'auto',
+      sdk: { agents: { worker: { description: 'd', prompt: 'p', permissionMode: 'auto' } } },
+    });
+    expect(config.permission_mode).toBe('auto');
+    const agent = (config.sdk.agents as Record<string, Record<string, unknown>>)?.worker;
+    expect(agent.permissionMode).toBe('auto');
+  });
+
   it('rejects invalid permission mode', () => {
     expect(() => parseSessionConfig({ prompt: 'hi', permission_mode: 'yolo' })).toThrow();
   });

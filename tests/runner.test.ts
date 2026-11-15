@@ -1347,7 +1347,7 @@ describe('runSession', () => {
     delete process.env.SCUTTLERUN_INHERIT_TEST;
   });
 
-  it('prints tool use blocks from assistant messages', async () => {
+  it('prints tool use blocks, and lists their files and permission denials in the footer', async () => {
     const mockQuery = createMockQuery([
       {
         type: 'system',
@@ -1388,6 +1388,7 @@ describe('runSession', () => {
         total_cost_usd: 0.001,
         duration_ms: 3000,
         usage: { input_tokens: 100, output_tokens: 50 },
+        permission_denials: [{ tool_name: 'Edit', tool_use_id: 'tu-2', tool_input: {} }],
         result: 'Done',
       },
     ]);
@@ -1406,6 +1407,7 @@ describe('runSession', () => {
     expect(stdoutOutput).toContain('  - /tmp/shore.txt');
     expect(stdoutOutput).toContain('files_read:');
     expect(stdoutOutput).toContain('  - /tmp/sky.txt');
+    expect(stdoutOutput).toContain('permission_denials:\n  - 2\n');
   });
 
   it('handles assistant message with no content', async () => {

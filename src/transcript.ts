@@ -37,6 +37,7 @@ export interface HeaderOptions {
   session: string;
   claudeCode?: string;
   model?: string;
+  permissionMode?: string;
   oracleModel: string;
   configPaths: string[];
   projectDir: string;
@@ -50,6 +51,7 @@ export interface FooterStats {
   totalCostUsd: number;
   costIncomplete?: boolean;
   transcriptIncomplete?: boolean;
+  permissionDenials?: ToolEntryRef[];
   oracleCostUsd?: number;
   timedOut?: boolean;
   filesWritten?: string[];
@@ -93,6 +95,7 @@ export function writeHeader(opts: HeaderOptions): void {
     session: opts.session,
     ...(opts.claudeCode ? { claude_code: opts.claudeCode } : {}),
     ...(opts.model ? { model: opts.model } : {}),
+    ...(opts.permissionMode ? { permission_mode: opts.permissionMode } : {}),
     oracle_model: opts.oracleModel,
     config: opts.configPaths.length === 1 ? opts.configPaths[0] : opts.configPaths,
     project: opts.projectDir,
@@ -182,6 +185,8 @@ export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
     claude_code:
       'the Claude Code version that ran the session; what Claude Code did here held for that version',
     model: 'the model the main agent ran on, as Claude Code resolved it from the configured name',
+    permission_mode:
+      'the permission mode Claude Code started the session in; mode entries record each change',
     oracle_model: "the synthetic user's model, as configured",
     project: 'the directory the agent worked in; files it wrote are there',
     transcript:
@@ -191,8 +196,11 @@ export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
     user: 'a synthetic-user message; the first is the scenario prompt, any leading slash command included',
     assistant: "the main agent's reply text",
     thinking: "the main agent's thinking text",
-    tool: "a tool call the agent requested, a subagent's included: id, its number among this transcript's tool entries; subagent_of, on a subagent's call only, the id of the Agent call that started the subagent, or unknown when that call has no entry, so a call without subagent_of is the main agent's; then only the fields under tool fields; hook entries after it show how any hooks responded",
+    tool: "a tool call the agent requested, a subagent's included: id, its number among this transcript's tool entries; subagent_of, on a subagent's call only, the id of the Agent call that started the subagent, or unknown when that call has no entry, so a call without subagent_of is the main agent's; then only the fields under tool fields; hook entries after it show how any hooks responded, and a permission entry how Claude Code's permission check ruled",
     result: `how a tool call ended, linked to its tool entry by id and carrying the same subagent_of: is_error (true when the call failed or was blocked) and text, what the agent was shown (absent when empty), with long lines wrapped and cut to its first and last ${RESULT_EDGE_CHARS} characters when longer than ${OUTPUT_CAP_CHARS}; AskUserQuestion results also list the questions as answered, after any hook rewrote them, with option labels only, except on a subagent's call or an error. Work moved to the background, a Bash command or a subagent, first reports only that it started; when it ends before the session does, a second result with the same id reports how, with is_error true if it failed and Claude Code's summary as text, under the same rule as the first. Written for every ${listFormat.format(RESULT_RECORDED_TOOLS)} call and for any call that returned an error, including errors the agent later recovered from, so an error result alone does not mean the task failed; a call cut short by a timeout or interrupt may have no result`,
+    permission:
+      "how Claude Code's permission check ruled on a tool call, linked to its tool entry by id, or unknown when the call has no entry, and carrying the same subagent_of: decision, allowed or denied; by, what decided: synthetic_user when Claude Code asked the user, otherwise the check Claude Code names, such as rule, classifier or mode; and reason, when given. The synthetic user allows every call it is asked about except a question it cannot answer, and an answered question shows as oracle entries instead. A call allowed without asking has none, so under bypassPermissions only denials appear; a call a hook blocked shows in its hook and result entries instead",
+    mode: 'a change of permission mode, such as leaving plan mode once a plan is approved: the new mode',
     hook: `a hook that ran: its event and matcher, outcome, exit_code, and stdout and stderr when non-empty, each cut to ${OUTPUT_CAP_CHARS} characters; outcome and exit_code are the hook's own, not the tool call's`,
     oracle:
       "the synthetic user's decisions: ask_user (answers, reasoning), turn (decision, message, reasoning), error (reason)",
@@ -209,12 +217,39 @@ export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
     cost_incomplete: 'some spend went unreported',
     transcript_incomplete: 'the session log is missing lines',
     timed_out: 'the session hit its timeout',
+    permission_denials:
+      "the ids of the tool calls Claude Code's permission check denied, from Claude Code's own record, which permission entries can miss; unknown for a call with no entry",
   },
 };
 
 // The transcript id of the Agent call whose subagent made a call, or
 // 'unknown' when that Agent call has no tool entry.
-export type SubagentOrigin = number | 'unknown';
+export type SubagentOrigin = ToolEntryRef;
+
+// A tool entry's id, or 'unknown' for a call Claude Code reported that has no entry.
+export type ToolEntryRef = number | 'unknown';
+
+export interface PermissionDecision {
+  tool: string;
+  id: ToolEntryRef;
+  subagentOf?: SubagentOrigin;
+  decision: 'allowed' | 'denied';
+  by?: string;
+  reason?: string;
+}
+
+export function writePermission(permission: PermissionDecision): void {
+  const entry: Record<string, unknown> = { permission: permission.tool, id: permission.id };
+  if (permission.subagentOf !== undefined) entry.subagent_of = permission.subagentOf;
+  entry.decision = permission.decision;
+  if (permission.by) entry.by = permission.by;
+  if (permission.reason) entry.reason = permission.reason;
+  writeEntry(entry);
+}
+
+export function writeMode(mode: string): void {
+  writeEntry({ mode });
+}
 
 export function writeTool(
   name: string,
@@ -350,6 +385,9 @@ export function writeFooter(stats: FooterStats): void {
   }
   if (stats.timedOut) {
     footer.timed_out = true;
+  }
+  if (stats.permissionDenials && stats.permissionDenials.length > 0) {
+    footer.permission_denials = stats.permissionDenials;
   }
   if (stats.filesWritten && stats.filesWritten.length > 0) {
     footer.files_written = stats.filesWritten;
