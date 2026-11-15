@@ -115,18 +115,6 @@ CLI 2.1.317 on 2026-11-14. Entries are not ordered by priority.
   4000 characters of each stream, while result entries keep 2000 from each
   end. A command's closing lines often say how it ended, so align hook
   entries with results if a check turns out to need a hook's last lines.
-- **Subagent origin on tool and result entries.** A subagent's tool calls
-  and their results are written like the main thread's, with nothing marking
-  the subagent. The messages carry `parent_tool_use_id` and `agent_id`. Add
-  them to the entries only when a check must tell main-thread calls from a
-  subagent's.
-- **Subagent text reaches the oracle.** A subagent's assistant and thinking
-  blocks arrive in the parent stream like its tool calls, so they are written
-  as `assistant:` and `thinking:` entries and the assistant text joins the
-  oracle's conversation context as if the main agent had said it. A turn
-  policy decision can then rest on a subagent's words. Shape, if that
-  misleads the oracle: skip messages with `parent_tool_use_id` set when
-  building the oracle context, and consider marking their entries.
 - **Backgrounded Bash outcomes.** A Bash command run with
   `run_in_background`, or moved to the background when it outran its
   timeout, returns a placeholder result ("Command running in background with
@@ -284,6 +272,14 @@ CLI 2.1.317 on 2026-11-14. Entries are not ordered by priority.
   session (`prompt: 'Reply done.'`, `tools: []`, `user.max_turns: 0`) yields
   exactly that directory for a TUI probe to launch `claude` in. Document that
   instead; `--dry-run` deliberately creates nothing.
+- **Keeping subagent text out of the oracle context** (2026-11-14). The
+  concern was that a subagent's text joins the oracle's conversation as if
+  the main agent had said it. It cannot: the SDK forwards a subagent's text
+  and thinking blocks only under `forwardSubagentText`, which defaults to
+  off, and scuttlerun neither sets it nor passes it through from a
+  scenario's `sdk:` block, so only a subagent's tool_use and tool_result
+  blocks arrive. A live run of CLI 2.1.317 confirmed it: the subagent's
+  calls were written, its report text was not.
 
 ## Hook-probe fixture
 

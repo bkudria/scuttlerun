@@ -80,9 +80,9 @@ describe('transcript', () => {
           user: 'a synthetic-user message; the first is the scenario prompt, any leading slash command included',
           assistant: "the agent's reply text",
           thinking: "the agent's thinking text",
-          tool: "a tool call the agent requested, a subagent's included: id, its number among this transcript's tool entries, then only the fields under tool fields; hook entries after it show how any hooks responded",
+          tool: "a tool call the agent requested, a subagent's included: id, its number among this transcript's tool entries; subagent_of, on a subagent's call only, the id of the Agent call that started the subagent, or unknown when that call has no entry, so a call without subagent_of is the main agent's; then only the fields under tool fields; hook entries after it show how any hooks responded",
           result:
-            "how a tool call ended, linked to its tool entry by id: is_error (true when the call failed or was blocked) and text, what the agent was shown (absent when empty), with long lines wrapped and cut to its first and last 2000 characters when longer than 4000; AskUserQuestion results also list the questions as answered, after any hook rewrote them, with option labels only, except on a subagent's call or an error. A Bash command moved to the background reports only that it started, so its result says nothing about how the command ended. Written for every Bash, AskUserQuestion and ExitPlanMode call and for any call that returned an error, including errors the agent later recovered from, so an error result alone does not mean the task failed; a call cut short by a timeout or interrupt may have no result",
+            "how a tool call ended, linked to its tool entry by id and carrying the same subagent_of: is_error (true when the call failed or was blocked) and text, what the agent was shown (absent when empty), with long lines wrapped and cut to its first and last 2000 characters when longer than 4000; AskUserQuestion results also list the questions as answered, after any hook rewrote them, with option labels only, except on a subagent's call or an error. A Bash command moved to the background reports only that it started, so its result says nothing about how the command ended. Written for every Bash, AskUserQuestion and ExitPlanMode call and for any call that returned an error, including errors the agent later recovered from, so an error result alone does not mean the task failed; a call cut short by a timeout or interrupt may have no result",
           hook: "a hook that ran: its event and matcher, outcome, exit_code, and stdout and stderr when non-empty, each cut to 4000 characters; outcome and exit_code are the hook's own, not the tool call's",
           oracle:
             "the synthetic user's decisions: ask_user (answers, reasoning), turn (decision, message, reasoning), error (reason)",
@@ -184,6 +184,19 @@ describe('transcript', () => {
       const entry = parseYaml('conversation:\n' + output).conversation[0];
       expect(Object.keys(entry)).toEqual(['tool', 'id', 'command']);
       expect(entry.id).toBe(3);
+    });
+
+    it("writes a subagent's origin right after the call id", () => {
+      writeTool('Bash', { command: 'ls' }, 3, 1);
+      const entry = parseYaml('conversation:\n' + output).conversation[0];
+      expect(Object.keys(entry)).toEqual(['tool', 'id', 'subagent_of', 'command']);
+      expect(entry.subagent_of).toBe(1);
+    });
+
+    it('writes an origin it could not resolve as unknown', () => {
+      writeTool('Read', { file_path: '/tmp/a' }, 2, 'unknown');
+      const entry = parseYaml('conversation:\n' + output).conversation[0];
+      expect(entry).toEqual({ tool: 'Read', id: 2, subagent_of: 'unknown', path: '/tmp/a' });
     });
 
     it('writes Read with path', () => {
@@ -356,6 +369,16 @@ describe('transcript', () => {
         is_error: true,
         text: 'Exit code 3\nboom',
       });
+    });
+
+    it("writes a subagent call's origin right after the call id", () => {
+      writeResult({ tool: 'Bash', id: 4, subagentOf: 2, isError: false, text: 'ok' });
+      expect(Object.keys(entry())).toEqual(['result', 'id', 'subagent_of', 'is_error', 'text']);
+      expect(entry().subagent_of).toBe(2);
+
+      output = '';
+      writeResult({ tool: 'Read', id: 5, subagentOf: 'unknown', isError: true, text: 'x' });
+      expect(entry().subagent_of).toBe('unknown');
     });
 
     it('omits text when the result has none', () => {

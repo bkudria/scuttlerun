@@ -1459,9 +1459,10 @@ rule ToolResultEmitted {
         -- blocks, one block per call, possibly several per message.
         -- Replayed user messages and user text content are never
         -- entries. A result whose call has no tool entry is not written.
-        -- Results of a subagent's calls are recorded like the main
-        -- thread's. Successful results of other tools are left to the
-        -- SDK session JSONL (ToolResultEntryContract).
+        -- A result of a subagent's call carries the same subagent_of as
+        -- its tool entry (TranscriptToolFieldContract). Successful results
+        -- of other tools are left to the SDK session JSONL
+        -- (ToolResultEntryContract).
 }
 
 rule HookResponseEmitted {
@@ -1819,12 +1820,18 @@ surface StreamingTranscript {
         -- The transcript captures tool invocations as observations, not
         -- as faithful reproductions of tool inputs. For each named tool
         -- below, the entry carries exactly the listed fields (in addition
-        -- to `tool:` and `id:`); all other input fields the agent supplied
+        -- to `tool:`, `id:` and, on a subagent's call, `subagent_of:`);
+        -- all other input fields the agent supplied
         -- are intentionally dropped from the YAML transcript. `id` follows
         -- `tool:` and is the call's position among the transcript's tool
-        -- entries, from 1, a subagent's calls included. The SDK JSONL
-        -- (see `FullConversationInJsonl`) is the source of truth for full
-        -- tool inputs. A tool entry records that the agent requested the
+        -- entries, from 1, a subagent's calls included. A subagent's call
+        -- carries `subagent_of` right after `id`: the id of the Agent call
+        -- that started the subagent, which for a nested subagent is the
+        -- Agent call its parent subagent made, or `unknown` when that
+        -- Agent call has no tool entry. A main-agent call never carries
+        -- it, so an entry without `subagent_of` is the main agent's. The
+        -- SDK JSONL (see `FullConversationInJsonl`) is the source of truth
+        -- for full tool inputs. A tool entry records that the agent requested the
         -- call; a result entry with the same `id`, when one is written
         -- (ToolResultEntryContract), shows how the call ended. Hook
         -- entries after it (HookEntryContract) show how any hooks
@@ -1885,7 +1892,8 @@ surface StreamingTranscript {
         -- reports later is not recorded.
         --
         -- Its fields, in order: `result` (the tool name), `id` (the id of
-        -- the tool entry it reports), `is_error` (always present, true
+        -- the tool entry it reports), `subagent_of` (a subagent's call
+        -- only, as on its tool entry), `is_error` (always present, true
         -- when the call failed or was blocked), `questions` (AskUserQuestion
         -- only, below) and `text`. `text` is what the agent was shown: the
         -- result's text content, with any non-text part written as its

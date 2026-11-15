@@ -33,6 +33,7 @@ import {
   type HookResponse,
   writeResult,
   type AskedQuestion,
+  type SubagentOrigin,
   recordsResult,
   writeOracleAsk,
   writeOracleTurn,
@@ -63,7 +64,7 @@ export interface SessionState {
   // wait for the header and the prompt's own entry.
   hooksBeforeInit: HookResponse[];
   toolCallCount: number;
-  toolCalls: Map<string, { name: string; id: number }>;
+  toolCalls: Map<string, { name: string; id: number; subagentOf?: SubagentOrigin }>;
   filesWritten: Set<string>;
   filesEdited: Set<string>;
   filesRead: Set<string>;
@@ -252,6 +253,14 @@ function handleInit(message: SDKSystemMessage, state: SessionState): void {
   syntheticUser.addUserMessage(config.prompt);
 }
 
+function subagentOrigin(
+  parentToolUseId: string | null,
+  state: SessionState,
+): SubagentOrigin | undefined {
+  if (!parentToolUseId) return undefined;
+  return state.toolCalls.get(parentToolUseId)?.id ?? 'unknown';
+}
+
 function handleAssistant(message: SDKAssistantMessage, state: SessionState): void {
   const content = message.message?.content;
   if (content && Array.isArray(content)) {
@@ -264,8 +273,9 @@ function handleAssistant(message: SDKAssistantMessage, state: SessionState): voi
         textParts.push(block.text);
       } else if (block.type === 'tool_use' && block.name) {
         const id = ++state.toolCallCount;
-        writeTool(block.name, block.input, id);
-        state.toolCalls.set(block.id, { name: block.name, id });
+        const subagentOf = subagentOrigin(message.parent_tool_use_id, state);
+        writeTool(block.name, block.input, id, subagentOf);
+        state.toolCalls.set(block.id, { name: block.name, id, subagentOf });
         recordToolFile(block.name, block.input, state);
       }
     }
@@ -289,6 +299,7 @@ function handleUser(message: Extract<SDKMessage, { type: 'user' }>, state: Sessi
     writeResult({
       tool: call.name,
       id: call.id,
+      subagentOf: call.subagentOf,
       isError,
       questions:
         call.name === 'AskUserQuestion' ? askedQuestions(message.tool_use_result) : undefined,
