@@ -264,6 +264,8 @@ scuttlerun wraps the Claude Agent SDK's `query()` with an async generator for mu
 
 2. **Turn policy** — After each agent turn, the oracle decides whether the synthetic user should send a follow-up (`reactive` mode) or end the session (`single` mode).
 
+**When the session ends.** The transcript ends with the result that ended the session: the turn policy's decision to end, or an error result. Claude Code can still be running at that point, for example to finish a background task, and what it does afterwards (a reply to that task finishing, more tool calls) is not recorded and gets no answer from the oracle. A later result still adds its spend to the footer's cost. scuttlerun gives Claude Code 10 seconds to exit by itself, which lets its `SessionEnd` hooks run (their output never reaches the transcript), and then closes it. Closing it early, at that limit or on an interrupt, sets `cost_incomplete: true` in the footer, because what it was still doing went unreported. The session's exit code is settled when it ends: a later timeout, interrupt or error does not change it. Background work cut off this way can leave files half-written, so a check on the project dir should not count on work the agent did not wait for.
+
 Oracle calls run isolated from the host's Claude Code configuration files: they load no user, project or local settings (and so none of their hooks, plugins, env or `CLAUDE.md` files), start no MCP servers (claude.ai connectors included), see no skills, load no plugins or skills synced from claude.ai, and skip auto-memory. Your `~/.claude` setup and the launch directory's `.claude/` cannot steer the synthetic user. Two things still reach the oracle: the environment scuttlerun runs in (it needs it for credentials, so variables such as `ANTHROPIC_*` and `CLAUDE_CODE_*` apply), and any managed settings an administrator has installed.
 
 ## Output
@@ -334,7 +336,7 @@ The output is valid YAML and machine-parseable (e.g. with `yq`).
 
 `is_error` is always present. `text` is what the agent was shown, omitted when empty; a text longer than 4000 characters keeps its first and last 2000, with a line in between saying how many characters were cut. An `AskUserQuestion` result also lists `questions`: each question as it was answered, after any hook rewrote it, with its option labels; a subagent's call or an error has none. An error the agent later recovered from still gets its entry, so an error result alone does not mean the task failed. A `Bash` command moved to the background, by `run_in_background` or by outrunning its timeout, reports only that it started, so its result says nothing about how the command ended. The contract is `@guarantee ToolResultEntryContract`.
 
-**Hook entries record every hook that ran.** When a hook from the scenario's settings or a loaded plugin runs, the transcript gets an entry like this:
+**Hook entries record every hook that ran during the session.** When a hook from the scenario's settings or a loaded plugin runs, the transcript gets an entry like this (hooks that run after the session has ended, `SessionEnd` among them, get none; see [When the session ends](#how-it-works)):
 
 ```yaml
 - tool: Bash

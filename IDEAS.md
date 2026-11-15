@@ -13,10 +13,9 @@ Synthetic user, Isolation and sandbox, Cost and diagnostics, and Spec sections
 come from reviewing the Agent SDK 0.3.310 → 0.3.317 bump (#89) on 2026-11-07.
 The hook-entry follow-ups come from building hook entries (#103) on
 2026-11-07; the Code health entry comes from the 0.5.0 publish (#105). The
-result-entry follow-ups and the background-agent, plan-file and Bash edit
-diff findings come from a headless spike of CLI 2.1.317 (haiku-4-5) on
-2026-11-08 and from building result entries. Entries are not ordered by
-priority.
+result-entry follow-ups and the plan-file and Bash edit diff findings come
+from a headless spike of CLI 2.1.317 (haiku-4-5) on 2026-11-08 and from
+building result entries. Entries are not ordered by priority.
 
 ## Decided, not yet built
 
@@ -158,13 +157,6 @@ priority.
   in the `oracle: ask` entry for graders. `replied_in_chat` is out, since
   scuttlerun can only send user input after a result. Demand unproven; an
   oracle that skips when the persona would not adds noise to existing evals.
-- **A background agent's completion drives a turn after the session
-  ended.** When an Agent tool call runs as a background agent, its completion
-  notification makes the CLI emit a second init and a second result after
-  the input generator has returned. `handleResult` then consults the turn
-  policy again, which costs an oracle call, and on "continue" writes a
-  `user:` entry that no turn follows. Shape: ignore results after the end
-  action, or end the query on the first end decision.
 
 ## Isolation and sandbox
 
@@ -226,13 +218,6 @@ priority.
   only when no result arrived, so a crashed agent turn reports a
   confirmed-looking figure. Shape: the oracle's rule, a non-success result
   with `total_cost_usd` 0 sets `cost_incomplete`.
-- **Duplicate error line on stderr.** After an error result, when the CLI
-  exits non-zero the SDK throws "Claude Code returned an error result: …"
-  carrying the same errors, and the runner's catch writes it as a second
-  `[scuttlerun]` line after the one the result branch already wrote.
-  Startup failures, the sandbox-unavailable case included, show their error
-  twice. Shape: skip the catch's line when the result branch already
-  reported that result's errors.
 - **Oracle token counts from `modelUsage`.** Oracle cost comes from
   `total_cost_usd`, which covers every call in the query, but oracle tokens
   come from the result's `usage`, which the SDK marks "MAIN AGENT LOOP ONLY …

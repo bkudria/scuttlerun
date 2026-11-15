@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { parse as parseYaml } from 'yaml';
-import { runSession } from '../src/runner.js';
+import { CLI_EXIT_GRACE_MS, runSession } from '../src/runner.js';
 import type { SessionConfig } from '../src/config.js';
 import { DEFAULT_SESSION_TIMEOUT_SECONDS } from '../src/config.js';
 
@@ -966,45 +966,39 @@ describe('runSession', () => {
 
   it('denies AskUserQuestion with malformed input', async () => {
     type CanUseToolFn = (toolName: string, input: Record<string, unknown>) => Promise<unknown>;
-    let capturedCanUseTool: CanUseToolFn | undefined;
+    let denyResult: unknown;
 
     (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation(
-      (opts: { options: { canUseTool?: CanUseToolFn } }) => {
-        capturedCanUseTool = opts.options.canUseTool;
-        return createMockQuery([
-          {
+      (opts: { options: { canUseTool: CanUseToolFn } }) => ({
+        close: vi.fn(),
+        interrupt: vi.fn().mockResolvedValue(undefined),
+        [Symbol.asyncIterator]: async function* () {
+          yield {
             type: 'system',
             subtype: 'init',
             session_id: 's6',
             tools: ['AskUserQuestion'],
             model: 'claude-haiku-4-5',
-          },
-          {
+          };
+          denyResult = await opts.options.canUseTool('AskUserQuestion', { garbage: true });
+          yield {
             type: 'result',
             subtype: 'success',
             session_id: 's6',
-            stop_reason: 'end_turn',
-            is_error: false,
             num_turns: 1,
             total_cost_usd: 0.001,
-            duration_ms: 3000,
-            usage: { input_tokens: 100, output_tokens: 50 },
-            result: 'Done',
-          },
-        ]);
-      },
+          };
+        },
+      }),
     );
 
     await runSession(minConfig());
-    expect(capturedCanUseTool).toBeDefined();
-    if (!capturedCanUseTool) throw new Error('capturedCanUseTool not set');
 
     // Deny branch must include a `message` per the SDK's PermissionResult
     // schema (see issue #36).
-    const denyResult = await capturedCanUseTool('AskUserQuestion', { garbage: true });
     expect(denyResult).toEqual({
       behavior: 'deny',
-      message: expect.stringMatching(/\S/),
+      message: expect.stringContaining('schema validation'),
     });
   });
 
@@ -2359,6 +2353,86 @@ describe('runSession', () => {
     expect(stdoutOutput).not.toContain('More.');
   });
 
+  it('exits 130 when options.signal is aborted while the oracle decides to end', async () => {
+    oracleReplies.push({ structured: { decision: 'end', reasoning: 'done' }, delayMs: 100 });
+    const abortError = new Error('Claude Code process aborted by user');
+    let aborted = false;
+    let abortStream: ((err: Error) => void) | undefined;
+    const agentQuery = {
+      close: vi.fn(),
+      interrupt: vi.fn(async () => {
+        aborted = true;
+        abortStream?.(abortError);
+      }),
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: 'system', subtype: 'init', session_id: 's-sigint-end', tools: [] };
+        yield {
+          type: 'result',
+          subtype: 'success',
+          session_id: 's-sigint-end',
+          num_turns: 1,
+          total_cost_usd: 0,
+        };
+        await new Promise<void>((_, reject) => {
+          if (aborted) reject(abortError);
+          abortStream = reject;
+        });
+      },
+    };
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt?: unknown }) =>
+      typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : agentQuery,
+    );
+
+    const signalController = new AbortController();
+    setTimeout(() => signalController.abort(), 30);
+
+    const result = await runSession(
+      minConfig({ user: { oracle_model: 'claude-haiku-4-5', max_turns: 5 } }),
+      { signal: signalController.signal },
+    );
+
+    expect(result.exitCode).toBe(130);
+  });
+
+  it('exits 6 when the session times out while the oracle decides to end', async () => {
+    oracleReplies.push({ structured: { decision: 'end', reasoning: 'done' }, delayMs: 100 });
+    const abortError = new Error('Claude Code process aborted by user');
+    let aborted = false;
+    let abortStream: ((err: Error) => void) | undefined;
+    const agentQuery = {
+      close: vi.fn(),
+      interrupt: vi.fn(async () => {
+        aborted = true;
+        abortStream?.(abortError);
+      }),
+      [Symbol.asyncIterator]: async function* () {
+        yield { type: 'system', subtype: 'init', session_id: 's-timeout-end', tools: [] };
+        yield {
+          type: 'result',
+          subtype: 'success',
+          session_id: 's-timeout-end',
+          num_turns: 1,
+          total_cost_usd: 0,
+        };
+        await new Promise<void>((_, reject) => {
+          if (aborted) reject(abortError);
+          abortStream = reject;
+        });
+      },
+    };
+    (mockQueryFn as ReturnType<typeof vi.fn>).mockImplementation((opts: { prompt?: unknown }) =>
+      typeof opts.prompt === 'string' ? oracleQueryHandle(oracleReplies.shift()) : agentQuery,
+    );
+
+    const result = await runSession(
+      minConfig({ user: { oracle_model: 'claude-haiku-4-5', max_turns: 5 } }),
+      { timeoutSeconds: 0.03 },
+    );
+
+    expect(result.exitCode).toBe(6);
+    expect(parseYaml(stdoutOutput).timed_out).toBe(true);
+  });
+
   it('calls queryHandle.interrupt() when options.signal is aborted', async () => {
     oracleReplies.push({
       structured: { decision: 'continue', message: 'm', reasoning: 'ok' },
@@ -3224,6 +3298,150 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
 
       await expect(runSession(minConfig())).rejects.toThrow('stdout closed during footer');
       expect(mockQuery.close).toHaveBeenCalledTimes(1);
+    });
+
+    describe('when the CLI is still running after the session ends', () => {
+      // Like the real SDK, close() ends the stream while an abort makes it throw.
+      function queryStillRunningAfterEnd({ lateResults = 0 }: { lateResults?: number } = {}) {
+        let release: (() => void) | undefined;
+        let abort: ((err: Error) => void) | undefined;
+        const handle = {
+          close: vi.fn(() => release?.()),
+          interrupt: vi.fn(async () => abort?.(new Error('Claude Code process aborted by user'))),
+          [Symbol.asyncIterator]: async function* () {
+            yield { type: 'system', subtype: 'init', session_id: 's-after-end', tools: [] };
+            yield {
+              type: 'result',
+              subtype: 'success',
+              session_id: 's-after-end',
+              num_turns: 1,
+              total_cost_usd: 0.01,
+            };
+            for (let i = 0; i < lateResults; i++) {
+              await new Promise((resolve) => setTimeout(resolve, 1_000));
+              yield {
+                type: 'result',
+                subtype: 'success',
+                session_id: 's-after-end',
+                total_cost_usd: 0.02,
+              };
+            }
+            await new Promise<void>((resolve, reject) => {
+              release = resolve;
+              abort = reject;
+            });
+          },
+        };
+        (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(handle);
+        return handle;
+      }
+
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it('closes the query once the grace period passes and flags the cost incomplete', async () => {
+        vi.useFakeTimers();
+        const handle = queryStillRunningAfterEnd();
+
+        const run = runSession(minConfig());
+        await vi.advanceTimersByTimeAsync(CLI_EXIT_GRACE_MS - 1);
+        expect(handle.close).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        const result = await run;
+
+        expect(result.exitCode).toBe(0);
+        expect(handle.close).toHaveBeenCalled();
+        expect(parseYaml(stdoutOutput).cost_incomplete).toBe(true);
+      });
+
+      it('times the grace from the end, not from later messages, and leaves no timer behind', async () => {
+        vi.useFakeTimers();
+        const handle = queryStillRunningAfterEnd({ lateResults: 2 });
+
+        const run = runSession(minConfig());
+        await vi.advanceTimersByTimeAsync(CLI_EXIT_GRACE_MS - 1);
+        expect(handle.close).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        await run;
+
+        expect(handle.close).toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it('leaves no timer behind when the CLI exits by itself', async () => {
+        vi.useFakeTimers();
+        (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(
+          createMockQuery([
+            { type: 'system', subtype: 'init', session_id: 's-exits', tools: [] },
+            { type: 'result', subtype: 'success', session_id: 's-exits', total_cost_usd: 0 },
+          ]),
+        );
+
+        const result = await runSession(minConfig());
+
+        expect(result.exitCode).toBe(0);
+        expect(vi.getTimerCount()).toBe(0);
+        expect(parseYaml(stdoutOutput).cost_incomplete).toBeUndefined();
+      });
+
+      it('keeps exit 0 when the session timeout passes during the grace period', async () => {
+        vi.useFakeTimers();
+        queryStillRunningAfterEnd();
+
+        const run = runSession(minConfig(), { timeoutSeconds: 1 });
+        await vi.advanceTimersByTimeAsync(CLI_EXIT_GRACE_MS);
+        const result = await run;
+
+        expect(result.exitCode).toBe(0);
+        expect(parseYaml(stdoutOutput).timed_out).toBeUndefined();
+      });
+
+      it('keeps exit 0 and flags the cost incomplete when the operator interrupts during the grace period', async () => {
+        vi.useFakeTimers();
+        queryStillRunningAfterEnd();
+        const signalController = new AbortController();
+
+        const run = runSession(minConfig(), { signal: signalController.signal });
+        await vi.advanceTimersByTimeAsync(10);
+        signalController.abort();
+        const result = await run;
+
+        expect(result.exitCode).toBe(0);
+        expect(parseYaml(stdoutOutput).cost_incomplete).toBe(true);
+      });
+
+      it('keeps exit 0 and reports nothing when the query throws after the end', async () => {
+        (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue({
+          close: vi.fn(),
+          interrupt: vi.fn().mockResolvedValue(undefined),
+          [Symbol.asyncIterator]: async function* () {
+            yield { type: 'system', subtype: 'init', session_id: 's-throw-after-end', tools: [] };
+            yield {
+              type: 'result',
+              subtype: 'success',
+              session_id: 's-throw-after-end',
+              num_turns: 1,
+              total_cost_usd: 0.01,
+            };
+            throw new Error('Claude Code process exited with code 143');
+          },
+        });
+        let stderrOutput = '';
+        const origStderrWrite = process.stderr.write;
+        process.stderr.write = ((chunk: string) => {
+          stderrOutput += chunk;
+          return true;
+        }) as typeof process.stderr.write;
+
+        try {
+          const result = await runSession(minConfig());
+          expect(result.exitCode).toBe(0);
+          expect(stderrOutput).not.toContain('exited with code 143');
+        } finally {
+          process.stderr.write = origStderrWrite;
+        }
+      });
     });
   });
 });

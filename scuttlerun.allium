@@ -59,6 +59,7 @@ config {
     workspace_cleanup_age: Duration = 7.days
     oracle_context_entry_limit: Integer = 20
     default_session_timeout: Duration = 300.seconds
+    cli_exit_grace: Duration = 10.seconds
     default_max_agent_turns: Integer = 50
     default_max_user_follow_ups: Integer = 0
     default_agent_model: String = "claude-haiku-4-5"
@@ -368,6 +369,14 @@ entity Session {
     transcript_incomplete: Boolean
     timed_out_observed: Boolean
 
+    -- When the session reached its terminal status (SessionEnds), and
+    -- whether the agent's Claude Code CLI is still running. The CLI can
+    -- outlive the session: a result ends the session, but the CLI may keep
+    -- working (e.g. on a background task) and runs its SessionEnd hooks as
+    -- it shuts down.
+    terminated_at: Timestamp?
+    agent_cli_running: Boolean
+
     transitions status {
         pending -> running
         pending -> failed
@@ -383,6 +392,7 @@ entity Session {
     is_terminated: status in {completed_success, exhausted_turns,
                               exhausted_budget, failed, timed_out,
                               interrupted}
+    is_finished: is_terminated and not agent_cli_running
     total_cost: agent_cost + oracle_cost
 
     transcript: Transcript with session = this
@@ -646,7 +656,8 @@ rule SessionStarts {
         oracle_cost: 0,
         cost_incomplete: false,
         transcript_incomplete: false,
-        timed_out_observed: false
+        timed_out_observed: false,
+        agent_cli_running: true
     )
 
     @guidance
@@ -718,17 +729,117 @@ rule SessionBecomesRunning {
         -- and uses it to identify the SDK session file.
 }
 
-rule SessionFinalises {
+rule SessionEnds {
     when: session: Session.is_terminated
 
+    ensures: session.terminated_at = now
+
+    @guidance
+        -- From the terminal transition on, scuttlerun records nothing and
+        -- decides nothing for what the agent does: every rule that writes
+        -- a transcript entry, feeds the conversation buffer, consults the
+        -- oracle or sets the terminal status requires a running (or,
+        -- before init, pending) session. The conversation therefore ends
+        -- with the event that ended the session, and the exit code is
+        -- settled. A question the agent asks after the end is refused
+        -- without consulting the oracle
+        -- (SyntheticUserAnswersClarifyingQuestion requires a running
+        -- session). What the agent's CLI still reports can only raise
+        -- agent_cost (AgentTurnCompletesAfterEnd) or flag lost session
+        -- writes (SessionTranscriptWritesLost). terminated_at starts the
+        -- grace the CLI gets to exit by itself (CliExitGraceExpires).
+}
+
+rule SessionFinalises {
+    when: session: Session.is_finished
+
     ensures: session.transcript.finalized = true
+
+    @guidance
+        -- Fires once the session is terminal and the agent's CLI is no
+        -- longer running: it exited by itself (AgentCliExitsAfterEnd) or
+        -- scuttlerun closed it via query.close() (SessionTimesOut,
+        -- SessionInterruptedByOperator, SessionFailsFromUncaughtException,
+        -- CliExitGraceExpires, ExitGraceInterruptedByOperator). The footer
+        -- is written here rather than at the terminal transition, so it
+        -- carries the cost the CLI reported before it stopped and the
+        -- cost_incomplete flag set by closing it early. The workspace is
+        -- preserved on every termination path; reclamation happens on the
+        -- next session start via StaleWorkspaceCleanup.
+}
+
+rule AgentCliExitsAfterEnd {
+    when: AgentCliExited(client, session)
+
+    requires: session.is_terminated
+    requires: session.agent_cli_running
+
+    ensures: session.agent_cli_running = false
     ensures: AgentSdkClosed(session)
 
     @guidance
-        -- Fires once when the session enters any terminal state. The
-        -- workspace is preserved on every termination path; reclamation
-        -- happens on the next session start via StaleWorkspaceCleanup.
-        -- The agent SDK child process is closed via query.close().
+        -- The CLI's message stream ended within the grace: the CLI exited
+        -- by itself, having run its SessionEnd hooks during its own
+        -- shutdown. Their output never reaches the transcript, which ended
+        -- with the session. Nothing the CLI did went unreported, so
+        -- cost_incomplete keeps whatever value it had; closing the SDK
+        -- here only releases it.
+        --
+        -- A stream that ends with an exception escaping the message loop
+        -- counts as the CLI exiting too: after the end the exception
+        -- changes neither status nor exit code and writes no stderr line,
+        -- because SessionFailsFromUncaughtException requires a running
+        -- session.
+}
+
+rule CliExitGraceExpires {
+    when: session: Session.terminated_at + config.cli_exit_grace <= now
+
+    requires: session.is_terminated
+    requires: session.agent_cli_running
+
+    ensures: session.agent_cli_running = false
+    ensures: AgentSdkClosed(session)
+    -- Whatever the CLI was still doing went unreported, so the agent cost
+    -- in the footer is incomplete rather than final.
+    ensures: session.cost_incomplete = true
+
+    @guidance
+        -- The CLI can outlive the session: once the turn policy or an
+        -- error result ends it, the CLI may keep running, for example to
+        -- finish a background Agent or Workflow task, and then run another
+        -- turn. It gets config.cli_exit_grace to exit by itself so that its
+        -- SessionEnd hooks and its exit reports (a later result's cost,
+        -- lost session writes) still happen. A CLI still running when the
+        -- grace passes is closed via query.close(), which kills it without
+        -- its graceful shutdown. The exit code stays the one the session
+        -- ended with.
+        --
+        -- Only a session ended by a result waits out the grace: a timeout,
+        -- an operator interrupt or an uncaught exception closes the CLI at
+        -- the terminal transition. The session timeout does not apply
+        -- during the grace (SessionTimeoutObserved requires a running
+        -- session).
+}
+
+rule ExitGraceInterruptedByOperator {
+    when: OperatorSignalReceived(session)
+
+    requires: session.is_terminated
+    requires: session.agent_cli_running
+
+    ensures: session.agent_cli_running = false
+    ensures: AgentSdkClosed(session)
+    -- As at the end of the grace, whatever the CLI was still doing went
+    -- unreported.
+    ensures: session.cost_incomplete = true
+
+    @guidance
+        -- SIGINT or SIGTERM during the grace stops the wait: scuttlerun
+        -- aborts the SDK abort controller and closes the CLI at once. The
+        -- session keeps the terminal status it already had, so the exit
+        -- code is unchanged (SessionInterruptedByOperator requires a
+        -- running session).
 }
 
 
@@ -986,6 +1097,7 @@ rule AgentTurnFailsAtRuntime {
 rule StartupFailureSuggestsSandboxFix {
     when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
 
+    requires: session.status in {pending, running}
     requires: subtype = error_during_execution
     requires: startup_failure_reason = sandbox_required_unavailable
 
@@ -1011,9 +1123,10 @@ rule StartupFailureSuggestsSandboxFix {
         --
         -- This rule does not touch `status`; AgentTurnFailsAtRuntime
         -- commits the failure and the exit code stays the runtime-error
-        -- code. It requires no particular status because the result may
-        -- arrive before init. Any other startup_failure_reason, or none,
-        -- adds no hint.
+        -- code. It accepts a pending session because the result may arrive
+        -- before init, and like every other recording rule it ignores
+        -- results that arrive after the session has ended. Any other
+        -- startup_failure_reason, or none, adds no hint.
 }
 
 rule SessionFailsFromUncaughtException {
@@ -1026,6 +1139,8 @@ rule SessionFailsFromUncaughtException {
     -- No result message reported the in-flight turn's cost, so the agent
     -- cost in the footer is incomplete/unknown rather than a confirmed $0.
     ensures: session.cost_incomplete = true
+    ensures: session.agent_cli_running = false
+    ensures: AgentSdkClosed(session)
 
     @guidance
         -- Witnesses the running -> failed edge for exceptions that
@@ -1053,7 +1168,12 @@ rule SessionFailsFromUncaughtException {
         -- runtime-error exit code (same informational, do-not-parse
         -- contract as the timeout and AgentTurnFailsAtRuntime
         -- diagnostics). The timeout and signal branches keep their own
-        -- handling and do not emit this line.
+        -- handling and do not emit this line. An exception after the
+        -- session has ended does not reach this rule: it changes nothing
+        -- and writes no line (AgentCliExitsAfterEnd).
+        --
+        -- The CLI is closed at once; there is no grace for it to exit by
+        -- itself (contrast CliExitGraceExpires).
 }
 
 rule SessionTimeoutObserved {
@@ -1073,7 +1193,9 @@ rule SessionTimeoutObserved {
         -- The `timed_out_observed = false` precondition is the standard
         -- temporal-trigger re-fire guard. This rule does not write
         -- `status`; the terminal transition is committed by
-        -- `SessionTimesOut` from the chained trigger.
+        -- `SessionTimesOut` from the chained trigger. A session that has
+        -- already ended is never timed out, even while its CLI is still
+        -- running out the grace (CliExitGraceExpires).
 }
 
 rule SessionTimesOut {
@@ -1087,6 +1209,8 @@ rule SessionTimesOut {
     -- The in-flight turn was aborted before its result, so the agent cost
     -- in the footer is incomplete/unknown rather than a confirmed $0.
     ensures: session.cost_incomplete = true
+    ensures: session.agent_cli_running = false
+    ensures: AgentSdkClosed(session)
 
     @guidance
         -- Committer half of the timeout split. Consumes the chained
@@ -1131,18 +1255,22 @@ rule SessionInterruptedByOperator {
     -- The in-flight turn was aborted before its result, so the agent cost
     -- in the footer is incomplete/unknown rather than a confirmed $0.
     ensures: session.cost_incomplete = true
+    ensures: session.agent_cli_running = false
+    ensures: AgentSdkClosed(session)
 
     @guidance
         -- The operator interrupted the running session by sending
         -- SIGINT or SIGTERM to the scuttlerun process. scuttlerun aborts
         -- the SDK abort controller and calls queryHandle.interrupt() to
-        -- stop the in-flight turn, then commits the terminal status.
-        -- The transcript footer is still emitted with whatever stats
-        -- accrued. Coincident timeouts are excluded by the
-        -- `timed_out_observed` guard, which keeps this rule disjoint
-        -- from `SessionTimesOut` and from the failure paths: if the
-        -- timeout observer has already fired, the session resolves to
-        -- timed_out regardless of any later signal.
+        -- stop the in-flight turn, commits the terminal status and closes
+        -- the CLI without waiting for it to exit. The transcript footer is
+        -- still emitted with whatever stats accrued. Coincident timeouts
+        -- are excluded by the `timed_out_observed` guard, which keeps this
+        -- rule disjoint from `SessionTimesOut` and from the failure paths:
+        -- if the timeout observer has already fired, the session resolves
+        -- to timed_out regardless of any later signal. A signal after the
+        -- session has ended leaves its status alone and only cuts short
+        -- the CLI's grace (ExitGraceInterruptedByOperator).
 }
 
 
@@ -1178,10 +1306,15 @@ rule SessionTranscriptWritesLost {
         -- This rule does not touch `status`: the results already received
         -- stand, the SDK does not change the CLI's exit status for this
         -- loss, and the exit code is unchanged (ExitCodeReflectsOutcome).
-        -- The report arrives after the final result while the runner
-        -- drains the message stream, so it is observed on every path that
-        -- lets the stream drain; a timeout or signal stops the drain and
-        -- may leave it unobserved.
+        -- The report arrives as the CLI exits, which is usually after the
+        -- session has ended, so this rule carries no status guard. With
+        -- AgentTurnCompletesAfterEnd's cost update it is one of the two
+        -- things the runner still takes from the CLI once the session is
+        -- terminal, and the only one that writes anything (its stderr
+        -- warning). It is observed whenever the CLI exits by itself
+        -- (AgentCliExitsAfterEnd); a timeout, a signal, or the CLI being
+        -- closed when its grace passes (CliExitGraceExpires) stops the
+        -- stream first and may leave it unobserved.
 }
 
 
@@ -1395,6 +1528,27 @@ rule OracleQueryTracked {
         -- counted. scuttlerun keeps no pricing table of its own, so the
         -- SDK's per-model rates and cache-write lifetimes apply to every
         -- oracle model the SDK knows.
+}
+
+rule AgentTurnCompletesAfterEnd {
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+
+    requires: session.is_terminated
+    requires: agent_cost_to_date > session.agent_cost
+
+    ensures: session.agent_cost = agent_cost_to_date
+
+    @guidance
+        -- A result can arrive after the session has ended: the CLI keeps
+        -- running, for example to finish a background task, and runs
+        -- another turn when that task completes. That turn is not part of
+        -- the session. Its result consults no turn policy, writes no
+        -- transcript entry, and leaves status, exit code and turn_count as
+        -- the session ended with; it only accounts for the spend.
+        -- agent_cost_to_date is the SDK's running total for the whole
+        -- query, so a larger figure replaces agent_cost. A crash or error
+        -- result may carry zeroed figures, so a smaller one is ignored
+        -- rather than lowering the cost already reported.
 }
 
 rule OracleQueryCostUnknown {
@@ -1620,10 +1774,13 @@ surface StreamingTranscript {
         -- attempt (see OracleQueryTracked);
         -- `cost_incomplete` (Boolean) appears only when truthy and means
         -- some spend went unreported — the session terminated before the
-        -- in-flight agent turn reported a final result, or an oracle
-        -- query ended without a result message or with a zero-cost error
-        -- result (OracleQueryCostUnknown) — so the cost shown or omitted
-        -- is incomplete/unknown rather than a confirmed $0;
+        -- in-flight agent turn reported a final result, the agent's CLI
+        -- was still running when scuttlerun closed it after the session
+        -- ended (CliExitGraceExpires, ExitGraceInterruptedByOperator), or
+        -- an oracle query ended without a result message or with a
+        -- zero-cost error result (OracleQueryCostUnknown) — so the cost
+        -- shown or omitted is incomplete/unknown rather than a confirmed
+        -- $0;
         -- `transcript_incomplete` (Boolean) appears only when truthy and
         -- means the SDK session JSONL for this run (announced in the
         -- preamble when one was written) is missing lines (see
@@ -1642,7 +1799,9 @@ surface StreamingTranscript {
 
     @guarantee InspectableMidSession
         -- A reader joining mid-session sees the preamble plus all entries
-        -- emitted so far. The footer appears only after termination.
+        -- emitted so far. No entry is added once the session has
+        -- terminated, and the footer appears only after that, once the
+        -- agent's CLI has exited or been closed (SessionFinalises).
 
     @guarantee FullConversationInJsonl
         -- The full native conversation (including tool uses, tool results
@@ -1693,7 +1852,9 @@ surface StreamingTranscript {
         -- legend rather than embedding a copy of this list.
 
     @guarantee HookEntryContract
-        -- A hook entry records one hook that ran (HookResponseEmitted).
+        -- A hook entry records one hook that ran while the session was
+        -- running (HookResponseEmitted). Hooks that run after the result
+        -- that ended it, SessionEnd hooks among them, get no entry.
         -- `hook:` carries the hook's event, followed by `:` and its
         -- matcher when it has one (`PreToolUse:Bash`,
         -- `SessionStart:startup`, `Stop`). `outcome` is success, error or
@@ -1754,7 +1915,9 @@ surface StreamingTranscript {
         -- (the TranscriptToolFieldContract, one line per tool group plus
         -- `any other tool`); `not recorded` (successful results of tools
         -- outside config.tools_with_recorded_results, pointing to the SDK
-        -- session JSONL named by `transcript`); and `footer` (what
+        -- session JSONL named by `transcript`, and anything after the
+        -- result that ended the session, SessionEnd hooks included
+        -- (SessionEnds)); and `footer` (what
         -- `cost_incomplete`, `transcript_incomplete` and `timed_out`
         -- mean). The `entries` line for results names the tools whose
         -- every result is written from the same list that selects them. The legend is
@@ -1786,6 +1949,7 @@ surface AgentSdkBoundary {
         AgentEmitsToolResult(client, session, tool_name, is_error)
         AgentEmitsHookResponse(client, session, hook_name)
         AgentSessionWritesLost(client, session, error_code, lost, transcript_session_ids)
+        AgentCliExited(client, session)
         RunnerCaughtException(session)
 
     contracts:
