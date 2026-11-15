@@ -32,31 +32,45 @@ describe('transcript', () => {
   });
 
   describe('writeHeader', () => {
-    it('writes session, config, project, transcript and conversation header', () => {
-      writeHeader({
-        session: 'abc-123',
-        configPaths: ['/path/to/session.yaml'],
-        projectDir: '/tmp/scuttlerun-project-abc123',
-        transcriptPath: '/home/user/.claude/projects/-tmp-foo/abc123.jsonl',
-      });
+    const header = {
+      session: 'abc-123',
+      claudeCode: '2.1.322',
+      model: 'claude-sonnet-5-5',
+      oracleModel: 'claude-haiku-4-5',
+      configPaths: ['/path/to/session.yaml'],
+      projectDir: '/tmp/scuttlerun-project-abc123',
+      transcriptPath: '/home/user/.claude/projects/-tmp-foo/abc123.jsonl',
+    };
+
+    it('writes session, provenance, config, project, transcript and conversation header', () => {
+      writeHeader(header);
       const parsed = parseYaml(output + '  - user: |\n      placeholder\n');
       expect(parsed.session).toBe('abc-123');
+      expect(parsed.claude_code).toBe('2.1.322');
+      expect(parsed.model).toBe('claude-sonnet-5-5');
+      expect(parsed.oracle_model).toBe('claude-haiku-4-5');
       expect(parsed.config).toBe('/path/to/session.yaml');
       expect(parsed.project).toBe('/tmp/scuttlerun-project-abc123');
       expect(parsed.transcript).toBe('/home/user/.claude/projects/-tmp-foo/abc123.jsonl');
       expect(output).toContain('conversation:\n');
     });
 
+    it('omits claude_code and model when Claude Code did not report them', () => {
+      writeHeader({ ...header, claudeCode: undefined, model: undefined });
+      const parsed = parseYaml(output + '  - user: |\n      placeholder\n');
+      expect(parsed).not.toHaveProperty('claude_code');
+      expect(parsed).not.toHaveProperty('model');
+      expect(parsed.oracle_model).toBe('claude-haiku-4-5');
+    });
+
     it('writes a legend after transcript describing the header keys, every entry kind, tool field and footer flag', () => {
-      writeHeader({
-        session: 'abc-123',
-        configPaths: ['/path/to/session.yaml'],
-        projectDir: '/tmp/proj',
-        transcriptPath: '/tmp/transcript.jsonl',
-      });
+      writeHeader(header);
       const parsed = parseYaml(output + '  - user: |\n      placeholder\n');
       expect(Object.keys(parsed)).toEqual([
         'session',
+        'claude_code',
+        'model',
+        'oracle_model',
         'config',
         'project',
         'transcript',
@@ -72,6 +86,11 @@ describe('transcript', () => {
       ]);
       expect(parsed.legend).toEqual({
         header: {
+          claude_code:
+            'the Claude Code version that ran the session; what Claude Code did here held for that version',
+          model:
+            'the model the main agent ran on, as Claude Code resolved it from the configured name',
+          oracle_model: "the synthetic user's model, as configured",
           project: 'the directory the agent worked in; files it wrote are there',
           transcript:
             "the session log, Claude Code's own record of the session with every tool input and result; a subagent's calls are under subagents/ in the session-named directory beside it",
@@ -109,33 +128,18 @@ describe('transcript', () => {
     });
 
     it('keeps the header within 80 columns', () => {
-      writeHeader({
-        session: 'abc-123',
-        configPaths: ['/path/to/session.yaml'],
-        projectDir: '/tmp/proj',
-        transcriptPath: '/tmp/transcript.jsonl',
-      });
+      writeHeader(header);
       const longest = Math.max(...output.split('\n').map((l) => l.length));
       expect(longest).toBeLessThanOrEqual(80);
     });
 
     it('starts with YAML document start marker', () => {
-      writeHeader({
-        session: 'abc-123',
-        configPaths: ['/path/to/session.yaml'],
-        projectDir: '/tmp/proj',
-        transcriptPath: '/tmp/transcript.jsonl',
-      });
+      writeHeader(header);
       expect(output).toMatch(/^---\n/);
     });
 
     it('writes config as list for multiple paths', () => {
-      writeHeader({
-        session: 'abc-123',
-        configPaths: ['/path/to/base.yaml', '/path/to/override.yaml'],
-        projectDir: '/tmp/scuttlerun-project-abc123',
-        transcriptPath: '/home/user/.claude/projects/-tmp-foo/abc123.jsonl',
-      });
+      writeHeader({ ...header, configPaths: ['/path/to/base.yaml', '/path/to/override.yaml'] });
       const parsed = parseYaml(output + '  - user: |\n      placeholder\n');
       expect(parsed.config).toEqual(['/path/to/base.yaml', '/path/to/override.yaml']);
     });

@@ -35,6 +35,9 @@ function applyWrapStyles(doc: Document): void {
 
 export interface HeaderOptions {
   session: string;
+  claudeCode?: string;
+  model?: string;
+  oracleModel: string;
   configPaths: string[];
   projectDir: string;
   transcriptPath: string;
@@ -88,6 +91,9 @@ function writeEntry(entry: Record<string, unknown>): void {
 export function writeHeader(opts: HeaderOptions): void {
   const header: Record<string, unknown> = {
     session: opts.session,
+    ...(opts.claudeCode ? { claude_code: opts.claudeCode } : {}),
+    ...(opts.model ? { model: opts.model } : {}),
+    oracle_model: opts.oracleModel,
     config: opts.configPaths.length === 1 ? opts.configPaths[0] : opts.configPaths,
     project: opts.projectDir,
     transcript: opts.transcriptPath,
@@ -173,6 +179,10 @@ export function recordsResult(tool: string, isError: boolean): boolean {
 
 export const TRANSCRIPT_LEGEND: Record<string, unknown> = {
   header: {
+    claude_code:
+      'the Claude Code version that ran the session; what Claude Code did here held for that version',
+    model: 'the model the main agent ran on, as Claude Code resolved it from the configured name',
+    oracle_model: "the synthetic user's model, as configured",
     project: 'the directory the agent worked in; files it wrote are there',
     transcript:
       "the session log, Claude Code's own record of the session with every tool input and result; a subagent's calls are under subagents/ in the session-named directory beside it",
