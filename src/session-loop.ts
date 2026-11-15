@@ -78,6 +78,9 @@ export interface SessionState {
   transcriptIncomplete: boolean;
   oracleFailed: boolean;
   exitCode: number;
+  // The CLI starts a turn of its own when a background subagent finishes, so
+  // a result that arrives while one runs does not end the agent's turn.
+  subagentsRunning: boolean;
   // Set once a result ends the session. The CLI can keep running after that,
   // e.g. to finish a background task, and its later turns are not part of the
   // session.
@@ -104,6 +107,7 @@ export function newSessionState(inputs: SessionInputs): SessionState {
     transcriptIncomplete: false,
     oracleFailed: false,
     exitCode: EXIT_SUCCESS,
+    subagentsRunning: false,
     ended: false,
   };
 }
@@ -218,6 +222,13 @@ function handleSystem(message: Extract<SDKMessage, { type: 'system' }>, state: S
         state.transcriptIncomplete = true;
         process.stderr.write(transcriptLostWarning(message, state.sdkSessionPath));
       }
+      break;
+    case 'background_tasks_changed':
+      // A background command may never end (a dev server), and an ambient
+      // task is a watcher, so only subagents hold the turn open.
+      state.subagentsRunning = message.tasks.some(
+        (task) => task.task_type === 'local_agent' && !task.ambient,
+      );
       break;
   }
 }
@@ -341,6 +352,7 @@ async function handleResult(message: SDKResultMessage, state: SessionState): Pro
   state.resultTotalCostUsd = message.total_cost_usd || 0;
 
   const { syntheticUser } = state;
+  if (subtype === 'success' && syntheticUser && state.subagentsRunning) return;
   if (subtype === 'success' && syntheticUser) {
     // Consult turn policy
     const decision = await syntheticUser.decideTurn();

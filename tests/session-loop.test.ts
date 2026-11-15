@@ -421,6 +421,84 @@ describe('handleMessage', () => {
     });
   });
 
+  describe('background work', () => {
+    let decideTurnPolicy: ReturnType<typeof vi.fn>;
+
+    function result(totalCostUsd: number): SDKMessage {
+      return sdkMessage({
+        type: 'result',
+        subtype: 'success',
+        num_turns: 1,
+        total_cost_usd: totalCostUsd,
+      });
+    }
+
+    function backgroundTasks(...tasks: Array<Record<string, unknown>>): SDKMessage {
+      return sdkMessage({ type: 'system', subtype: 'background_tasks_changed', tasks });
+    }
+
+    const subagentTask = { task_id: 'a1', task_type: 'local_agent', description: 'd' };
+
+    beforeEach(() => {
+      decideTurnPolicy = vi.fn().mockResolvedValue({ decision: 'end', reasoning: 'done' });
+      const config = parseSessionConfig({ prompt: 'p', user: { max_turns: 5 } });
+      state = newSessionState({
+        config,
+        configPaths: ['/tmp/session.yaml'],
+        projectDir: '/tmp/project',
+        sandboxHome: undefined,
+        claudeDir: undefined,
+        oracle: { decideTurnPolicy } as unknown as Oracle,
+      });
+      state.sessionId = 's';
+      state.syntheticUser = new SyntheticUser(state.oracle, config.user, config.prompt);
+    });
+
+    it('waits for the turn the agent takes when a running subagent finishes', async () => {
+      await handleMessage(assistantToolUse('toolu_agent', 'Agent', { prompt: 'go' }), state);
+      await handleMessage(backgroundTasks(subagentTask), state);
+      await handleMessage(result(0.01), state);
+
+      expect(decideTurnPolicy).not.toHaveBeenCalled();
+      expect(state.ended).toBe(false);
+
+      await handleMessage(
+        assistantToolUse(
+          'toolu_sub',
+          'Bash',
+          { command: 'echo hi' },
+          { parent_tool_use_id: 'toolu_agent' },
+        ),
+        state,
+      );
+      await handleMessage(backgroundTasks(), state);
+      await handleMessage(result(0.02), state);
+
+      expect(conversation()).toContainEqual({
+        tool: 'Bash',
+        id: 2,
+        subagent_of: 1,
+        command: 'echo hi',
+      });
+      expect(decideTurnPolicy).toHaveBeenCalledTimes(1);
+      expect(state.ended).toBe(true);
+    });
+
+    it('does not wait for a background command or an ambient task', async () => {
+      await handleMessage(
+        backgroundTasks(
+          { task_id: 'b1', task_type: 'local_bash', description: 'server' },
+          { ...subagentTask, ambient: true },
+        ),
+        state,
+      );
+      await handleMessage(result(0.01), state);
+
+      expect(decideTurnPolicy).toHaveBeenCalledTimes(1);
+      expect(state.ended).toBe(true);
+    });
+  });
+
   describe('after the session has ended', () => {
     let decideTurnPolicy: ReturnType<typeof vi.fn>;
     let answerQuestions: ReturnType<typeof vi.fn>;
