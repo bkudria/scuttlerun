@@ -158,8 +158,9 @@ Output:
   AskUserQuestion and ExitPlanMode result), hook runs, thinking blocks, and
   oracle decisions.
 
-  Before the transcript: config file paths, project dir, SDK transcript path,
-  and a legend explaining what each entry records (--dry-run prints it too).
+  Before the transcript: the Claude Code version, agent and oracle models,
+  config file paths, project dir, SDK transcript path, and a legend
+  explaining what each entry records (--dry-run prints it too).
   After the transcript: a summary with paths and stats (turns, tool calls, etc.).
 
   The SDK session file (full conversation JSONL) is preserved at

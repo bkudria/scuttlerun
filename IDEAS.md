@@ -62,15 +62,6 @@ building result entries. Entries are not ordered by priority.
   non-bypass mode. Pays off only in default, plan and dontAsk, since bypass
   shadows canUseTool (every run in that day's suite logged
   CLAUDE_SDK_CAN_USE_TOOL_SHADOWED).
-- **Header provenance.** The SDK init message carries `claude_code_version`
-  and `model`; the runner reads neither. Write both into the header so a
-  transcript states which CLI version its facts held for. The 0.3.317 bump
-  shows the cost of not knowing: its bundled CLI (2.1.310 → 2.1.317) stopped
-  answering a repeated Read with an "unchanged" stub and returns the whole
-  file, so sessions that re-read files spend more, and a craboodle comparison
-  spanning the bump cannot tell from its transcripts which CLI produced which
-  side. The init's `capabilities` list follows from the version, so recording
-  the version is enough.
 - **Hook entries do not name their source.** `hook:` carries the SDK's
   `hook_name`, which is `Event:matcher` only. A settings hook and a plugin
   hook on the same event and matcher write identical names (a spike loading

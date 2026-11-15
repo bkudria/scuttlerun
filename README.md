@@ -274,6 +274,9 @@ scuttlerun streams a YAML transcript to stdout as the session runs:
 
 ```yaml
 session: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+claude_code: 2.1.322
+model: claude-sonnet-5-5
+oracle_model: claude-haiku-4-5
 config: /path/to/session.yaml
 project: /tmp/scuttlerun-project-xK3f9m
 transcript: ~/.claude/projects/-tmp-.../a1b2c3.jsonl
@@ -315,7 +318,7 @@ duration_s: 12.3
 
 The output is valid YAML and machine-parseable (e.g. with `yq`).
 
-**The transcript explains itself.** The header's `legend:` says what the header's `project` and `transcript` keys point to, what each entry kind records, which fields each tool entry keeps, what the transcript leaves out, and what the footer flags mean. A grader or reader can rely on it instead of keeping its own copy of these rules. It is the same in every transcript, and `--dry-run` prints it too, so tools can read it before running a session.
+**The transcript explains itself.** The header names the Claude Code version and model that ran the session and the synthetic user's model, so a transcript says which release its behaviour held for. Its `legend:` says what those keys and the header's `project` and `transcript` keys point to, what each entry kind records, which fields each tool entry keeps, what the transcript leaves out, and what the footer flags mean. A grader or reader can rely on it instead of keeping its own copy of these rules. It is the same in every transcript, and `--dry-run` prints it too, so tools can read it before running a session.
 
 **Tool-call entries are observations, not reproductions.** Each tool entry carries the tool name plus a small, fixed set of identifying fields — `path` for `Read`/`Write`/`Edit`, `command` for `Bash`, `pattern` for `Glob`/`Grep`, and similar minimal handles for `Task*`/`TodoWrite`. Content-bearing fields (the bytes a `Write` wrote, the strings an `Edit` replaced) are **intentionally dropped from the YAML transcript** and are not available to downstream graders that consume the transcript text alone. Unknown tool names emit their full `input` mapping. Each tool entry carries an `id`, its position among the transcript's tool entries counting from 1, a subagent's calls included. A tool entry shows that the agent asked for the call; a result entry with the same `id`, when one is recorded, shows how the call ended. The complete contract is `@guarantee TranscriptToolFieldContract` in [`scuttlerun.allium`](scuttlerun.allium); the SDK JSONL below is the source of truth for full tool inputs and results.
 

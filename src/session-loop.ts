@@ -297,6 +297,9 @@ function handleInit(message: SDKSystemMessage, state: SessionState): void {
   );
   writeHeader({
     session: sessionId,
+    claudeCode: message.claude_code_version,
+    model: message.model,
+    oracleModel: config.user.oracle_model,
     configPaths: state.configPaths,
     projectDir: state.projectDir,
     transcriptPath: state.sdkSessionPath,

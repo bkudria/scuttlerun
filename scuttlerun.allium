@@ -732,7 +732,8 @@ rule SessionBecomesRunning {
     @guidance
         -- The Agent SDK emits an init message with a session_id at the
         -- start of each query turn. scuttlerun captures the first one
-        -- and uses it to identify the SDK session file.
+        -- and uses it to identify the SDK session file and to name the
+        -- Claude Code version and model in the preamble (StreamingYaml).
 }
 
 rule SessionEnds {
@@ -1838,12 +1839,16 @@ surface StreamingTranscript {
         -- announces the SDK session id; hook responses that arrive
         -- earlier are held until then (HookResponseHeldBeforeInit). A run
         -- that ends before any init message (e.g. Claude Code refusing to
-        -- start) writes the footer mapping alone. The preamble carries five
-        -- keys: `session` (the SDK session id), `config` (the path or
-        -- list of paths to the YAML config files supplied at
-        -- invocation), `project` (the workspace path),
-        -- `transcript` (the SDK session JSONL path) and `legend` (how
-        -- to read the rest; see SelfDescribingTranscript). The footer
+        -- start) writes the footer mapping alone. The preamble carries
+        -- `session` (the SDK session id); `claude_code` and `model` (the
+        -- Claude Code version and the main agent's model as the first
+        -- init message reports them, each omitted when that message
+        -- lacks it); `oracle_model` (SessionInput.oracle_model, the
+        -- synthetic user's configured model); `config`
+        -- (the path or list of paths to the YAML config files supplied
+        -- at invocation); `project` (the workspace path); `transcript`
+        -- (the SDK session JSONL path); and `legend` (how to read the
+        -- rest; see SelfDescribingTranscript). The footer
         -- always carries `turns` (count), `tool_calls` (count) and
         -- `duration_s` (seconds). Additional keys appear conditionally:
         -- `cost_usd` (Decimal: agent + oracle total) appears when the
@@ -2005,9 +2010,9 @@ surface StreamingTranscript {
     @guarantee SelfDescribingTranscript
         -- The preamble's `legend` mapping states how to read the
         -- transcript, so a reader or grader needs no copy of this spec.
-        -- It has five keys: `header` (what the preamble's `project` and
-        -- `transcript` hold, including where a subagent's calls are
-        -- recorded); `entries` (one line per entry kind: user,
+        -- It has five keys: `header` (what the preamble's `claude_code`,
+        -- `model`, `oracle_model`, `project` and `transcript` hold,
+        -- including where a subagent's calls are recorded); `entries` (one line per entry kind: user,
         -- assistant, thinking, tool, result, hook, oracle); `tool fields`
         -- (the TranscriptToolFieldContract, one line per tool group plus
         -- `any other tool`); `not recorded` (successful results of tools

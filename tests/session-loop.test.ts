@@ -71,6 +71,32 @@ describe('handleMessage', () => {
     process.stdout.write = originalWrite;
   });
 
+  describe('header', () => {
+    it("records the Claude Code version and model the init reports, and the oracle's model", async () => {
+      state = newSessionState({
+        ...state,
+        config: parseSessionConfig({ prompt: 'p', user: { oracle_model: 'claude-haiku-5-5' } }),
+      });
+
+      await handleMessage(
+        sdkMessage({
+          type: 'system',
+          subtype: 'init',
+          session_id: 's',
+          claude_code_version: '2.1.322',
+          model: 'claude-sonnet-5-5',
+          slash_commands: [],
+        }),
+        state,
+      );
+
+      const header = parseYaml(output);
+      expect(header.claude_code).toBe('2.1.322');
+      expect(header.model).toBe('claude-sonnet-5-5');
+      expect(header.oracle_model).toBe('claude-haiku-5-5');
+    });
+  });
+
   describe('tool entries', () => {
     it('gives each tool entry the next id, in call order', async () => {
       await handleMessage(assistantToolUse('toolu_a', 'Bash', { command: 'ls' }), state);
