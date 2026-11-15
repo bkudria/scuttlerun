@@ -1820,7 +1820,8 @@ surface StreamingTranscript {
         -- The transcript captures tool invocations as observations, not
         -- as faithful reproductions of tool inputs. For each named tool
         -- below, the entry carries exactly the listed fields (in addition
-        -- to `tool:` and `id:`); all other input fields the agent supplied
+        -- to `tool:`, `id:` and, on a subagent's call, `subagent_of:`);
+        -- all other input fields the agent supplied
         -- are intentionally dropped from the YAML transcript. `id` follows
         -- `tool:` and is the call's position among the transcript's tool
         -- entries, from 1, a subagent's calls included. A subagent's call

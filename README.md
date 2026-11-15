@@ -319,14 +319,14 @@ The output is valid YAML and machine-parseable (e.g. with `yq`).
 
 **Tool-call entries are observations, not reproductions.** Each tool entry carries the tool name plus a small, fixed set of identifying fields — `path` for `Read`/`Write`/`Edit`, `command` for `Bash`, `pattern` for `Glob`/`Grep`, and similar minimal handles for `Task*`/`TodoWrite`. Content-bearing fields (the bytes a `Write` wrote, the strings an `Edit` replaced) are **intentionally dropped from the YAML transcript** and are not available to downstream graders that consume the transcript text alone. Unknown tool names emit their full `input` mapping. Each tool entry carries an `id`, its position among the transcript's tool entries counting from 1, a subagent's calls included. A tool entry shows that the agent asked for the call; a result entry with the same `id`, when one is recorded, shows how the call ended. The complete contract is `@guarantee TranscriptToolFieldContract` in [`scuttlerun.allium`](scuttlerun.allium); the SDK JSONL below is the source of truth for full tool inputs and results.
 
-**A subagent's calls name the Agent call that started it.** A tool entry for a call a subagent made carries `subagent_of`, the `id` of the `Agent` call that started the subagent; a nested subagent's calls name the `Agent` call its parent subagent made. A call with no `subagent_of` is the main agent's, so a check that something happens in the main thread, or only inside a subagent, can be graded from the transcript. When the starting `Agent` call has no tool entry of its own, the call carries `subagent_of: unknown`. A result entry carries the same `subagent_of` as its call.
+**A subagent's calls name the Agent call that started it.** A tool entry for a call a subagent made carries `subagent_of`, the `id` of the `Agent` call that started the subagent; a nested subagent's calls name the `Agent` call its parent subagent made. A call with no `subagent_of` is the main agent's, so a check that a call happens in the main thread, or only inside a subagent, can be graded from the transcript. When the starting `Agent` call has no tool entry of its own, the call carries `subagent_of: unknown`. A result entry carries the same `subagent_of` as its call.
 
 ```yaml
 - tool: Agent
   id: 4
   input:
     description: Find the config loader
-    prompt: Find where the config file is parsed and report the function name.
+    prompt: Find where the config file is parsed and name the function.
 
 - tool: Grep
   id: 5
