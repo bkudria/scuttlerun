@@ -318,9 +318,14 @@ function subagentOrigin(
 
 function handleAssistant(message: SDKAssistantMessage, state: SessionState): void {
   const content = message.message?.content;
+  // Only a background subagent's text and thinking reach the stream; a
+  // foreground one's never do. Skipping them keeps a transcript the same
+  // shape whichever way the agent ran its subagent.
+  const fromSubagent = Boolean(message.parent_tool_use_id);
   if (content && Array.isArray(content)) {
     const textParts: string[] = [];
     for (const block of content) {
+      if (fromSubagent && (block.type === 'thinking' || block.type === 'text')) continue;
       if (block.type === 'thinking' && block.thinking) {
         writeThinking(block.thinking);
       } else if (block.type === 'text' && block.text) {

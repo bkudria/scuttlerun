@@ -526,6 +526,42 @@ describe('handleMessage', () => {
       expect(state.ended).toBe(true);
     });
 
+    it("keeps a subagent's text and thinking out of the transcript and the oracle's context", async () => {
+      await handleMessage(
+        sdkMessage({
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              { type: 'thinking', thinking: 'subagent musing' },
+              { type: 'text', text: 'subagent report' },
+            ],
+          },
+          parent_tool_use_id: 'toolu_agent',
+        }),
+        state,
+      );
+      await handleMessage(
+        sdkMessage({
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'main reply' }] },
+          parent_tool_use_id: null,
+        }),
+        state,
+      );
+      await handleMessage(result(0.01), state);
+
+      expect(conversation()).toEqual([
+        { assistant: 'main reply' },
+        { oracle: 'turn', decision: 'end', reasoning: 'done' },
+      ]);
+      expect(decideTurnPolicy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conversationContext: [{ role: 'assistant', text: 'main reply' }],
+        }),
+      );
+    });
+
     it('does not wait for a background command or an ambient task', async () => {
       await handleMessage(
         backgroundTasks(
