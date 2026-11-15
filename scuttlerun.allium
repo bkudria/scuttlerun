@@ -369,6 +369,11 @@ entity Session {
     transcript_incomplete: Boolean
     timed_out_observed: Boolean
 
+    -- Whether a subagent the agent ran in the background is still running,
+    -- as Claude Code last listed its live background tasks
+    -- (BackgroundTasksReported).
+    subagents_running: Boolean
+
     -- When the session reached its terminal status (SessionEnds), and
     -- whether the agent's Claude Code CLI is still running. The CLI can
     -- outlive the session: a result ends the session, but the CLI may keep
@@ -657,6 +662,7 @@ rule SessionStarts {
         cost_incomplete: false,
         transcript_incomplete: false,
         timed_out_observed: false,
+        subagents_running: false,
         agent_cli_running: true
     )
 
@@ -900,6 +906,7 @@ rule AgentTurnSucceeds {
 
     requires: session.status = running
     requires: subtype = success
+    requires: not session.subagents_running
 
     ensures: session.agent_cost = agent_cost_to_date
     ensures: session.turn_count = num_turns_to_date
@@ -922,6 +929,30 @@ rule AgentTurnSucceeds {
         -- this result. scuttlerun mirrors the SDK's count rather
         -- than maintaining an independent counter, matching the
         -- snapshot idiom used for agent_cost_to_date.
+}
+
+rule AgentTurnAwaitsSubagent {
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+
+    requires: session.status = running
+    requires: subtype = success
+    requires: session.subagents_running
+
+    ensures: session.agent_cost = agent_cost_to_date
+    ensures: session.turn_count = num_turns_to_date
+
+    @guidance
+        -- The agent's turn ended while a subagent it ran in the background
+        -- is still working, so the turn policy is not consulted yet. When
+        -- the subagent finishes, Claude Code starts a turn of its own,
+        -- with no user message, to give the agent the subagent's report;
+        -- that turn's result is the one AgentTurnSucceeds handles. The
+        -- session stays running meanwhile, so the subagent's calls are
+        -- recorded and the session timeout still applies
+        -- (SessionTimeoutObserved). The subagent's spend is reported only
+        -- by that later result, so until it arrives the agent cost counts
+        -- as unconfirmed, and a timeout during the wait leaves
+        -- cost_incomplete set (SessionTimesOut).
 }
 
 rule TurnPolicyCapped {
@@ -1394,10 +1425,11 @@ rule WorkspaceScaffoldsSkill {
 -- =============================================================
 
 rule AssistantTextEmitted {
-    when: AgentEmitsAssistantMessage(client, session, text_blocks)
+    when: AgentEmitsAssistantMessage(client, session, text_blocks, from_subagent)
 
     requires: session.status = running
     requires: text_blocks.count > 0
+    requires: not from_subagent
 
     -- One transcript entry per text block in the assistant message.
     for block in text_blocks:
@@ -1415,12 +1447,20 @@ rule AssistantTextEmitted {
         synthetic_user: session.synthetic_user,
         role: assistant
     )
+
+    @guidance
+        -- A subagent's text is neither an entry nor oracle context. Only a
+        -- subagent run in the background streams its text at all, so
+        -- skipping it keeps the transcript the same shape whichever way
+        -- the agent ran the subagent; the subagent's calls are still
+        -- entries (TranscriptToolFieldContract).
 }
 
 rule AssistantThinkingEmitted {
-    when: AgentEmitsThinking(client, session, text)
+    when: AgentEmitsThinking(client, session, text, from_subagent)
 
     requires: session.status = running
+    requires: not from_subagent
 
     -- Thinking reaches the transcript but never the oracle context.
     ensures: TranscriptEntry.created(
@@ -1463,6 +1503,49 @@ rule ToolResultEmitted {
         -- its tool entry (TranscriptToolFieldContract). Successful results
         -- of other tools are left to the SDK session JSONL
         -- (ToolResultEntryContract).
+}
+
+rule BackgroundOutcomeEmitted {
+    when: AgentReportsBackgroundOutcome(client, session, tool_name, failed)
+
+    requires: session.status = running
+    requires: failed or tool_name in config.tools_with_recorded_results
+
+    -- A second result for the call, after the one saying it started.
+    ensures: TranscriptEntry.created(
+        transcript: session.transcript,
+        kind: tool_result
+    )
+
+    @guidance
+        -- Claude Code reports how a task ended with a task_notification
+        -- naming the call that started it. The outcome is reported only
+        -- for a call whose work was moved to the background, when it
+        -- started (task_started.is_backgrounded) or later (task_updated);
+        -- a call that ran in the foreground reports its outcome through
+        -- its tool_result (ToolResultEmitted). failed is the notification's
+        -- status `failed`; a stopped task is one the agent stopped and is
+        -- not an error. The entry carries the call's id and subagent_of,
+        -- and Claude Code's summary as its text (ToolResultEntryContract).
+        -- A subagent's report is its summary, so a background subagent
+        -- that completes adds no entry, like a foreground one.
+}
+
+rule BackgroundTasksReported {
+    when: AgentReportsBackgroundTasks(client, session, subagents_running)
+
+    requires: session.status = running
+
+    ensures: session.subagents_running = subagents_running
+
+    @guidance
+        -- Claude Code lists every live background task whenever the list
+        -- changes, and each list replaces the last. subagents_running
+        -- holds when the list has a subagent task that is not ambient
+        -- (ambient tasks are watchers, not work). Background commands
+        -- never count: one may run until it is stopped, such as a dev
+        -- server, and waiting for it would hold every such session to its
+        -- timeout (AgentTurnAwaitsSubagent).
 }
 
 rule HookResponseEmitted {
@@ -1541,9 +1624,10 @@ rule AgentTurnCompletesAfterEnd {
 
     @guidance
         -- A result can arrive after the session has ended: the CLI keeps
-        -- running, for example to finish a background task, and runs
-        -- another turn when that task completes. That turn is not part of
-        -- the session. Its result consults no turn policy, writes no
+        -- running, for example to finish a background command, and runs
+        -- another turn when that command completes. (A background subagent
+        -- instead keeps the session running until that turn,
+        -- AgentTurnAwaitsSubagent.) That turn is not part of the session. Its result consults no turn policy, writes no
         -- transcript entry, and leaves status, exit code and turn_count as
         -- the session ended with; it only accounts for the spend.
         -- agent_cost_to_date is the SDK's running total for the whole
@@ -1638,8 +1722,8 @@ invariant AgentTurnCapAtLeastOne {
 
 invariant OnlyTextReachesOracleContext {
     -- The conversation buffer the oracle sees contains only user text and
-    -- assistant text blocks. Tool uses, tool results and thinking blocks
-    -- are stripped before insertion.
+    -- the main agent's assistant text blocks. Tool uses, tool results,
+    -- thinking blocks and a subagent's text are stripped before insertion.
     for entry in ConversationEntries:
         entry.role in {user, assistant}
 }
@@ -1887,9 +1971,14 @@ surface StreamingTranscript {
         -- result alone does not mean the task failed. A call cut short by
         -- a timeout or interrupt may have no result. A Bash command moved
         -- to the background, because it asked to run there or outran its
-        -- timeout, reports only that it started: its result says nothing
-        -- about how the command ended, and the outcome Claude Code
-        -- reports later is not recorded.
+        -- timeout, first reports only that it started; when it ends
+        -- before the session does, a second result with the same id and
+        -- subagent_of reports how (BackgroundOutcomeEmitted), with
+        -- `is_error` true when it failed and Claude Code's summary as
+        -- `text`. A subagent run in the background is reported under the
+        -- same rule as any Agent result, so a completed one adds no entry
+        -- and a failed one adds an error. A command still running when
+        -- the session ends has only its first result.
         --
         -- Its fields, in order: `result` (the tool name), `id` (the id of
         -- the tool entry it reports), `subagent_of` (a subagent's call
@@ -1923,9 +2012,12 @@ surface StreamingTranscript {
         -- (the TranscriptToolFieldContract, one line per tool group plus
         -- `any other tool`); `not recorded` (successful results of tools
         -- outside config.tools_with_recorded_results, pointing to the SDK
-        -- session JSONL named by `transcript`, and anything after the
-        -- result that ended the session, SessionEnd hooks included
-        -- (SessionEnds)); and `footer` (what
+        -- session JSONL named by `transcript`; a subagent's text and
+        -- thinking (AssistantTextEmitted); and anything after the result
+        -- that ended the session, SessionEnd hooks and how a background
+        -- command still running then ended included (SessionEnds), with
+        -- a note that a result while a subagent runs does not end the
+        -- session (AgentTurnAwaitsSubagent)); and `footer` (what
         -- `cost_incomplete`, `transcript_incomplete` and `timed_out`
         -- mean). The `entries` line for results names the tools whose
         -- every result is written from the same list that selects them. The legend is
@@ -1951,10 +2043,12 @@ surface AgentSdkBoundary {
         AgentInitialized(client, session)
         AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
         AgentAsksClarifyingQuestion(client, session)
-        AgentEmitsAssistantMessage(client, session, text_blocks)
-        AgentEmitsThinking(client, session, text)
+        AgentEmitsAssistantMessage(client, session, text_blocks, from_subagent)
+        AgentEmitsThinking(client, session, text, from_subagent)
         AgentEmitsToolCall(client, session, tool_name)
         AgentEmitsToolResult(client, session, tool_name, is_error)
+        AgentReportsBackgroundTasks(client, session, subagents_running)
+        AgentReportsBackgroundOutcome(client, session, tool_name, failed)
         AgentEmitsHookResponse(client, session, hook_name)
         AgentSessionWritesLost(client, session, error_code, lost, transcript_session_ids)
         AgentCliExited(client, session)
