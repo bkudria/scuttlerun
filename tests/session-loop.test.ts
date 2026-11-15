@@ -336,6 +336,33 @@ describe('handleMessage', () => {
       ]);
     });
 
+    it("takes a result entry's origin from its call, not from the message carrying it", async () => {
+      await handleMessage(assistantToolUse('toolu_agent', 'Agent', { prompt: 'look' }), state);
+      await handleMessage(
+        assistantToolUse(
+          'toolu_sub',
+          'Bash',
+          { command: 'false' },
+          { parent_tool_use_id: 'toolu_agent' },
+        ),
+        state,
+      );
+      await handleMessage(
+        toolResultMessage([
+          { type: 'tool_result', tool_use_id: 'toolu_sub', is_error: true, content: 'Exit 1' },
+        ]),
+        state,
+      );
+
+      expect(conversation()[2]).toEqual({
+        result: 'Bash',
+        id: 2,
+        subagent_of: 1,
+        is_error: true,
+        text: 'Exit 1',
+      });
+    });
+
     it("marks a nested subagent's calls with the Agent call of the subagent that started it", async () => {
       await handleMessage(assistantToolUse('toolu_agent', 'Agent', { prompt: 'look' }), state);
       await handleMessage(
