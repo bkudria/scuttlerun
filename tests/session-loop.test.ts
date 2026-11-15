@@ -315,7 +315,52 @@ describe('handleMessage', () => {
       expect(conversation()).toEqual([{ tool: 'Bash', id: 1, command: 'false' }]);
     });
 
-    it("records a subagent call's error result like a main-thread one", async () => {
+    it("marks a subagent's calls and results with the id of the Agent call that started it", async () => {
+      await handleMessage(assistantToolUse('toolu_agent', 'Agent', { prompt: 'look' }), state);
+      const fromSubagent = { parent_tool_use_id: 'toolu_agent' };
+      await handleMessage(
+        assistantToolUse('toolu_sub', 'Bash', { command: 'ls' }, fromSubagent),
+        state,
+      );
+      await handleMessage(
+        toolResultMessage(
+          [{ type: 'tool_result', tool_use_id: 'toolu_sub', is_error: false, content: 'a.txt' }],
+          fromSubagent,
+        ),
+        state,
+      );
+
+      expect(conversation().slice(1)).toEqual([
+        { tool: 'Bash', id: 2, subagent_of: 1, command: 'ls' },
+        { result: 'Bash', id: 2, subagent_of: 1, is_error: false, text: 'a.txt' },
+      ]);
+    });
+
+    it("marks a nested subagent's calls with the Agent call of the subagent that started it", async () => {
+      await handleMessage(assistantToolUse('toolu_agent', 'Agent', { prompt: 'look' }), state);
+      await handleMessage(
+        assistantToolUse(
+          'toolu_inner',
+          'Agent',
+          { prompt: 'deeper' },
+          { parent_tool_use_id: 'toolu_agent' },
+        ),
+        state,
+      );
+      await handleMessage(
+        assistantToolUse(
+          'toolu_leaf',
+          'Read',
+          { file_path: '/tmp/a' },
+          { parent_tool_use_id: 'toolu_inner' },
+        ),
+        state,
+      );
+
+      expect(conversation()[2]).toEqual({ tool: 'Read', id: 3, subagent_of: 2, path: '/tmp/a' });
+    });
+
+    it('marks a subagent call whose Agent call has no tool entry as of unknown origin', async () => {
       const fromSubagent = { parent_tool_use_id: 'toolu_agent' };
       await handleMessage(
         assistantToolUse('toolu_sub', 'Read', { file_path: '/tmp/missing' }, fromSubagent),
@@ -336,12 +381,16 @@ describe('handleMessage', () => {
         state,
       );
 
-      expect(conversation()[1]).toEqual({
-        result: 'Read',
-        id: 1,
-        is_error: true,
-        text: 'File does not exist.',
-      });
+      expect(conversation()).toEqual([
+        { tool: 'Read', id: 1, subagent_of: 'unknown', path: '/tmp/missing' },
+        {
+          result: 'Read',
+          id: 1,
+          subagent_of: 'unknown',
+          is_error: true,
+          text: 'File does not exist.',
+        },
+      ]);
     });
   });
 
