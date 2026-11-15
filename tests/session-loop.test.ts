@@ -654,6 +654,43 @@ describe('handleMessage', () => {
       ]);
     });
 
+    it('keeps a task in the foreground through updates that do not background it', async () => {
+      await handleMessage(assistantToolUse('toolu_fg', 'Bash', { command: 'ls' }), state);
+      await handleMessage(taskStarted('toolu_fg', false), state);
+      await handleMessage(
+        sdkMessage({
+          type: 'system',
+          subtype: 'task_updated',
+          task_id: 'task-toolu_fg',
+          patch: { status: 'completed' },
+        }),
+        state,
+      );
+      output = '';
+      await handleMessage(taskNotification('toolu_fg', 'completed', 'done'), state);
+
+      expect(output).toBe('');
+    });
+
+    it('writes nothing for task events that name no recorded call', async () => {
+      const unnamed = (subtype: string, extra: Record<string, unknown>) =>
+        sdkMessage({ type: 'system', subtype, task_id: 'task-x', description: 'd', ...extra });
+
+      await handleMessage(unnamed('task_started', { is_backgrounded: true }), state);
+      await handleMessage(taskStarted('toolu_unknown', true), state);
+      await handleMessage(
+        unnamed('task_updated', {
+          task_id: 'task-never-started',
+          patch: { is_backgrounded: true },
+        }),
+        state,
+      );
+      await handleMessage(unnamed('task_notification', { status: 'failed', summary: 's' }), state);
+      await handleMessage(taskNotification('toolu_unknown', 'failed', 's'), state);
+
+      expect(output).toBe('');
+    });
+
     it('leaves the outcome of a call that ran in the foreground to its tool_result', async () => {
       await handleMessage(assistantToolUse('toolu_fg', 'Bash', { command: 'ls' }), state);
       await handleMessage(taskStarted('toolu_fg', false), state);
