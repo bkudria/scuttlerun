@@ -276,6 +276,7 @@ scuttlerun streams a YAML transcript to stdout as the session runs:
 session: a1b2c3d4-e5f6-7890-abcd-ef1234567890
 claude_code: 2.1.322
 model: claude-sonnet-5-5
+permission_mode: bypassPermissions
 oracle_model: claude-haiku-4-5
 config: /path/to/session.yaml
 project: /tmp/scuttlerun-project-xK3f9m
@@ -318,7 +319,7 @@ duration_s: 12.3
 
 The output is valid YAML and machine-parseable (e.g. with `yq`).
 
-**The transcript explains itself.** The header names the Claude Code version and model that ran the session and the synthetic user's model, so a transcript says which release its behaviour held for. Its `legend:` says what those keys and the header's `project` and `transcript` keys point to, what each entry kind records, which fields each tool entry keeps, what the transcript leaves out, and what the footer flags mean. A grader or reader can rely on it instead of keeping its own copy of these rules. It is the same in every transcript, and `--dry-run` prints it too, so tools can read it before running a session.
+**The transcript explains itself.** The header names the Claude Code version, model and permission mode that ran the session and the synthetic user's model, so a transcript says which release its behaviour held for. Its `legend:` says what those keys and the header's `project` and `transcript` keys point to, what each entry kind records, which fields each tool entry keeps, what the transcript leaves out, and what the footer flags mean. A grader or reader can rely on it instead of keeping its own copy of these rules. It is the same in every transcript, and `--dry-run` prints it too, so tools can read it before running a session.
 
 **Tool-call entries are observations, not reproductions.** Each tool entry carries the tool name plus a small, fixed set of identifying fields — `path` for `Read`/`Write`/`Edit`, `command` for `Bash`, `pattern` for `Glob`/`Grep`, and similar minimal handles for `Task*`/`TodoWrite`. Content-bearing fields (the bytes a `Write` wrote, the strings an `Edit` replaced) are **intentionally dropped from the YAML transcript** and are not available to downstream graders that consume the transcript text alone. Unknown tool names emit their full `input` mapping. Each tool entry carries an `id`, its position among the transcript's tool entries counting from 1, a subagent's calls included. A tool entry shows that the agent asked for the call; a result entry with the same `id`, when one is recorded, shows how the call ended. The complete contract is `@guarantee TranscriptToolFieldContract` in [`scuttlerun.allium`](scuttlerun.allium); the SDK JSONL below is the source of truth for full tool inputs and results.
 
@@ -376,6 +377,27 @@ The output is valid YAML and machine-parseable (e.g. with `yq`).
 ```
 
 `hook:` is the event plus the matcher when there is one. `stdout` and `stderr` appear only when the hook printed to them, cut to their first 4000 characters with a note saying how much more the SDK session file holds. A hook's JSON output, such as `additionalContext` or a permission decision, appears verbatim in `stdout`. A hook's `outcome` and `exit_code` are its own; the call's result entry shows whether the call itself succeeded. A `PreToolUse` or `PostToolUse` entry follows the tool call it answered. `SessionStart` hooks and the `UserPromptSubmit` hook for the scenario prompt run before the header can be written, so their entries follow the first `user:` entry. The contract is `@guarantee HookEntryContract`.
+
+**Permission entries record how Claude Code's permission check ruled.** `permission_mode` takes Claude Code's modes: `default`, `acceptEdits`, `bypassPermissions`, `plan`, `dontAsk` and `auto`. Whenever Claude Code would ask the user for permission, it asks the synthetic user, which allows every call except a question it cannot answer; scuttlerun records each such request. A call that a deny rule, the `auto` mode classifier or the permission mode itself refused gets an entry too, naming the check that decided:
+
+```yaml
+- tool: Bash
+  id: 2
+  command: git push --force origin main
+
+- permission: Bash
+  id: 2
+  decision: denied
+  by: classifier
+  reason: Force-pushes over the remote's history
+
+- result: Bash
+  id: 2
+  is_error: true
+  text: …
+```
+
+`by` is `synthetic_user` for a request the synthetic user answered, and otherwise the check Claude Code names (`rule`, `classifier`, `mode`, …); `reason` appears when one was given. A call allowed without asking gets no entry, so under the default `bypassPermissions` only denials appear. A call a `PreToolUse` hook blocked shows in its hook and result entries instead. A permission entry links to its call by `id`, or `id: unknown` when the call has no tool entry, and carries the call's `subagent_of`. When the permission mode changes, as it does when a plan is approved in `plan` mode, a `mode:` entry names the new mode. The footer's `permission_denials` lists the ids of every denied call from Claude Code's own record, which the entries, streamed as they happen, can miss in rare races. The contract is `@guarantee PermissionEntryContract`.
 
 **Project directory** — Always created in `$TMPDIR` as `scuttlerun-project-<id>/`, preserved after the session ends so you can inspect agent-created files. On the next run, scuttlerun garbage-collects its own `scuttlerun-project-*` directories that are older than 7 days; nothing else in `$TMPDIR` is touched.
 

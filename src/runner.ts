@@ -218,6 +218,7 @@ export async function runSession(
         totalCostUsd: state.resultTotalCostUsd + oracleUsage.cost_usd,
         costIncomplete: !state.resultArrived || cutOffAfterEnd || oracle.hasUnknownCost(),
         transcriptIncomplete: state.transcriptIncomplete,
+        permissionDenials: Array.from(state.permissionDenials.values()),
         oracleCostUsd: oracleUsage.cost_usd,
         timedOut,
         filesWritten: Array.from(state.filesWritten),

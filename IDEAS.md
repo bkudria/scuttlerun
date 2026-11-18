@@ -40,28 +40,17 @@ building result entries. Entries are not ordered by priority.
 
 ## Transcript
 
-- **Permission decisions, denials and mode transitions recorded; `auto`
-  accepted.** canUseTool returns allow for every non-question tool and
-  ignores the SDK's third argument (signal, suggestions, blockedPath,
-  decisionReason); `result.permission_denials`, the SDK's authoritative
-  record, is never read; `system/permission_denied` and
-  `status.permissionMode` messages are dropped. The probe's permission_mode
-  trail (auto → plan → default) was the signal that told "Yes, manually
-  approve edits" from "Yes, and use auto mode" from rejection. Shape:
-  `- permission:` entries on denials, `- mode:` on each transition,
-  `permission_denials:` in the footer; add `auto` to the permission_mode enum
-  (the SDK has it; the probe's child ran in it and scuttlerun rejects it).
-  Behaviour-neutral. Open: under a non-bypass mode the synthetic user
-  auto-allows every non-question tool, so `default` is indistinguishable from
-  bypass and the Headless guarantee contradicts the OtherToolsPassThrough
-  invariant; `permissionPrompts: 'none'` cannot be the fix because it also
-  disables AskUserQuestion. Options: keep auto-allowing and record it (chosen
-  for now); deny with a recorded reason (breaks the invariant and a runner
-  test, no consumer); ask the oracle with a third schema (one more concept,
-  one more call per prompt). Revisit when a scenario actually runs under a
-  non-bypass mode. Pays off only in default, plan and dontAsk, since bypass
-  shadows canUseTool (every run in that day's suite logged
-  CLAUDE_SDK_CAN_USE_TOOL_SHADOWED).
+- **A synthetic user that refuses permission requests.** The synthetic user
+  allows every permission request Claude Code makes and records it as a
+  `permission:` entry (`by: synthetic_user`), so a non-bypass mode changes
+  what the transcript shows but not what the agent may do. A persona that
+  refuses has no lever. Options: deny with a recorded reason (makes
+  `default` behave like `dontAsk`, and changes every existing non-bypass
+  scenario); ask the oracle with a third schema (one more concept, one Haiku
+  call per request). Under CLI 2.1.317 requests reach canUseTool only where
+  the TUI would prompt: Write and Edit under `default`, ExitPlanMode under
+  `plan`, and under `auto` only calls the classifier cannot decide, which a
+  spike of four risky commands never produced. Demand unproven.
 - **Hook entries do not name their source.** `hook:` carries the SDK's
   `hook_name`, which is `Event:matcher` only. A settings hook and a plugin
   hook on the same event and matcher write identical names (a spike loading
@@ -79,7 +68,9 @@ building result entries. Entries are not ordered by priority.
   stop startup at all.
 - **Plan approval through the synthetic user.** Under
   `permission_mode: plan`, ExitPlanMode reaches canUseTool and is allowed
-  with no oracle involvement; only its result entry shows the approval text.
+  with no oracle involvement; its `permission:` entry shows the request was
+  allowed and its result entry the approval text, and a `mode:` entry the
+  move to `default`.
   The TUI offers approve-with-auto, approve-manually and
   reject-with-feedback; the probe saw rejection arrive as PreToolUse only,
   with the feedback as a user turn and an unprompted re-plan, and approval

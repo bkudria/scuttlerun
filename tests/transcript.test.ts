@@ -7,6 +7,8 @@ import {
   writeAssistant,
   writeTool,
   writeHook,
+  writePermission,
+  writeMode,
   writeResult,
   recordsResult,
   writeOracleAsk,
@@ -36,6 +38,7 @@ describe('transcript', () => {
       session: 'abc-123',
       claudeCode: '2.1.322',
       model: 'claude-sonnet-5-5',
+      permissionMode: 'default',
       oracleModel: 'claude-haiku-4-5',
       configPaths: ['/path/to/session.yaml'],
       projectDir: '/tmp/scuttlerun-project-abc123',
@@ -48,6 +51,7 @@ describe('transcript', () => {
       expect(parsed.session).toBe('abc-123');
       expect(parsed.claude_code).toBe('2.1.322');
       expect(parsed.model).toBe('claude-sonnet-5-5');
+      expect(parsed.permission_mode).toBe('default');
       expect(parsed.oracle_model).toBe('claude-haiku-4-5');
       expect(parsed.config).toBe('/path/to/session.yaml');
       expect(parsed.project).toBe('/tmp/scuttlerun-project-abc123');
@@ -55,11 +59,17 @@ describe('transcript', () => {
       expect(output).toContain('conversation:\n');
     });
 
-    it('omits claude_code and model when Claude Code did not report them', () => {
-      writeHeader({ ...header, claudeCode: undefined, model: undefined });
+    it('omits claude_code, model and permission_mode when Claude Code did not report them', () => {
+      writeHeader({
+        ...header,
+        claudeCode: undefined,
+        model: undefined,
+        permissionMode: undefined,
+      });
       const parsed = parseYaml(output + '  - user: |\n      placeholder\n');
       expect(parsed).not.toHaveProperty('claude_code');
       expect(parsed).not.toHaveProperty('model');
+      expect(parsed).not.toHaveProperty('permission_mode');
       expect(parsed.oracle_model).toBe('claude-haiku-4-5');
     });
 
@@ -70,6 +80,7 @@ describe('transcript', () => {
         'session',
         'claude_code',
         'model',
+        'permission_mode',
         'oracle_model',
         'config',
         'project',
@@ -90,6 +101,8 @@ describe('transcript', () => {
             'the Claude Code version that ran the session; what Claude Code did here held for that version',
           model:
             'the model the main agent ran on, as Claude Code resolved it from the configured name',
+          permission_mode:
+            'the permission mode Claude Code started the session in; mode entries record each change',
           oracle_model: "the synthetic user's model, as configured",
           project: 'the directory the agent worked in; files it wrote are there',
           transcript:
@@ -99,9 +112,12 @@ describe('transcript', () => {
           user: 'a synthetic-user message; the first is the scenario prompt, any leading slash command included',
           assistant: "the main agent's reply text",
           thinking: "the main agent's thinking text",
-          tool: "a tool call the agent requested, a subagent's included: id, its number among this transcript's tool entries; subagent_of, on a subagent's call only, the id of the Agent call that started the subagent, or unknown when that call has no entry, so a call without subagent_of is the main agent's; then only the fields under tool fields; hook entries after it show how any hooks responded",
+          tool: "a tool call the agent requested, a subagent's included: id, its number among this transcript's tool entries; subagent_of, on a subagent's call only, the id of the Agent call that started the subagent, or unknown when that call has no entry, so a call without subagent_of is the main agent's; then only the fields under tool fields; hook entries after it show how any hooks responded, and a permission entry how Claude Code's permission check ruled",
           result:
             "how a tool call ended, linked to its tool entry by id and carrying the same subagent_of: is_error (true when the call failed or was blocked) and text, what the agent was shown (absent when empty), with long lines wrapped and cut to its first and last 2000 characters when longer than 4000; AskUserQuestion results also list the questions as answered, after any hook rewrote them, with option labels only, except on a subagent's call or an error. Work moved to the background, a Bash command or a subagent, first reports only that it started; when it ends before the session does, a second result with the same id reports how, with is_error true if it failed and Claude Code's summary as text, under the same rule as the first. Written for every Bash, AskUserQuestion and ExitPlanMode call and for any call that returned an error, including errors the agent later recovered from, so an error result alone does not mean the task failed; a call cut short by a timeout or interrupt may have no result",
+          permission:
+            "how Claude Code's permission check ruled on a tool call, linked to its tool entry by id, or unknown when the call has no entry, and carrying the same subagent_of: decision, allowed or denied; by, what decided: synthetic_user when Claude Code asked the user, otherwise the check Claude Code names, such as rule, classifier or mode; and reason, when given. The synthetic user allows every call it is asked about except a question it cannot answer, and an answered question shows as oracle entries instead. A call allowed without asking has none, so under bypassPermissions only denials appear; a call a hook blocked shows in its hook and result entries instead",
+          mode: 'a change of permission mode, such as leaving plan mode once a plan is approved: the new mode',
           hook: "a hook that ran: its event and matcher, outcome, exit_code, and stdout and stderr when non-empty, each cut to 4000 characters; outcome and exit_code are the hook's own, not the tool call's",
           oracle:
             "the synthetic user's decisions: ask_user (answers, reasoning), turn (decision, message, reasoning), error (reason)",
@@ -123,6 +139,8 @@ describe('transcript', () => {
           cost_incomplete: 'some spend went unreported',
           transcript_incomplete: 'the session log is missing lines',
           timed_out: 'the session hit its timeout',
+          permission_denials:
+            "the ids of the tool calls Claude Code's permission check denied, from Claude Code's own record, which permission entries can miss; unknown for a call with no entry",
         },
       });
     });
@@ -633,7 +651,79 @@ describe('transcript', () => {
     });
   });
 
+  describe('writePermission', () => {
+    it('writes a denial with the deciding check and its reason', () => {
+      writePermission({
+        tool: 'Bash',
+        id: 3,
+        decision: 'denied',
+        by: 'classifier',
+        reason: 'Downloads and runs a remote script',
+      });
+      const parsed = parseYaml('conversation:\n' + output);
+      expect(parsed.conversation[0]).toEqual({
+        permission: 'Bash',
+        id: 3,
+        decision: 'denied',
+        by: 'classifier',
+        reason: 'Downloads and runs a remote script',
+      });
+    });
+
+    it("writes a subagent's approval with subagent_of and no reason when none was given", () => {
+      writePermission({
+        tool: 'Write',
+        id: 'unknown',
+        subagentOf: 2,
+        decision: 'allowed',
+        by: 'synthetic_user',
+      });
+      const parsed = parseYaml('conversation:\n' + output);
+      expect(parsed.conversation[0]).toEqual({
+        permission: 'Write',
+        id: 'unknown',
+        subagent_of: 2,
+        decision: 'allowed',
+        by: 'synthetic_user',
+      });
+    });
+
+    it('omits by when Claude Code named no deciding check', () => {
+      writePermission({ tool: 'Bash', id: 1, decision: 'denied' });
+      const parsed = parseYaml('conversation:\n' + output);
+      expect(parsed.conversation[0]).toEqual({ permission: 'Bash', id: 1, decision: 'denied' });
+    });
+  });
+
+  describe('writeMode', () => {
+    it('writes the new permission mode', () => {
+      writeMode('default');
+      const parsed = parseYaml('conversation:\n' + output);
+      expect(parsed.conversation[0]).toEqual({ mode: 'default' });
+    });
+  });
+
   describe('writeFooter', () => {
+    it('lists the ids of denied calls as permission_denials, and omits the key when none were', () => {
+      writeFooter({
+        turns: 1,
+        toolCalls: 4,
+        durationMs: 5000,
+        totalCostUsd: 0,
+        permissionDenials: [2, 'unknown'],
+      });
+      expect(parseYaml(output).permission_denials).toEqual([2, 'unknown']);
+      output = '';
+      writeFooter({
+        turns: 1,
+        toolCalls: 4,
+        durationMs: 5000,
+        totalCostUsd: 0,
+        permissionDenials: [],
+      });
+      expect(output).not.toContain('permission_denials');
+    });
+
     it('writes stats as top-level YAML keys', () => {
       writeFooter({
         turns: 5,

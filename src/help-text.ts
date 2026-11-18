@@ -34,7 +34,11 @@ Session Config (YAML):
 
     # --- Permissions ---
     permission_mode: bypassPermissions  # default | acceptEdits | bypassPermissions
-                                        #   | plan | dontAsk (default: bypassPermissions)
+                                        #   | plan | dontAsk | auto
+                                        #   (default: bypassPermissions)
+                                        #   The synthetic user allows every
+                                        #   permission request except a question
+                                        #   it cannot answer
 
     # --- Credentials ---
     auth: auto                          # auto | subscription | api-key (default: auto)
@@ -155,13 +159,15 @@ Examples:
 Output:
   scuttlerun streams a transcript to stdout including user messages, assistant
   responses, tool calls with their ids, tool results (errors, and every Bash,
-  AskUserQuestion and ExitPlanMode result), hook runs, thinking blocks, and
-  oracle decisions.
+  AskUserQuestion and ExitPlanMode result), hook runs, permission decisions,
+  permission mode changes, thinking blocks, and oracle decisions.
 
   Before the transcript: the Claude Code version, agent and oracle models,
-  config file paths, project dir, SDK transcript path, and a legend
-  explaining what each entry records (--dry-run prints it too).
-  After the transcript: a summary with paths and stats (turns, tool calls, etc.).
+  starting permission mode, config file paths, project dir, SDK transcript
+  path, and a legend explaining what each entry records (--dry-run prints it
+  too).
+  After the transcript: a summary with paths and stats (turns, tool calls,
+  denied calls, etc.).
 
   The SDK session file (full conversation JSONL) is preserved at
   ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl
