@@ -225,10 +225,6 @@ building result entries. Entries are not ordered by priority.
   drive `runSession` through a mocked `query()`. Moving them to
   `tests/session-loop.test.ts`, calling `handleMessage` directly, makes them
   pure and keeps the 1:1 test mapping.
-- **Lint's default-project cap is full.** `eslint.config.js` lets 20 test
-  files fall back to the default TypeScript project, and `tests/` now holds
-  20; the next test file fails lint. Shape: raise the cap, or give the tests
-  a tsconfig that typescript-eslint's project service finds on its own.
 
 ## Decided against
 
