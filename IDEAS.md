@@ -162,12 +162,6 @@ building result entries. Entries are not ordered by priority.
   across accounts: pin `bashEditDiffEnabled` through `Options.settings`.
   That is the flag tier, so it overrides a scenario's `project.settings`,
   and the pin must be documented as such.
-- **Plan files outside the sandbox.** ExitPlanMode writes the plan to
-  `$CLAUDE_CONFIG_DIR/plans/<slug>.md`, or to `~/.claude/plans/` when neither
-  the sandbox's HOME nor `project.claude_dir` redirects the config dir. A
-  plan-mode scenario with `sandbox.enabled: false` and no `claude_dir`
-  therefore writes into the operator's real config dir. Document it, or set
-  `CLAUDE_CONFIG_DIR` into the project for every run.
 
 ## Cost and diagnostics
 
