@@ -243,9 +243,16 @@ value Sandbox {
         -- load-bearing for the HOME redirection and env-filter
         -- behaviour described on Workspace.
         --
-        -- Network access is governed by the explicit allowlist on
-        -- SandboxNetwork; an empty allowed_domains list means no
-        -- domains are reachable. There is no global on/off network
+        -- Network access for the commands the agent runs through the
+        -- Bash tool is governed by the explicit allowlist on
+        -- SandboxNetwork; an empty allowed_domains list means those
+        -- commands reach no host. A host outside the list is refused
+        -- outright rather than raising a permission prompt, since every
+        -- such prompt would be allowed (bypassPermissions approves it
+        -- without asking, and the synthetic user allows what it is
+        -- asked). The allowlist does not cover WebFetch, which runs in
+        -- the agent process, or WebSearch, which runs server-side;
+        -- neither is in the default tools. There is no global on/off network
         -- toggle separate from sandbox.enabled.
         --
         -- Filesystem access for the commands the agent runs through the
@@ -271,8 +278,8 @@ value Sandbox {
         --
         -- Bash auto-allow under the sandbox is not caller-configurable:
         -- when the sandbox is enabled, the runner always passes
-        -- autoAllowBashIfSandboxed=true and allowUnsandboxedCommands=
-        -- false to the Agent SDK.
+        -- autoAllowBashIfSandboxed=true, allowUnsandboxedCommands=
+        -- false and a strict network allowlist to the Agent SDK.
 }
 
 value SandboxNetwork {

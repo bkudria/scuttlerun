@@ -14,6 +14,11 @@ describe('HELP_TEXT sandbox scope', () => {
     expect(HELP_TEXT).toMatch(/file tools[^\n]*not sandboxed/i);
   });
 
+  it('says allowed_domains limits shell commands, not the web tools', () => {
+    expect(HELP_TEXT).toMatch(/allowed_domains:[^\n]*Domains Bash commands can reach/);
+    expect(HELP_TEXT).toMatch(/WebFetch and WebSearch[^\n]*not limited/);
+  });
+
   it('points to the setting that confines file-tool writes', () => {
     expect(HELP_TEXT).toContain('blockWritesOutsideWorkingDirectories');
   });

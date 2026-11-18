@@ -91,6 +91,26 @@ describe('buildSdkOptions', () => {
     expect(filesystem.denyWrite).toEqual([join(homedir(), '.gitconfig'), '.env', '~other/x']);
   });
 
+  it('denies sandboxed commands every host outside allowed_domains instead of prompting', () => {
+    const options = buildSdkOptions(
+      minConfig({
+        sandbox: {
+          ...minConfig().sandbox,
+          network: { allowed_domains: ['registry.npmjs.org'], allow_local_binding: false },
+        },
+      }),
+      {},
+      sandboxedCtx(),
+    );
+
+    const { network } = options.sandbox as { network: Record<string, unknown> };
+    expect(network).toEqual({
+      allowedDomains: ['registry.npmjs.org'],
+      allowLocalBinding: false,
+      strictAllowlist: true,
+    });
+  });
+
   describe('CLAUDE_CONFIG_DIR for a seeded claude_dir', () => {
     const projectPath = '/tmp/scuttlerun-project-scaffold123';
     const claudeDir = `${projectPath}/.home/.claude`;

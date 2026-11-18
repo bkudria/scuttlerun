@@ -119,13 +119,6 @@ building result entries. Entries are not ordered by priority.
 
 ## Isolation and sandbox
 
-- **Network isolation stops at sandboxed commands.** README's
-  `allowed_domains` row says `[]` means "no network access", and the spec's
-  SandboxNetwork guidance says no domains are reachable. The SDK enforces the
-  allowlist for sandboxed commands only ("in-process tools such as WebFetch
-  are not gated"), and WebSearch runs server-side. Correct the docs the way
-  #97 corrected file-tool reach, and name the levers that do gate those
-  tools: `sdk.disallowed_tools`, or deny rules in `project.settings`.
 - **Document read-side file-tool confinement.** #97 documents
   `blockWritesOutsideWorkingDirectories`; the matching
   `permissions.blockReadsOutsideWorkingDirectories` refuses Read, Grep, Glob
