@@ -37,3 +37,13 @@ describe('HELP_TEXT output', () => {
     expect(named).toEqual(RESULT_RECORDED_TOOLS);
   });
 });
+
+describe('HELP_TEXT turns', () => {
+  it('says max_turns caps each agent turn, not the session', () => {
+    expect(HELP_TEXT).toMatch(/max_turns: 50 +# Max model turns per agent turn/);
+  });
+
+  it("says the summary's turns add up every agent turn", () => {
+    expect(HELP_TEXT.replace(/\s+/g, ' ')).toContain('turns (summed over every agent turn)');
+  });
+});

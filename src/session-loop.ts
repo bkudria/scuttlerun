@@ -89,7 +89,7 @@ export interface SessionState {
   // Each result lists the calls its turn's permission checks denied; keyed by
   // tool_use_id so a call reported twice is counted once.
   permissionDenials: Map<string, ToolEntryRef>;
-  resultNumTurns: number;
+  turnCount: number;
   resultTotalCostUsd: number;
   // Tracks whether the in-flight turn produced an SDK result. Reset when a
   // continuation turn is dispatched, so a crash after an earlier turn's result
@@ -124,7 +124,7 @@ export function newSessionState(inputs: SessionInputs): SessionState {
     filesEdited: new Set<string>(),
     filesRead: new Set<string>(),
     permissionDenials: new Map(),
-    resultNumTurns: 0,
+    turnCount: 0,
     resultTotalCostUsd: 0,
     resultArrived: false,
     transcriptIncomplete: false,
@@ -461,7 +461,7 @@ async function handleResult(message: SDKResultMessage, state: SessionState): Pro
   state.resultArrived = true;
 
   // Extract stats from result
-  state.resultNumTurns = message.num_turns || 0;
+  state.turnCount += message.num_turns || 0;
   state.resultTotalCostUsd = message.total_cost_usd || 0;
   for (const denial of message.permission_denials ?? []) {
     if (!state.permissionDenials.has(denial.tool_use_id)) {

@@ -212,7 +212,7 @@ export async function runSession(
       const duration = Date.now() - startTime;
       const oracleUsage = oracle.getTotalUsage();
       writeFooter({
-        turns: state.resultNumTurns,
+        turns: state.turnCount,
         toolCalls: state.toolCallCount,
         durationMs: duration,
         totalCostUsd: state.resultTotalCostUsd + oracleUsage.cost_usd,

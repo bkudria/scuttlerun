@@ -164,14 +164,6 @@ building result entries. Entries are not ordered by priority.
   only when no result arrived, so a crashed agent turn reports a
   confirmed-looking figure. Shape: the oracle's rule, a non-success result
   with `total_cost_usd` 0 sets `cost_incomplete`.
-- **Footer `turns` is the last turn's count.** The footer's `turns` is the
-  last result's `num_turns`, which AgentTurnSucceeds calls the SDK's
-  cumulative count, but under CLI 2.1.317 and 2.1.322 each result counts
-  only its own turn: a two-turn reactive session whose turns each made one
-  Bash call reported `turns: 2`, and the turn Claude Code starts when a
-  background subagent finishes reported `num_turns: 1` after its first
-  turn's 2. Shape: sum `num_turns` over the results the session records,
-  or name the field per-turn in the spec and README.
 - **Oracle token counts from `modelUsage`.** Oracle cost comes from
   `total_cost_usd`, which covers every call in the query, but oracle tokens
   come from the result's `usage`, which the SDK marks "MAIN AGENT LOOP ONLY …
