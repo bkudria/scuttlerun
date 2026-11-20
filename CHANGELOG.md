@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Release sections below are generated automatically by release-please from Conventional Commit messages.
 
+## [0.7.0](https://github.com/bkudria/scuttlerun/compare/v0.6.0...v0.7.0) (2026-11-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sandbox:** sandboxed commands can no longer reach a host that sandbox.network.allowed_domains does not list. A scenario whose commands need the network (a package install, an API call) must list each domain or set sandbox.enabled: false.
+
+### Features
+
+* **transcript:** mark a subagent's calls with the Agent call that started it ([#115](https://github.com/bkudria/scuttlerun/issues/115)) ([8e0aba7](https://github.com/bkudria/scuttlerun/commit/8e0aba7b8cdc328dd3ec8ef4a8d23edd2d368eec))
+* **transcript:** name the Claude Code version and models in the header ([#118](https://github.com/bkudria/scuttlerun/issues/118)) ([055b71a](https://github.com/bkudria/scuttlerun/commit/055b71a33b7fcc7f242e27fe1d99b4b63c4cadd3))
+* **transcript:** record permission rulings and mode changes, and accept auto ([#120](https://github.com/bkudria/scuttlerun/issues/120)) ([ead7365](https://github.com/bkudria/scuttlerun/commit/ead7365f78a3796e0ff3d525a41a46f9a55bf910))
+* **transcript:** wait for background subagents and record how background work ended ([#117](https://github.com/bkudria/scuttlerun/issues/117)) ([7484ecf](https://github.com/bkudria/scuttlerun/commit/7484ecfbc17fd88d95a691d48b98cb27b4459221))
+
+
+### Bug Fixes
+
+* end the transcript and settle the exit code when the session ends ([#109](https://github.com/bkudria/scuttlerun/issues/109)) ([50c39d9](https://github.com/bkudria/scuttlerun/commit/50c39d91a770a9d4715f9ce8b34318825ba1050f))
+* **sandbox:** refuse every host outside allowed_domains ([#121](https://github.com/bkudria/scuttlerun/issues/121)) ([af2aa12](https://github.com/bkudria/scuttlerun/commit/af2aa129990837073172938fb4fa7ddef5fac8a1))
+* **transcript:** add up each agent turn's count in the footer's turns ([#124](https://github.com/bkudria/scuttlerun/issues/124)) ([b6e37dd](https://github.com/bkudria/scuttlerun/commit/b6e37dd994eb6db52e6a81bf42a3fbe0861096cd))
+
 ## [0.6.0](https://github.com/bkudria/scuttlerun/compare/v0.5.0...v0.6.0) (2026-11-10)
 
 
