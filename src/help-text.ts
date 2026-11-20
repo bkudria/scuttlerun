@@ -83,8 +83,10 @@ Session Config (YAML):
     sandbox:
       enabled: true                       # (default: true)
       network:
-        allowed_domains: []               # Domains the agent can reach (default: [])
-                                          #   No network access by default
+        allowed_domains: []               # Domains Bash commands can reach (default: [])
+                                          #   Every other host is denied
+                                          #   WebFetch and WebSearch are not limited by it
+                                          #   (neither is in the default tools)
         allow_local_binding: false        # Bind to local ports (default: false)
       filesystem:                         # ~ here is your home, not <projectDir>/.home
         deny_read:                        # Paths denied for reading (default: below)

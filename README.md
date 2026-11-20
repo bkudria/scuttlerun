@@ -181,13 +181,15 @@ For OAuth-based auth (Claude Code subscription login), there's a single carve-ou
 | Field                                 | Type     | Default                                   |
 | ------------------------------------- | -------- | ----------------------------------------- |
 | `sandbox.enabled`                     | boolean  | `true`                                    |
-| `sandbox.network.allowed_domains`     | string[] | `[]` (no network access)                  |
+| `sandbox.network.allowed_domains`     | string[] | `[]` (shell commands reach no host)       |
 | `sandbox.network.allow_local_binding` | boolean  | `false`                                   |
 | `sandbox.filesystem.deny_read`        | string[] | `[~/.ssh, ~/.aws, ~/.config/gcloud]`      |
 | `sandbox.filesystem.allow_write`      | string[] | `[]` (cwd and `/tmp` are always writable) |
 | `sandbox.filesystem.deny_write`       | string[] | `[.env]`                                  |
 
 In these paths `~` means your home directory, not the redirected `HOME` the agent's shell commands see, so the `deny_read` defaults cover your real `~/.ssh`, `~/.aws` and `~/.config/gcloud`.
+
+`allowed_domains` lists the only hosts the agent's shell commands may reach; a connection to any other host is refused, with no permission prompt, and the command's output names the denied host. List a domain here, not in `project.settings`: while scuttlerun's allowlist is in force, Claude Code leaves a project settings file's `sandbox.network.allowedDomains` and `WebFetch(domain:…)` allow rules out of it. The allowlist does not cover WebFetch, which fetches from the agent process, or WebSearch, which runs on Anthropic's servers. Neither is in the default `tools`; a scenario that adds them gives the agent the web whatever `allowed_domains` says, and `disallowed_tools` keeps them out of a scenario that inherits them.
 
 ##### Confining file-tool writes
 
