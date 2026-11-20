@@ -143,7 +143,9 @@ async function main() {
     .option('--model <model>', 'Agent model (default: claude-haiku-4-5)')
     .option('--oracle-model <model>', 'Synthetic user oracle model (default: claude-haiku-4-5)')
     .option('--prompt <text>', 'Override the prompt from the YAML config')
-    .option('--max-turns <n>', 'Max agent turns (default: 50)', (v: string) => parseInt(v, 10))
+    .option('--max-turns <n>', 'Max model turns per agent turn (default: 50)', (v: string) =>
+      parseInt(v, 10),
+    )
     .option('--max-budget-usd <usd>', 'Max session cost in USD (no default)', (v: string) =>
       parseFloat(v),
     )

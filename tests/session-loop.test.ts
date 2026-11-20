@@ -449,6 +449,74 @@ describe('handleMessage', () => {
     });
   });
 
+  describe('turn count', () => {
+    let decideTurnPolicy: ReturnType<typeof vi.fn>;
+
+    function result(numTurns: number, subtype = 'success'): SDKMessage {
+      return sdkMessage({ type: 'result', subtype, num_turns: numTurns, total_cost_usd: 0.01 });
+    }
+
+    beforeEach(() => {
+      decideTurnPolicy = vi
+        .fn()
+        .mockResolvedValueOnce({ decision: 'continue', message: 'more', reasoning: 'r' })
+        .mockResolvedValue({ decision: 'end', reasoning: 'done' });
+      const config = parseSessionConfig({ prompt: 'p', user: { max_turns: 5 } });
+      state = newSessionState({
+        config,
+        configPaths: ['/tmp/session.yaml'],
+        projectDir: '/tmp/project',
+        sandboxHome: undefined,
+        claudeDir: undefined,
+        oracle: { decideTurnPolicy } as unknown as Oracle,
+      });
+      state.sessionId = 's';
+      state.syntheticUser = new SyntheticUser(state.oracle, config.user, config.prompt);
+    });
+
+    it("adds up each agent turn's count, since each result counts only its own turn", async () => {
+      await handleMessage(result(2), state);
+      await handleMessage(result(3), state);
+
+      expect(state.ended).toBe(true);
+      expect(state.turnCount).toBe(5);
+    });
+
+    it('counts the turn the agent takes when a background subagent finishes', async () => {
+      await handleMessage(
+        sdkMessage({
+          type: 'system',
+          subtype: 'background_tasks_changed',
+          tasks: [{ task_id: 'a1', task_type: 'local_agent', description: 'd' }],
+        }),
+        state,
+      );
+      await handleMessage(result(2), state);
+      await handleMessage(
+        sdkMessage({ type: 'system', subtype: 'background_tasks_changed', tasks: [] }),
+        state,
+      );
+      await handleMessage(result(1), state);
+
+      expect(state.turnCount).toBe(3);
+    });
+
+    it('counts the turns of an error result that ends the session', async () => {
+      await handleMessage(result(2), state);
+      await handleMessage(result(4, 'error_max_turns'), state);
+
+      expect(state.turnCount).toBe(6);
+    });
+
+    it('leaves out turns the agent takes after the session has ended', async () => {
+      decideTurnPolicy.mockReset().mockResolvedValue({ decision: 'end', reasoning: 'done' });
+      await handleMessage(result(2), state);
+      await handleMessage(result(1), state);
+
+      expect(state.turnCount).toBe(2);
+    });
+  });
+
   describe('background work', () => {
     let decideTurnPolicy: ReturnType<typeof vi.fn>;
 

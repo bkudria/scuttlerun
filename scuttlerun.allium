@@ -916,14 +916,14 @@ rule SyntheticUserAnswersClarifyingQuestion {
 -- =============================================================
 
 rule AgentTurnSucceeds {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_this_turn)
 
     requires: session.status = running
     requires: subtype = success
     requires: not session.subagents_running
 
     ensures: session.agent_cost = agent_cost_to_date
-    ensures: session.turn_count = num_turns_to_date
+    ensures: session.turn_count = session.turn_count + num_turns_this_turn
     ensures: TurnPolicyConsultation(session)
 
     @guidance
@@ -938,22 +938,23 @@ rule AgentTurnSucceeds {
         -- agent turn and lets decideTurn() decide whether to
         -- contact the oracle.
         --
-        -- num_turns_to_date is the SDK-reported cumulative count of
-        -- agent turns completed in this session up to and including
-        -- this result. scuttlerun mirrors the SDK's count rather
-        -- than maintaining an independent counter, matching the
-        -- snapshot idiom used for agent_cost_to_date.
+        -- num_turns_this_turn is the SDK's count for this agent turn
+        -- alone (observed under CLI 2.1.317 and 2.1.322), while
+        -- agent_cost_to_date is the running total for the whole query.
+        -- So turn_count adds up each recorded result's count and
+        -- agent_cost takes the latest snapshot. Every rule that records
+        -- a result's figures does the same.
 }
 
 rule AgentTurnAwaitsSubagent {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_this_turn)
 
     requires: session.status = running
     requires: subtype = success
     requires: session.subagents_running
 
     ensures: session.agent_cost = agent_cost_to_date
-    ensures: session.turn_count = num_turns_to_date
+    ensures: session.turn_count = session.turn_count + num_turns_this_turn
 
     @guidance
         -- The agent's turn ended while a subagent it ran in the background
@@ -1052,19 +1053,19 @@ rule TurnPolicyEndsByCap {
 }
 
 rule AgentTurnExhaustsTurns {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_this_turn)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
     requires: subtype = error_max_turns
 
     ensures: session.agent_cost = agent_cost_to_date
-    ensures: session.turn_count = num_turns_to_date
+    ensures: session.turn_count = session.turn_count + num_turns_this_turn
     ensures: session.status = exhausted_turns
 }
 
 rule AgentTurnHitsTurnCapDuringExecution {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_this_turn)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
@@ -1072,7 +1073,7 @@ rule AgentTurnHitsTurnCapDuringExecution {
     requires: terminal_reason = max_turns
 
     ensures: session.agent_cost = agent_cost_to_date
-    ensures: session.turn_count = num_turns_to_date
+    ensures: session.turn_count = session.turn_count + num_turns_this_turn
     ensures: session.status = exhausted_turns
 
     @guidance
@@ -1090,19 +1091,19 @@ rule AgentTurnHitsTurnCapDuringExecution {
 }
 
 rule AgentTurnExhaustsBudget {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_this_turn)
 
     requires: session.status = running
     requires: session.timed_out_observed = false
     requires: subtype = error_max_budget_usd
 
     ensures: session.agent_cost = agent_cost_to_date
-    ensures: session.turn_count = num_turns_to_date
+    ensures: session.turn_count = session.turn_count + num_turns_this_turn
     ensures: session.status = exhausted_budget
 }
 
 rule AgentTurnFailsAtRuntime {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_this_turn)
 
     requires: session.status in {pending, running}
     requires: session.timed_out_observed = false
@@ -1110,7 +1111,7 @@ rule AgentTurnFailsAtRuntime {
     requires: terminal_reason != max_turns
 
     ensures: session.agent_cost = agent_cost_to_date
-    ensures: session.turn_count = num_turns_to_date
+    ensures: session.turn_count = session.turn_count + num_turns_this_turn
     ensures: session.status = failed
 
     @guidance
@@ -1140,7 +1141,7 @@ rule AgentTurnFailsAtRuntime {
 }
 
 rule StartupFailureSuggestsSandboxFix {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_this_turn)
 
     requires: session.status in {pending, running}
     requires: subtype = error_during_execution
@@ -1709,7 +1710,7 @@ rule OracleQueryTracked {
 }
 
 rule AgentTurnCompletesAfterEnd {
-    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_this_turn)
 
     requires: session.is_terminated
     requires: agent_cost_to_date > session.agent_cost
@@ -1809,7 +1810,9 @@ invariant FollowUpsRespectCap {
 invariant AgentTurnCapAtLeastOne {
     -- The agent turn cap is bounded below by one: a session must permit
     -- at least one agent turn. The user-side cap (max_user_follow_ups)
-    -- has no such floor and may be zero (single-turn mode).
+    -- has no such floor and may be zero (single-turn mode). The SDK
+    -- applies max_agent_turns to each agent turn, not to the session, so
+    -- a multi-turn session's turn_count can exceed it.
     for session in Sessions:
         session.input.max_agent_turns >= 1
 }
@@ -2173,7 +2176,7 @@ surface AgentSdkBoundary {
 
     provides:
         AgentInitialized(client, session)
-        AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_to_date)
+        AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_this_turn)
         AgentAsksClarifyingQuestion(client, session)
         AgentEmitsAssistantMessage(client, session, text_blocks, from_subagent)
         AgentEmitsThinking(client, session, text, from_subagent)

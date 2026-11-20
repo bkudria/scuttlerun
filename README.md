@@ -225,18 +225,18 @@ scuttlerun --version
 scuttlerun --help
 ```
 
-| Option                   | Description                          |
-| ------------------------ | ------------------------------------ |
-| `--model <model>`        | Override agent model                 |
-| `--oracle-model <model>` | Override synthetic user model        |
-| `--prompt <text>`        | Override prompt                      |
-| `--max-turns <n>`        | Override max agent turns             |
-| `--max-budget-usd <usd>` | Override max session cost in USD     |
-| `--tools <tools>`        | Override tools (comma-separated)     |
-| `--effort <level>`       | Override effort level                |
-| `--timeout <seconds>`    | Session timeout (default: 300)       |
-| `-v, --verbose`          | Verbose logging to stderr            |
-| `-n, --dry-run`          | Validate and display resolved config |
+| Option                   | Description                             |
+| ------------------------ | --------------------------------------- |
+| `--model <model>`        | Override agent model                    |
+| `--oracle-model <model>` | Override synthetic user model           |
+| `--prompt <text>`        | Override prompt                         |
+| `--max-turns <n>`        | Override max model turns per agent turn |
+| `--max-budget-usd <usd>` | Override max session cost in USD        |
+| `--tools <tools>`        | Override tools (comma-separated)        |
+| `--effort <level>`       | Override effort level                   |
+| `--timeout <seconds>`    | Session timeout (default: 300)          |
+| `-v, --verbose`          | Verbose logging to stderr               |
+| `-n, --dry-run`          | Validate and display resolved config    |
 
 ## Exit Codes
 
@@ -318,6 +318,8 @@ duration_s: 12.3
 ```
 
 The output is valid YAML and machine-parseable (e.g. with `yq`).
+
+The footer's `turns` adds up the model turns of every agent turn the session recorded: the first prompt, each follow-up, and the turn Claude Code starts when a background subagent finishes. `max_turns` caps each agent turn on its own, so a multi-turn session's `turns` can exceed it.
 
 **The transcript explains itself.** The header names the Claude Code version, model and permission mode that ran the session and the synthetic user's model, so a transcript says which release its behaviour held for. Its `legend:` says what those keys and the header's `project` and `transcript` keys point to, what each entry kind records, which fields each tool entry keeps, what the transcript leaves out, and what the footer flags mean. A grader or reader can rely on it instead of keeping its own copy of these rules. It is the same in every transcript, and `--dry-run` prints it too, so tools can read it before running a session.
 

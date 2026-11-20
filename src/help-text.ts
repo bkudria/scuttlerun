@@ -11,7 +11,7 @@ Session Config (YAML):
 
     # --- Agent ---
     model: claude-sonnet-5              # Agent model (default: claude-haiku-4-5)
-    max_turns: 50                       # Max agent turns (default: 50)
+    max_turns: 50                       # Max model turns per agent turn (default: 50)
     max_budget_usd: 1.00                # Max spend in USD (optional)
     effort: high                        # low | medium | high | xhigh | max (default: high)
 
@@ -166,8 +166,8 @@ Output:
   starting permission mode, config file paths, project dir, SDK transcript
   path, and a legend explaining what each entry records (--dry-run prints it
   too).
-  After the transcript: a summary with paths and stats (turns, tool calls,
-  denied calls, etc.).
+  After the transcript: a summary with paths and stats (turns (summed over
+  every agent turn), tool calls, denied calls, etc.).
 
   The SDK session file (full conversation JSONL) is preserved at
   ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl
