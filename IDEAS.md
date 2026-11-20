@@ -119,13 +119,6 @@ building result entries. Entries are not ordered by priority.
 
 ## Isolation and sandbox
 
-- **Network isolation stops at sandboxed commands.** README's
-  `allowed_domains` row says `[]` means "no network access", and the spec's
-  SandboxNetwork guidance says no domains are reachable. The SDK enforces the
-  allowlist for sandboxed commands only ("in-process tools such as WebFetch
-  are not gated"), and WebSearch runs server-side. Correct the docs the way
-  #97 corrected file-tool reach, and name the levers that do gate those
-  tools: `sdk.disallowed_tools`, or deny rules in `project.settings`.
 - **Document read-side file-tool confinement.** #97 documents
   `blockWritesOutsideWorkingDirectories`; the matching
   `permissions.blockReadsOutsideWorkingDirectories` refuses Read, Grep, Glob
@@ -162,12 +155,6 @@ building result entries. Entries are not ordered by priority.
   across accounts: pin `bashEditDiffEnabled` through `Options.settings`.
   That is the flag tier, so it overrides a scenario's `project.settings`,
   and the pin must be documented as such.
-- **Plan files outside the sandbox.** ExitPlanMode writes the plan to
-  `$CLAUDE_CONFIG_DIR/plans/<slug>.md`, or to `~/.claude/plans/` when neither
-  the sandbox's HOME nor `project.claude_dir` redirects the config dir. A
-  plan-mode scenario with `sandbox.enabled: false` and no `claude_dir`
-  therefore writes into the operator's real config dir. Document it, or set
-  `CLAUDE_CONFIG_DIR` into the project for every run.
 
 ## Cost and diagnostics
 
@@ -195,15 +182,6 @@ building result entries. Entries are not ordered by priority.
 
 ## Code health
 
-- **Build before `npm publish`.** The release workflow's publish job runs
-  `npm publish` right after `npm ci`, so `dist/` exists only once
-  `prepublishOnly` builds it. npm checks `bin` before that script runs: the
-  0.5.0 publish logged "No bin file found at dist/cli.js" and that
-  `bin[scuttlerun]` "was invalid and removed". The published tarball kept `bin`
-  and an executable `dist/cli.js` (checked by downloading it), so the warning
-  is noise today, but it would hide a real loss of the command if npm began
-  enforcing it. Shape: an `npm run build` step before `npm publish` in
-  `release-please.yml`.
 - **Message-handler tests in runner.test.ts.** The older handler tests
   drive `runSession` through a mocked `query()`. Moving them to
   `tests/session-loop.test.ts`, calling `handleMessage` directly, makes them

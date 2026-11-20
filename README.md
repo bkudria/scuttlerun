@@ -174,18 +174,22 @@ Enabled by default. Runs the commands the agent issues through the Bash tool ins
 
 The sandbox needs OS support; on Linux that means `bubblewrap` and `socat` installed. If it can't run, the session fails at startup (exit `2`) rather than running unsandboxed, and scuttlerun prints a hint to stderr: install the dependencies (see the Claude Code sandboxing docs), or set `sandbox.enabled: false`. With `sandbox.enabled: false` the same failure means Claude Code settings (managed, user or project) require the sandbox, and the hint points there instead.
 
+Turning the sandbox off also gives the agent your real `~/.claude/` as its Claude config directory, unless `project.claude_dir` is set. Claude Code then writes the session log, plan files, auto-memory and config backups there, as it does for any session you start yourself, so a plan-mode scenario leaves its plans among yours. Set `project.claude_dir` to keep them in the project dir; `CLAUDE_SDK_OAUTH_TOKEN` authenticates the agent whichever config directory it uses.
+
 For OAuth-based auth (Claude Code subscription login), there's a single carve-out: when no `ANTHROPIC_API_KEY` is set and `~/.claude/.credentials.json` exists (the Linux login location), scuttlerun symlinks that one file into the sandbox so the Agent SDK can find it. Nothing else under `~/.claude/` is linked in, so Claude Code does not pick up your skills, plugins, commands, agents, settings or session history from it. That keeps them out of the session's configuration; it does not put them out of reach of the file tools. On macOS the login credential lives in the Keychain rather than that file, so the carve-out finds nothing — set `CLAUDE_SDK_OAUTH_TOKEN` (see [Requirements](#requirements)) or disable the sandbox. scuttlerun prints a warning at session start when a sandboxed run has no credential it can reach.
 
 | Field                                 | Type     | Default                                   |
 | ------------------------------------- | -------- | ----------------------------------------- |
 | `sandbox.enabled`                     | boolean  | `true`                                    |
-| `sandbox.network.allowed_domains`     | string[] | `[]` (no network access)                  |
+| `sandbox.network.allowed_domains`     | string[] | `[]` (shell commands reach no host)       |
 | `sandbox.network.allow_local_binding` | boolean  | `false`                                   |
 | `sandbox.filesystem.deny_read`        | string[] | `[~/.ssh, ~/.aws, ~/.config/gcloud]`      |
 | `sandbox.filesystem.allow_write`      | string[] | `[]` (cwd and `/tmp` are always writable) |
 | `sandbox.filesystem.deny_write`       | string[] | `[.env]`                                  |
 
 In these paths `~` means your home directory, not the redirected `HOME` the agent's shell commands see, so the `deny_read` defaults cover your real `~/.ssh`, `~/.aws` and `~/.config/gcloud`.
+
+`allowed_domains` lists the only hosts the agent's shell commands may reach; a connection to any other host is refused, with no permission prompt, and the command's output names the denied host. List a domain here, not in `project.settings`: while scuttlerun's allowlist is in force, Claude Code leaves a project settings file's `sandbox.network.allowedDomains` and `WebFetch(domain:…)` allow rules out of it. The allowlist does not cover WebFetch, which fetches from the agent process, or WebSearch, which runs on Anthropic's servers. Neither is in the default `tools`; a scenario that adds them gives the agent the web whatever `allowed_domains` says, and `disallowed_tools` keeps them out of a scenario that inherits them.
 
 ##### Confining file-tool writes
 

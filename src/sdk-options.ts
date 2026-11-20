@@ -120,6 +120,9 @@ export function buildSdkOptions(
       network: {
         allowedDomains: config.sandbox.network.allowed_domains,
         allowLocalBinding: config.sandbox.network.allow_local_binding,
+        // An unlisted host otherwise raises a permission prompt, which
+        // bypassPermissions and the synthetic user both allow.
+        strictAllowlist: true,
       },
       filesystem: {
         allowWrite: [cwd, '/tmp', ...config.sandbox.filesystem.allow_write.map(expandHome)],
