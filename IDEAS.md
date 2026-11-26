@@ -15,7 +15,11 @@ The hook-entry follow-ups come from building hook entries (#103) on
 2026-11-07; the Code health entry comes from the 0.5.0 publish (#105). The
 result-entry follow-ups and the plan-file and Bash edit diff findings come
 from a headless spike of CLI 2.1.317 (haiku-4-5) on 2026-11-08 and from
-building result entries. Entries are not ordered by priority.
+building result entries. The first run of carapace, the hook-probe fixture
+beside the three tools, on CLI 2.1.332 (claude-sonnet-5-5) on 2026-11-26
+re-settled the TUI facts several entries lean on; its findings file is the
+source for the 2.1.332 statements here. Entries are not ordered by
+priority.
 
 ## Decided, not yet built
 
@@ -27,9 +31,9 @@ building result entries. Entries are not ordered by priority.
   makes the transcript contract bimodal, and cannot run in the sandbox
   (allowUnsandboxedCommands is hard-coded false, and the macOS profile denies
   openpty and tmux's socket). The facts only a TUI shows — the trust dialog,
-  rendered dialog and hook-error text, `!` prompts (which fire no hook at
-  all), plan-dialog labels, long-body rendering — are per-release Claude Code
-  facts: settled once per version by the hook-probe fixture below, then
+  rendered dialog and hook-error text, `!` prompts (whose command fires no
+  hook), plan-dialog labels, long-body rendering — are per-release Claude
+  Code facts: settled once per version by carapace, then
   implemented as hooks and measured headless. State the boundary in
   version-free terms; per-check substitutes (post-hook question text, result
   entries, tool_result text for the hook-error line) belong in the
@@ -59,39 +63,45 @@ building result entries. Entries are not ordered by priority.
   only when a check must tell two hooks apart; until then, distinct output
   text is the workaround. Spike before any shape: whether a later SDK adds
   source fields to `hook_response`; 0.3.322's has none.
-- **Held hook responses vanish on a failed start.** SessionStart responses
-  arrive before init and are held for the preamble; a run that ends before
-  init writes only the footer, so they are never written. If a SessionStart
-  hook's output is what explains a failed start, it is lost from stdout.
-  Shape, if that case appears: print held responses to stderr after the
-  existing failure line. Unverified whether a failing SessionStart hook can
-  stop startup at all.
 - **Plan approval through the synthetic user.** Under
   `permission_mode: plan`, ExitPlanMode reaches canUseTool and is allowed
   with no oracle involvement; its `permission:` entry shows the request was
   allowed and its result entry the approval text, and a `mode:` entry the
   move to `default`.
-  The TUI offers approve-with-auto, approve-manually and
-  reject-with-feedback; the probe saw rejection arrive as PreToolUse only,
-  with the feedback as a user turn and an unprompted re-plan, and approval
-  fire PostToolUse ({plan, isAgent, filePath, hasTaskTool}) and flip plan →
-  default. Shape: route through the existing
-  ask_user schema (Approve / Reject with feedback) rather than a third;
-  approve → allow with `updatedPermissions: setMode` mirroring the TUI
-  flavours; reject → the feedback as the next user turn, since a canUseTool
-  deny delivers it as a tool_result error and re-planning may differ; write
-  `oracle: plan` entries. Spike the arrival first. Demand unproven: fabrica
-  settled on an AskUserQuestion headed Approve; a never-approving persona
-  loops until max_turns.
+  The TUI offers "Yes, and use auto mode", "Yes, manually approve edits" and
+  "Tell Claude what to change" (with a shift+tab approve-with-feedback).
+  Under CLI 2.1.332 rejection arrives as an error tool_result, not a user
+  turn: "The user doesn't want to proceed with this tool use. … To tell you
+  how to proceed, the user said:\n<feedback>"; no PostToolUse,
+  PostToolUseFailure or UserPromptSubmit fires, and the agent re-planned
+  unprompted. Approval fires PostToolUse ({plan, isAgent, filePath}) already
+  in the new mode, `default` or `auto`. (The 2.1.318 probe saw the feedback
+  as a user turn and a `hasTaskTool` key.) Shape: route through the
+  existing ask_user schema (Approve / Reject with feedback) rather than a
+  third; approve → allow with `updatedPermissions: setMode` mirroring the
+  TUI flavours; reject → a canUseTool deny whose message is the feedback,
+  which matches what the TUI now sends; write `oracle: plan` entries.
+  Demand unproven: fabrica settled on an AskUserQuestion headed Approve; a
+  never-approving persona loops until max_turns.
 - **Dialog-surface spike.** The SDK has an unwired headless dialog protocol
   (`onUserDialog`, `supportedDialogKinds`, `onElicitation`); kinds not
   declared fail closed to the no-dialog behaviour with no trace. The types
   name only `refusal_fallback_prompt` and `mcp_prompt`, and the probe showed
   the question and plan dialogs are permission flows (PreToolUse/PostToolUse
-  pairs), not dialog requests. Spike only: log which dialogKind values the
-  current release emits and record the answer in CLAUDE.md; no routing, since
-  the kind union is open and fails closed, and a fourth oracle schema family
-  strains fewer concepts.
+  pairs), not dialog requests; under CLI 2.1.332 each also fires
+  PermissionRequest and a `permission_prompt` Notification. Spike only: log
+  which dialogKind values the current release emits and record the answer in
+  CLAUDE.md; no routing, since the kind union is open and fails closed, and a
+  fourth oracle schema family strains fewer concepts.
+- **A PreToolUse hook may answer AskUserQuestion.** CLAUDE.md records a
+  spike in which a PreToolUse hook could not answer it, which is why the
+  synthetic user answers through canUseTool. In the 2.1.332 TUI, a
+  PreToolUse `allow` whose `updatedInput` carries `answers` skipped the card
+  and the agent got the same "Your questions have been answered" text a
+  person's answer produces; the hooks docs say AskUserQuestion needs
+  `updatedInput` paired with `allow`. Re-spike headless under the SDK before
+  relying on it; nothing changes unless a check needs a hook-answered
+  question.
 - **Hook output head and tail like results.** Hook entries keep the first
   4000 characters of each stream, while result entries keep 2000 from each
   end. A command's closing lines often say how it ended, so align hook
@@ -104,15 +114,24 @@ building result entries. Entries are not ordered by priority.
   skips setup questions or closes the card. The agent sees only the
   `answers` text: under CLI 2.1.317, an allow with empty answers makes the
   CLI itself tell the model "The user did not answer the questions.", while a
-  canUseTool deny reads "User declined to answer questions". A per-question
-  skip has no CLI wording to borrow and needs a spike. SDK 0.3.312 added
+  canUseTool deny reads "User declined to answer questions". The 2.1.332
+  TUI settles what a person's skip and close look like: a question skipped
+  on the card's Submit tab is simply missing from `answers` (`annotations`
+  stays `{}`) and the agent gets the usual "Your questions have been
+  answered:" text listing only the rest, so a per-question skip needs no
+  wording of its own; Esc on the card sends the generic rejection
+  tool_result ("… STOP what you are doing and wait for the user to tell you
+  how to proceed.", is_error) and no hook fires after it, Stop included.
+  SDK 0.3.312 added
   `annotations[question].unanswered` (`skipped`, `replied_in_chat`,
   `dismissed`), to be sent only when `system/init.capabilities` lists
   `ask_user_question_unanswered_v1`; the model never sees it, and it lands
   only in `tool_use_result`, of which result entries keep only the
   questions. Shape: an optional per-question decline in the oracle schema,
-  steered by the persona with no YAML knob; empty answers for a whole-card
-  dismiss; the annotation when the capability is present; an `unanswered` map
+  steered by the persona with no YAML knob, sent as an omitted answer; a
+  canUseTool deny for a whole-card dismiss, the nearest headless match to
+  the TUI's rejection; the annotation when the capability is present; an
+  `unanswered` map
   in the `oracle: ask` entry for graders. `replied_in_chat` is out, since
   scuttlerun can only send user input after a result. Demand unproven; an
   oracle that skips when the persona would not adds noise to existing evals.
@@ -203,6 +222,13 @@ building result entries. Entries are not ordered by priority.
   session (`prompt: 'Reply done.'`, `tools: []`, `user.max_turns: 0`) yields
   exactly that directory for a TUI probe to launch `claude` in. Document that
   instead; `--dry-run` deliberately creates nothing.
+- **Printing held hook responses after a failed start** (2026-11-26).
+  SessionStart responses arrive before init and are held for the preamble,
+  so a run that ends before init never writes them. Printing them to stderr
+  was the shape if a SessionStart hook's output ever explained a failed
+  start, but a failing SessionStart hook cannot fail one: the hooks docs say
+  its exit 2 "Shows stderr to user only" and the session proceeds, and
+  carapace saw startup go ahead on CLI 2.1.332 for exit 2 and exit 1.
 - **Waiting for background commands** (2026-11-15). A result that arrives
   while a background subagent runs waits for the turn Claude Code starts
   when the subagent finishes; a background Bash command does not hold the
@@ -214,89 +240,9 @@ building result entries. Entries are not ordered by priority.
 
 ## Hook-probe fixture
 
-The probe that produced most of this file was a scratch project that was
-not kept: its script and its 47-event log are gone, so the fixture is built
-from the description below. Its intended
-home is its own directory under ~/code beside the three tools
-(version-coupled, tool-specific content that is neither a skill nor a
-craboodle demo); it is recorded here until that exists. It is the per-release
-counterpart of the Non-Goals decision above: TUI-only facts are settled by
-it, then exercised headlessly.
-
-- **Build the probe as a fixture.** Contents: a `.claude/settings.json`
-  registering one logger on every hook event (the five used plus
-  PermissionRequest, PermissionDenied, Notification, SubagentStart,
-  SubagentStop, PreCompact, SessionEnd); a probe script emitting one JSON line
-  per event with TOKEN|KEY|SECRET|OAUTH filtering from the first run (the
-  first dry run wrote an OAuth token into the log), the CLAUDE* environment
-  recorded once at SessionStart with key-set deltas afterwards (it was 22 KB
-  of a 100 KB log with four distinct values), the transcript tail only on
-  PreToolUse and PostToolUse where it carried signal, stdin guarded with
-  `[ -t 0 ]` so a manual dry run cannot hang; flag-file toggles (`deny-next`,
-  `rewrite-next`, `ask-next`) so one script serves every experiment without
-  restarting; a summary jq script (one row per event: label, tool, prompt,
-  question, answers, response keys, permission_mode) replacing the thirteen
-  inline filters written by hand; a findings template with a header of Claude
-  Code version, model and permission mode, each finding marked documented or
-  observed; the first run's log as a golden sample. One README rule:
-  hook-syntax questions are answered by running the probe's skill-frontmatter
-  step, not by mining the claude binary (a `strings` detour produced a 1.1 MB
-  dump and settled nothing). Runs unchanged under the tmux driver and as a
-  scuttlerun scenario via `project.files` and `project.settings.hooks`.
-  Bit-rots without a runner.
-- **Clean nested-claude launch recipe.** The hand-driven start stripped eight
-  CLAUDE* variables chosen from a dump with no rationale and still leaked two;
-  the trust dialog defaulted to "No, exit" and cost a separate Down+Enter;
-  mode and effort were inherited from the real settings. Shape: a throwaway
-  CLAUDE_CONFIG_DIR seeded with a `.claude.json` carrying
-  `projects[<cwd>].hasTrustDialogAccepted: true` (verified: the key relocates
-  with the config dir), a settings.json with exactly the requested permission
-  mode and hooks, explicit `--model`, `--permission-mode` and effort,
-  autoupdater and non-essential traffic off, session persistence on (the
-  child's JSONL is primary evidence; the session-transcripts CLI reads it with
-  CLAUDE_CONFIG_DIR pointed at the fixture), auth via the OAuth token as
-  scuttlerun does. Always unset CLAUDECODE. Env posture, open and leaning to
-  the second: `env -i` with an allowlist (most reproducible, but it must carry
-  TERM, TERM_PROGRAM, COLORTERM and LANG or captures lose attributes); strip
-  CLAUDE* by prefix and re-add CLAUDE_CONFIG_DIR and the token (verified to
-  leave zero CLAUDE* variables, keeps the terminal environment); unset only
-  the documented markers (least drift, leaves the undocumented messaging
-  variables in place). The wait-channel hooks for the tmux driver's idle and
-  attention signals are injected here via `--settings`; they are an observer
-  effect a hook probe must subtract by command, and whether `--settings`
-  hooks merge with or replace project hooks needs one verification.
-- **Docs first.** Three of the probe's facts were already documented: the
-  skill-frontmatter `hooks:` shape and its session-long persistence
-  (`once: true` drops it after one run), the allow-skips-the-prompt versus
-  ask-shows-modified-input semantics of updatedInput (which explains the
-  redone step), and Stop's `last_assistant_message`. The fixture README's
-  pre-step: fetch the relevant sections of the hooks, permissions and env-vars
-  docs (the hooks page is about 286k characters, so targeted sections), list
-  what they leave open, and drive the TUI only for the remainder; cite the
-  doc next to each finding. Docs lag or lead the binary, so version-specific
-  behaviour still needs the probe; `!` prompts and dialog rendering remain
-  genuinely undocumented.
-- **Scrut interactive documents for understood probes.** The hand-written
-  driver's verbs are a subset of scrut 0.5.0's interactive mode (WAIT on a
-  pattern with a timeout, WRITE, SEND_KEYS with DOWN/ENTER/ESC, ASSERT,
-  if_match for optional dialogs such as trust, terminal output printed on
-  failure). Once a probe is understood, turn its checklist into a scrut
-  document that launches `claude` with the recipe above, waits on dialog
-  chrome or a per-step token (never model prose; WAIT matches all output since
-  session start, so each step needs text unique to it), answers dialogs with
-  SEND_KEYS and ends with `/exit`; re-run per Claude Code version and
-  regenerate findings from the hook log. The tmux driver stays for the
-  exploratory first pass where the next step depends on the screen. Needs a
-  real PTY: from a shell or the main session's Bash, backgrounded, never
-  inside the sandbox; `scrut update` cannot maintain interactive cases, so the
-  document is hand-edited. Prior art that adds nothing for text TUIs: expect,
-  Microsoft tui-test, amux.
-- **vhs: recording only** (decided against as a probe, 2026-11-04). vhs
-  outputs gif, webm, mp4 and PNG, so an agent gets pixels, not text, and it
-  needs ttyd, ffmpeg and a headless browser; scrut and capture-pane cover
-  probing. Where a design decision cites how a dialog renders (the
-  hook-rewritten long-body question was captured as a 45-line text screen and
-  cited as the cost of a rejected design), one tape with
-  `Wait /Enter to select/` then `Screenshot` is the cheapest durable
-  artifact for a PR, like the existing demo tapes; non-deterministic and
-  costs API calls, so at most one per cited fact.
+Built as carapace, beside the three tools (2026-11-26): a probe project that
+logs every hook event, a launcher for a clean nested `claude` with a
+throwaway config directory, flag files that make the probe deny, ask or
+rewrite, a per-release checklist and a findings file per CLI version. Its
+own IDEAS.md now holds the scrut-interactive and vhs entries that were
+recorded here.
