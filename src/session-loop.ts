@@ -91,6 +91,9 @@ export interface SessionState {
   permissionDenials: Map<string, ToolEntryRef>;
   turnCount: number;
   resultTotalCostUsd: number;
+  // The SDK may zero a crash or startup-error result's figures, so such a
+  // result leaves the agent's spend unknown rather than confirmed.
+  agentCostUnreported: boolean;
   // Tracks whether the in-flight turn produced an SDK result. Reset when a
   // continuation turn is dispatched, so a crash after an earlier turn's result
   // still marks the agent cost incomplete. The SDK only reports a dollar total
@@ -126,6 +129,7 @@ export function newSessionState(inputs: SessionInputs): SessionState {
     permissionDenials: new Map(),
     turnCount: 0,
     resultTotalCostUsd: 0,
+    agentCostUnreported: false,
     resultArrived: false,
     transcriptIncomplete: false,
     oracleFailed: false,
@@ -255,11 +259,10 @@ export async function handleMessage(message: SDKMessage, state: SessionState): P
 }
 
 // What arrives after the end still costs money and can report a lost session
-// log, but records nothing and decides nothing. A later result's cost is the
-// running total, except that an error result may carry a zero.
+// log, but records nothing and decides nothing.
 function handleMessageAfterEnd(message: SDKMessage, state: SessionState): void {
   if (message.type === 'result') {
-    state.resultTotalCostUsd = Math.max(state.resultTotalCostUsd, message.total_cost_usd || 0);
+    recordAgentCost(message, state);
   } else if (message.type === 'system' && message.subtype === 'session_writes_lost') {
     handleSystem(message, state);
   }
@@ -456,13 +459,22 @@ function askedQuestions(toolUseResult: unknown): AskedQuestion[] | undefined {
   }));
 }
 
+// A result's cost is the running total for the whole query, so it never
+// lowers the figure an earlier result confirmed; a smaller one is a zeroed
+// error result.
+function recordAgentCost(message: SDKResultMessage, state: SessionState): void {
+  const costUsd = message.total_cost_usd || 0;
+  if (message.subtype !== 'success' && costUsd === 0) state.agentCostUnreported = true;
+  state.resultTotalCostUsd = Math.max(state.resultTotalCostUsd, costUsd);
+}
+
 async function handleResult(message: SDKResultMessage, state: SessionState): Promise<void> {
   const subtype = message.subtype;
   state.resultArrived = true;
 
   // Extract stats from result
   state.turnCount += message.num_turns || 0;
-  state.resultTotalCostUsd = message.total_cost_usd || 0;
+  recordAgentCost(message, state);
   for (const denial of message.permission_denials ?? []) {
     if (!state.permissionDenials.has(denial.tool_use_id)) {
       state.permissionDenials.set(denial.tool_use_id, toolEntry(denial.tool_use_id, state).id);

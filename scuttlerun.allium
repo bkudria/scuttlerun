@@ -929,7 +929,9 @@ rule AgentTurnSucceeds {
     requires: subtype = success
     requires: not session.subagents_running
 
-    ensures: session.agent_cost = agent_cost_to_date
+    ensures:
+        if agent_cost_to_date > session.agent_cost:
+            session.agent_cost = agent_cost_to_date
     ensures: session.turn_count = session.turn_count + num_turns_this_turn
     ensures: TurnPolicyConsultation(session)
 
@@ -949,8 +951,11 @@ rule AgentTurnSucceeds {
         -- alone (observed under CLI 2.1.317 and 2.1.322), while
         -- agent_cost_to_date is the running total for the whole query.
         -- So turn_count adds up each recorded result's count and
-        -- agent_cost takes the latest snapshot. Every rule that records
-        -- a result's figures does the same.
+        -- agent_cost takes the latest snapshot unless it is smaller: a
+        -- crash or error result may carry zeroed figures, which must not
+        -- lower the spend an earlier result confirmed
+        -- (AgentTurnCostUnreported flags that spend). Every rule that
+        -- records a result's figures does the same.
 }
 
 rule AgentTurnAwaitsSubagent {
@@ -960,7 +965,9 @@ rule AgentTurnAwaitsSubagent {
     requires: subtype = success
     requires: session.subagents_running
 
-    ensures: session.agent_cost = agent_cost_to_date
+    ensures:
+        if agent_cost_to_date > session.agent_cost:
+            session.agent_cost = agent_cost_to_date
     ensures: session.turn_count = session.turn_count + num_turns_this_turn
 
     @guidance
@@ -1066,7 +1073,9 @@ rule AgentTurnExhaustsTurns {
     requires: session.timed_out_observed = false
     requires: subtype = error_max_turns
 
-    ensures: session.agent_cost = agent_cost_to_date
+    ensures:
+        if agent_cost_to_date > session.agent_cost:
+            session.agent_cost = agent_cost_to_date
     ensures: session.turn_count = session.turn_count + num_turns_this_turn
     ensures: session.status = exhausted_turns
 }
@@ -1079,7 +1088,9 @@ rule AgentTurnHitsTurnCapDuringExecution {
     requires: subtype = error_during_execution
     requires: terminal_reason = max_turns
 
-    ensures: session.agent_cost = agent_cost_to_date
+    ensures:
+        if agent_cost_to_date > session.agent_cost:
+            session.agent_cost = agent_cost_to_date
     ensures: session.turn_count = session.turn_count + num_turns_this_turn
     ensures: session.status = exhausted_turns
 
@@ -1104,7 +1115,9 @@ rule AgentTurnExhaustsBudget {
     requires: session.timed_out_observed = false
     requires: subtype = error_max_budget_usd
 
-    ensures: session.agent_cost = agent_cost_to_date
+    ensures:
+        if agent_cost_to_date > session.agent_cost:
+            session.agent_cost = agent_cost_to_date
     ensures: session.turn_count = session.turn_count + num_turns_this_turn
     ensures: session.status = exhausted_budget
 }
@@ -1117,7 +1130,9 @@ rule AgentTurnFailsAtRuntime {
     requires: subtype = error_during_execution
     requires: terminal_reason != max_turns
 
-    ensures: session.agent_cost = agent_cost_to_date
+    ensures:
+        if agent_cost_to_date > session.agent_cost:
+            session.agent_cost = agent_cost_to_date
     ensures: session.turn_count = session.turn_count + num_turns_this_turn
     ensures: session.status = failed
 
@@ -1738,6 +1753,25 @@ rule AgentTurnCompletesAfterEnd {
         -- rather than lowering the cost already reported.
 }
 
+rule AgentTurnCostUnreported {
+    when: AgentTurnCompleted(client, session, subtype, terminal_reason, startup_failure_reason, agent_cost_to_date, num_turns_this_turn)
+
+    requires: subtype != success
+    requires: agent_cost_to_date = 0
+
+    ensures: session.cost_incomplete = true
+
+    @guidance
+        -- The SDK may zero the figures on a crash or startup-error result,
+        -- so an error result reporting zero cost is indistinguishable from
+        -- unreported spend, as for the oracle (OracleQueryCostUnknown). It
+        -- applies to every agent result, before init, while running and
+        -- after the end alike, including a startup failure that likely
+        -- spent nothing: the session's cost is flagged incomplete rather
+        -- than presenting the unknown spend as a confirmed zero. A
+        -- successful result reporting zero cost is taken at its word.
+}
+
 rule OracleQueryCostUnknown {
     when: OracleQueryCostUnreported(oracle, session)
 
@@ -1970,9 +2004,11 @@ surface StreamingTranscript {
         -- some spend went unreported — the session terminated before the
         -- in-flight agent turn reported a final result, the agent's CLI
         -- was still running when scuttlerun closed it after the session
-        -- ended (CliExitGraceExpires, ExitGraceInterruptedByOperator), or
-        -- an oracle query ended without a result message or with a
-        -- zero-cost error result (OracleQueryCostUnknown) — so the cost
+        -- ended (CliExitGraceExpires, ExitGraceInterruptedByOperator), an
+        -- agent result was a zero-cost error result
+        -- (AgentTurnCostUnreported), or an oracle query ended without a
+        -- result message or with a zero-cost error result
+        -- (OracleQueryCostUnknown) — so the cost
         -- shown or omitted is incomplete/unknown rather than a confirmed
         -- $0;
         -- `transcript_incomplete` (Boolean) appears only when truthy and

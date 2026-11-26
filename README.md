@@ -323,7 +323,7 @@ duration_s: 12.3
 
 The output is valid YAML and machine-parseable (e.g. with `yq`).
 
-The footer's `turns` adds up the model turns of every agent turn the session recorded: the first prompt, each follow-up, and the turn Claude Code starts when a background subagent finishes. `max_turns` caps each agent turn on its own, so a multi-turn session's `turns` can exceed it.
+The footer's `turns` adds up the model turns of every agent turn the session recorded: the first prompt, each follow-up, and the turn Claude Code starts when a background subagent finishes. `max_turns` caps each agent turn on its own, so a multi-turn session's `turns` can exceed it. Its `cost_usd` is the SDK's running total, which an error result can report as zero after a crash, so such a result leaves the total where the earlier results put it and sets `cost_incomplete: true`.
 
 **The transcript explains itself.** The header names the Claude Code version, model and permission mode that ran the session and the synthetic user's model, so a transcript says which release its behaviour held for. Its `legend:` says what those keys and the header's `project` and `transcript` keys point to, what each entry kind records, which fields each tool entry keeps, what the transcript leaves out, and what the footer flags mean. A grader or reader can rely on it instead of keeping its own copy of these rules. It is the same in every transcript, and `--dry-run` prints it too, so tools can read it before running a session.
 

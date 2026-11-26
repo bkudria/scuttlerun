@@ -177,12 +177,6 @@ priority.
 
 ## Cost and diagnostics
 
-- **Zero-cost agent error results.** The SDK warns that crash and
-  startup-error results "may carry zeroed values". #96 treats such an oracle
-  result as unknown spend and sets `cost_incomplete`; the agent path sets it
-  only when no result arrived, so a crashed agent turn reports a
-  confirmed-looking figure. Shape: the oracle's rule, a non-success result
-  with `total_cost_usd` 0 sets `cost_incomplete`.
 - **Oracle token counts from `modelUsage`.** Oracle cost comes from
   `total_cost_usd`, which covers every call in the query, but oracle tokens
   come from the result's `usage`, which the SDK marks "MAIN AGENT LOOP ONLY …
