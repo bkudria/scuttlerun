@@ -517,6 +517,69 @@ describe('handleMessage', () => {
     });
   });
 
+  describe('agent cost', () => {
+    function result(subtype: string, totalCostUsd: number): SDKMessage {
+      return sdkMessage({ type: 'result', subtype, num_turns: 1, total_cost_usd: totalCostUsd });
+    }
+
+    beforeEach(() => {
+      const decideTurnPolicy = vi
+        .fn()
+        .mockResolvedValue({ decision: 'continue', message: 'more', reasoning: 'r' });
+      const config = parseSessionConfig({ prompt: 'p', user: { max_turns: 5 } });
+      state = newSessionState({
+        config,
+        configPaths: ['/tmp/session.yaml'],
+        projectDir: '/tmp/project',
+        sandboxHome: undefined,
+        claudeDir: undefined,
+        oracle: { decideTurnPolicy } as unknown as Oracle,
+      });
+      state.sessionId = 's';
+      state.syntheticUser = new SyntheticUser(state.oracle, config.user, config.prompt);
+    });
+
+    it('keeps the confirmed cost and marks it unreported when an error result carries a zero', async () => {
+      await handleMessage(result('success', 0.4), state);
+      await handleMessage(result('error_during_execution', 0), state);
+
+      expect(state.resultTotalCostUsd).toBe(0.4);
+      expect(state.agentCostUnreported).toBe(true);
+    });
+
+    it('marks the cost unreported when a startup failure carries a zero', async () => {
+      state.sessionId = undefined;
+      state.syntheticUser = undefined;
+
+      await handleMessage(
+        sdkMessage({
+          type: 'result',
+          subtype: 'error_during_execution',
+          num_turns: 0,
+          total_cost_usd: 0,
+          startup_failure_reason: 'sandbox_required_unavailable',
+        }),
+        state,
+      );
+
+      expect(state.agentCostUnreported).toBe(true);
+    });
+
+    it('takes an error result that reports its cost at its word', async () => {
+      await handleMessage(result('success', 0.4), state);
+      await handleMessage(result('error_max_turns', 0.5), state);
+
+      expect(state.resultTotalCostUsd).toBe(0.5);
+      expect(state.agentCostUnreported).toBe(false);
+    });
+
+    it('takes a zero-cost success as a confirmed $0', async () => {
+      await handleMessage(result('success', 0), state);
+
+      expect(state.agentCostUnreported).toBe(false);
+    });
+  });
+
   describe('background work', () => {
     let decideTurnPolicy: ReturnType<typeof vi.fn>;
 
@@ -1023,6 +1086,12 @@ describe('handleMessage', () => {
       await handleMessage(result('error_during_execution', 0), state);
 
       expect(state.resultTotalCostUsd).toBe(0.03);
+    });
+
+    it('marks the agent cost unreported when a later error result carries a zero', async () => {
+      await handleMessage(result('error_during_execution', 0), state);
+
+      expect(state.agentCostUnreported).toBe(true);
     });
 
     it('refuses a question without asking the oracle, recording it or failing the session', async () => {

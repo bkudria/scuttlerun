@@ -3244,6 +3244,28 @@ describe('scuttlerun.allium invariants and rule obligations', () => {
       expect(parseYaml(stdoutOutput).cost_incomplete).toBe(true);
     });
 
+    it('flags cost_incomplete when an agent error result reports no cost', async () => {
+      (mockQueryFn as ReturnType<typeof vi.fn>).mockReturnValue(
+        createMockQuery([
+          { type: 'system', subtype: 'init', session_id: 's-zeroed-error', tools: [] },
+          {
+            type: 'result',
+            subtype: 'error_during_execution',
+            session_id: 's-zeroed-error',
+            is_error: true,
+            num_turns: 1,
+            total_cost_usd: 0,
+            errors: ['crashed'],
+          },
+        ]),
+      );
+
+      const result = await runSession(minConfig());
+
+      expect(result.exitCode).toBe(2);
+      expect(parseYaml(stdoutOutput).cost_incomplete).toBe(true);
+    });
+
     it('omits cost_incomplete when the in-flight turn produced a result', async () => {
       const mockQuery = createMockQuery([
         {

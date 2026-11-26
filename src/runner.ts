@@ -216,7 +216,11 @@ export async function runSession(
         toolCalls: state.toolCallCount,
         durationMs: duration,
         totalCostUsd: state.resultTotalCostUsd + oracleUsage.cost_usd,
-        costIncomplete: !state.resultArrived || cutOffAfterEnd || oracle.hasUnknownCost(),
+        costIncomplete:
+          !state.resultArrived ||
+          state.agentCostUnreported ||
+          cutOffAfterEnd ||
+          oracle.hasUnknownCost(),
         transcriptIncomplete: state.transcriptIncomplete,
         permissionDenials: Array.from(state.permissionDenials.values()),
         oracleCostUsd: oracleUsage.cost_usd,
